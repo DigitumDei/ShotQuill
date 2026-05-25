@@ -32,6 +32,8 @@ class ManualWorkflowModelsTest {
         assertEquals(brandProfileId, profile.id)
         assertEquals("ShotQuill", profile.displayName)
         assertEquals(listOf("#photo", "#launch"), profile.defaultHashtags)
+        assertEquals("Primary logo", profile.imageAssets.single().title)
+        assertEquals(mediaAssetId, profile.imageAssets.single().mediaAsset.id)
     }
 
     @Test
@@ -245,6 +247,91 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun rejectsPostDraftUpdatedBeforeCreated() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePostDraft().copy(
+                createdAt = Instant.fromEpochMilliseconds(updatedAt),
+                updatedAt = Instant.fromEpochMilliseconds(createdAt),
+            )
+        }
+
+        assertEquals("Post draft updatedAt must be after or equal to createdAt", failure.message)
+    }
+
+    @Test
+    fun rejectsMediaAssetWithInvalidDimensions() {
+        val widthFailure = assertFailsWith<IllegalArgumentException> {
+            sampleMediaAsset().copy(widthPx = 0)
+        }
+        val heightFailure = assertFailsWith<IllegalArgumentException> {
+            sampleMediaAsset().copy(heightPx = -1)
+        }
+
+        assertEquals("widthPx must be greater than zero", widthFailure.message)
+        assertEquals("heightPx must be greater than zero", heightFailure.message)
+    }
+
+    @Test
+    fun rejectsMediaAssetWithNegativeCreatedTimestamp() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            sampleMediaAsset().copy(createdAtEpochMillis = -1)
+        }
+
+        assertEquals("createdAtEpochMillis must be non-negative", failure.message)
+    }
+
+    @Test
+    fun rejectsExportRecordCompletedBeforeCreated() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            ExportRecord(
+                id = ExportRecordId("export-1"),
+                draftId = draftId,
+                targetPlatform = TargetPlatform.LinkedIn,
+                status = ExportStatus.Exported,
+                destinationUri = "content://share/export-1",
+                errorMessage = null,
+                createdAtEpochMillis = updatedAt,
+                completedAtEpochMillis = createdAt,
+            )
+        }
+
+        assertEquals("completedAtEpochMillis must be after or equal to createdAtEpochMillis", failure.message)
+    }
+
+    @Test
+    fun rejectsInvalidBrandProfileFields() {
+        val blankDisplayNameFailure = assertFailsWith<IllegalArgumentException> {
+            sampleBrandProfile().copy(displayName = " ")
+        }
+        val blankVoiceFailure = assertFailsWith<IllegalArgumentException> {
+            sampleBrandProfile().copy(voice = "")
+        }
+        val timestampFailure = assertFailsWith<IllegalArgumentException> {
+            sampleBrandProfile().copy(
+                createdAtEpochMillis = updatedAt,
+                updatedAtEpochMillis = createdAt,
+            )
+        }
+
+        assertEquals("displayName cannot be blank", blankDisplayNameFailure.message)
+        assertEquals("voice cannot be blank", blankVoiceFailure.message)
+        assertEquals("updatedAtEpochMillis must be after or equal to createdAtEpochMillis", timestampFailure.message)
+    }
+
+    @Test
+    fun rejectsBlankBrandImageAssetTitle() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            BrandImageAsset(
+                mediaAsset = sampleMediaAsset(),
+                title = " ",
+                description = "Logo for generated post imagery.",
+            )
+        }
+
+        assertEquals("Brand image asset title cannot be blank", failure.message)
+    }
+
+    @Test
     fun mapsEnumsToAndFromWireValues() {
         assertEquals(DraftStatus.ReadyToShare, DraftStatus.fromWireValue("ready_to_share"))
         assertEquals(TargetPlatform.Threads, TargetPlatform.fromWireValue("threads"))
@@ -300,6 +387,20 @@ class ManualWorkflowModelsTest {
         assertEquals("Cannot transition post draft from photo_added to shared", failure.message)
     }
 
+    @Test
+    fun rejectsPostDraftTransitionWithBackwardTimestamp() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePostDraft().copy(
+                updatedAt = Instant.fromEpochMilliseconds(updatedAt),
+            ).transitionTo(
+                next = DraftStatus.TextGenerated,
+                updatedAt = Instant.fromEpochMilliseconds(createdAt),
+            )
+        }
+
+        assertEquals("Transition updatedAt must be after or equal to current updatedAt", failure.message)
+    }
+
     private fun samplePostDraft(): PostDraft = PostDraft(
         id = draftId,
         format = PostFormat.SingleImage,
@@ -339,6 +440,13 @@ class ManualWorkflowModelsTest {
         voice = "Warm and concise",
         audience = "Independent creators",
         defaultHashtags = listOf("#photo", "#launch"),
+        imageAssets = listOf(
+            BrandImageAsset(
+                mediaAsset = sampleMediaAsset(),
+                title = "Primary logo",
+                description = "Logo to include when branding generated post imagery.",
+            ),
+        ),
         createdAtEpochMillis = createdAt,
         updatedAtEpochMillis = updatedAt,
     )

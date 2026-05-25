@@ -29,18 +29,25 @@ data class PostDraft(
         require(format != PostFormat.SingleImage || mediaItems.size == 1) {
             "Single image post drafts must include exactly one media item"
         }
+        require(updatedAt >= createdAt) {
+            "Post draft updatedAt must be after or equal to createdAt"
+        }
     }
 
     fun transitionTo(next: DraftStatus, updatedAt: Instant): PostDraft {
         require(status.canTransitionTo(next)) {
             "Cannot transition post draft from ${status.wireValue} to ${next.wireValue}"
         }
+        require(updatedAt >= this.updatedAt) {
+            "Transition updatedAt must be after or equal to current updatedAt"
+        }
         return copy(status = next, updatedAt = updatedAt)
     }
 }
 
 fun PostDraft.primaryMediaAsset(): MediaAsset =
-    mediaItems.minBy { it.order }.mediaAsset
+    mediaItems.minByOrNull { it.order }?.mediaAsset
+        ?: error("Post draft must include at least one media item")
 
 data class PostMediaItem(
     val mediaAsset: MediaAsset,
@@ -59,7 +66,13 @@ data class MediaAsset(
     val widthPx: Int?,
     val heightPx: Int?,
     val createdAtEpochMillis: Long,
-)
+) {
+    init {
+        require(widthPx == null || widthPx > 0) { "widthPx must be greater than zero" }
+        require(heightPx == null || heightPx > 0) { "heightPx must be greater than zero" }
+        require(createdAtEpochMillis >= 0) { "createdAtEpochMillis must be non-negative" }
+    }
+}
 
 data class CaptionDraft(
     val text: String,
@@ -145,7 +158,13 @@ data class ExportRecord(
     val errorMessage: String?,
     val createdAtEpochMillis: Long,
     val completedAtEpochMillis: Long?,
-)
+) {
+    init {
+        require(completedAtEpochMillis == null || completedAtEpochMillis >= createdAtEpochMillis) {
+            "completedAtEpochMillis must be after or equal to createdAtEpochMillis"
+        }
+    }
+}
 
 data class BrandProfile(
     val id: BrandProfileId,
@@ -153,6 +172,25 @@ data class BrandProfile(
     val voice: String,
     val audience: String?,
     val defaultHashtags: List<String>,
+    val imageAssets: List<BrandImageAsset>,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
-)
+) {
+    init {
+        require(displayName.isNotBlank()) { "displayName cannot be blank" }
+        require(voice.isNotBlank()) { "voice cannot be blank" }
+        require(updatedAtEpochMillis >= createdAtEpochMillis) {
+            "updatedAtEpochMillis must be after or equal to createdAtEpochMillis"
+        }
+    }
+}
+
+data class BrandImageAsset(
+    val mediaAsset: MediaAsset,
+    val title: String,
+    val description: String?,
+) {
+    init {
+        require(title.isNotBlank()) { "Brand image asset title cannot be blank" }
+    }
+}

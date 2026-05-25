@@ -15,7 +15,7 @@ enum class DraftStatus(val wireValue: String) {
     Shared("shared"),
     Archived("archived");
 
-    fun canTransitionTo(next: DraftStatus): Boolean = next in allowedTransitions.getValue(this)
+    fun canTransitionTo(next: DraftStatus): Boolean = next in (allowedTransitions[this] ?: emptySet())
 
     companion object {
         private val allowedTransitions = mapOf(
