@@ -60,10 +60,10 @@ To rely on CI:
 ## Coverage
 
 Coverage is collected with [Kover](https://github.com/Kotlin/kotlinx-kover) and
-verified by `./gradlew koverVerify`. The initial line-coverage gate is
-intentionally low (30%) so the skeleton can pass; raise it as real domain,
-repository, prompt, and orchestration code lands. New code of that kind must
-ship with tests in the same PR.
+verified by `./gradlew koverVerify`. The current line-coverage gate is **66%**,
+matching the skeleton's baseline. Ratchet it upward with each PR that adds real
+domain, repository, prompt, or orchestration code until it reaches **80%**. New
+code of that kind must ship with tests in the same PR.
 
 Reports are written to:
 
