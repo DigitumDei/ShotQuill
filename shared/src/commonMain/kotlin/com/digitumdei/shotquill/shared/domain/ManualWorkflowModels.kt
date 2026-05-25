@@ -39,6 +39,9 @@ data class PostDraft(
     }
 }
 
+fun PostDraft.primaryMediaAsset(): MediaAsset =
+    mediaItems.minBy { it.order }.mediaAsset
+
 data class PostMediaItem(
     val mediaAsset: MediaAsset,
     val order: Int,

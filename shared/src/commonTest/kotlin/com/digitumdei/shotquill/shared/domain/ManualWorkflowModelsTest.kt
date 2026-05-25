@@ -193,6 +193,23 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun returnsPrimaryMediaAssetByLowestMediaItemOrder() {
+        val expectedPrimary = sampleMediaAsset().copy(
+            id = MediaAssetId("media-2"),
+            uri = "file://photo-2.jpg",
+        )
+        val story = samplePostDraft().copy(
+            format = PostFormat.Story,
+            mediaItems = listOf(
+                PostMediaItem(mediaAsset = sampleMediaAsset(), order = 1),
+                PostMediaItem(mediaAsset = expectedPrimary, order = 0),
+            ),
+        )
+
+        assertEquals(expectedPrimary, story.primaryMediaAsset())
+    }
+
+    @Test
     fun rejectsSingleImagePostDraftWithMultipleMediaItems() {
         val failure = assertFailsWith<IllegalArgumentException> {
             samplePostDraft().copy(
