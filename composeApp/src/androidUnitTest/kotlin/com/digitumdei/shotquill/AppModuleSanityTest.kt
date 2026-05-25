@@ -1,7 +1,7 @@
 package com.digitumdei.shotquill
 
 import com.digitumdei.shotquill.shared.Greeting
-import org.junit.Test
+import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class AppModuleSanityTest {

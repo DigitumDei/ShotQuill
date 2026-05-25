@@ -1,6 +1,6 @@
 package com.digitumdei.shotquill.shared
 
-import org.junit.Test
+import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class AndroidPlatformTest {
