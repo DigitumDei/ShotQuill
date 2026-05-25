@@ -1,0 +1,590 @@
+CREATE TABLE media_assets (
+  id TEXT NOT NULL PRIMARY KEY,
+  type TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  mime_type TEXT,
+  width_px INTEGER,
+  height_px INTEGER,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE brand_profiles (
+  id TEXT NOT NULL PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  voice TEXT NOT NULL,
+  audience TEXT,
+  created_at_epoch_millis INTEGER NOT NULL,
+  updated_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE brand_profile_default_hashtags (
+  profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE,
+  hashtag TEXT NOT NULL,
+  hashtag_order INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, hashtag_order)
+);
+
+CREATE TABLE brand_image_assets (
+  profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE,
+  media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  asset_order INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, media_asset_id)
+);
+
+CREATE TABLE post_drafts (
+  id TEXT NOT NULL PRIMARY KEY,
+  format TEXT NOT NULL,
+  status TEXT NOT NULL,
+  caption_text TEXT,
+  brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL,
+  created_at_epoch_millis INTEGER NOT NULL,
+  updated_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE post_draft_target_platforms (
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  PRIMARY KEY (draft_id, platform)
+);
+
+CREATE TABLE post_draft_media_items (
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  media_order INTEGER NOT NULL,
+  PRIMARY KEY (draft_id, media_asset_id),
+  UNIQUE (draft_id, media_order)
+);
+
+CREATE TABLE post_draft_caption_hashtags (
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  hashtag TEXT NOT NULL,
+  hashtag_order INTEGER NOT NULL,
+  PRIMARY KEY (draft_id, hashtag_order)
+);
+
+CREATE TABLE vision_descriptions (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  model_name TEXT,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE caption_requests (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  target_platform TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  tone TEXT,
+  brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE caption_results (
+  id TEXT NOT NULL PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES caption_requests(id) ON DELETE CASCADE,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  target_platform TEXT NOT NULL,
+  caption TEXT NOT NULL,
+  model_name TEXT,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE caption_result_hashtags (
+  result_id TEXT NOT NULL REFERENCES caption_results(id) ON DELETE CASCADE,
+  hashtag TEXT NOT NULL,
+  hashtag_order INTEGER NOT NULL,
+  PRIMARY KEY (result_id, hashtag_order)
+);
+
+CREATE TABLE alt_text_results (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  alt_text TEXT NOT NULL,
+  model_name TEXT,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE photo_edit_requests (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  source_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  intent TEXT NOT NULL,
+  realism_level TEXT NOT NULL,
+  quality_tier TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE photo_edit_results (
+  id TEXT NOT NULL PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES photo_edit_requests(id) ON DELETE CASCADE,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  edited_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  summary TEXT,
+  model_name TEXT,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE prompt_history_entries (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  operation_type TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  response_summary TEXT,
+  model_name TEXT,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE export_records (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  target_platform TEXT NOT NULL,
+  status TEXT NOT NULL,
+  destination_uri TEXT,
+  error_message TEXT,
+  created_at_epoch_millis INTEGER NOT NULL,
+  completed_at_epoch_millis INTEGER
+);
+
+insertMediaAsset:
+INSERT OR IGNORE INTO media_assets(
+  id,
+  type,
+  uri,
+  mime_type,
+  width_px,
+  height_px,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateMediaAsset:
+UPDATE media_assets
+SET type = ?,
+    uri = ?,
+    mime_type = ?,
+    width_px = ?,
+    height_px = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+selectMediaAssetById:
+SELECT * FROM media_assets WHERE id = ?;
+
+insertBrandProfile:
+INSERT OR IGNORE INTO brand_profiles(
+  id,
+  display_name,
+  voice,
+  audience,
+  created_at_epoch_millis,
+  updated_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?);
+
+updateBrandProfile:
+UPDATE brand_profiles
+SET display_name = ?,
+    voice = ?,
+    audience = ?,
+    created_at_epoch_millis = ?,
+    updated_at_epoch_millis = ?
+WHERE id = ?;
+
+selectBrandProfileById:
+SELECT * FROM brand_profiles WHERE id = ?;
+
+deleteBrandProfileDefaultHashtags:
+DELETE FROM brand_profile_default_hashtags WHERE profile_id = ?;
+
+insertBrandProfileDefaultHashtag:
+INSERT INTO brand_profile_default_hashtags(profile_id, hashtag, hashtag_order)
+VALUES (?, ?, ?);
+
+selectBrandProfileDefaultHashtags:
+SELECT hashtag FROM brand_profile_default_hashtags
+WHERE profile_id = ?
+ORDER BY hashtag_order ASC;
+
+deleteBrandImageAssets:
+DELETE FROM brand_image_assets WHERE profile_id = ?;
+
+insertBrandImageAsset:
+INSERT INTO brand_image_assets(profile_id, media_asset_id, title, description, asset_order)
+VALUES (?, ?, ?, ?, ?);
+
+selectBrandImageAssets:
+SELECT media_assets.*, brand_image_assets.title, brand_image_assets.description
+FROM brand_image_assets
+JOIN media_assets ON media_assets.id = brand_image_assets.media_asset_id
+WHERE brand_image_assets.profile_id = ?
+ORDER BY brand_image_assets.asset_order ASC;
+
+insertPostDraft:
+INSERT OR IGNORE INTO post_drafts(
+  id,
+  format,
+  status,
+  caption_text,
+  brand_profile_id,
+  created_at_epoch_millis,
+  updated_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updatePostDraft:
+UPDATE post_drafts
+SET format = ?,
+    status = ?,
+    caption_text = ?,
+    brand_profile_id = ?,
+    created_at_epoch_millis = ?,
+    updated_at_epoch_millis = ?
+WHERE id = ?;
+
+selectPostDraftById:
+SELECT * FROM post_drafts WHERE id = ?;
+
+deletePostDraftTargetPlatforms:
+DELETE FROM post_draft_target_platforms WHERE draft_id = ?;
+
+insertPostDraftTargetPlatform:
+INSERT INTO post_draft_target_platforms(draft_id, platform)
+VALUES (?, ?);
+
+selectPostDraftTargetPlatforms:
+SELECT platform FROM post_draft_target_platforms
+WHERE draft_id = ?
+ORDER BY platform ASC;
+
+deletePostDraftMediaItems:
+DELETE FROM post_draft_media_items WHERE draft_id = ?;
+
+insertPostDraftMediaItem:
+INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order)
+VALUES (?, ?, ?);
+
+selectPostDraftMediaItems:
+SELECT media_assets.*, post_draft_media_items.media_order
+FROM post_draft_media_items
+JOIN media_assets ON media_assets.id = post_draft_media_items.media_asset_id
+WHERE post_draft_media_items.draft_id = ?
+ORDER BY post_draft_media_items.media_order ASC;
+
+deletePostDraftCaptionHashtags:
+DELETE FROM post_draft_caption_hashtags WHERE draft_id = ?;
+
+insertPostDraftCaptionHashtag:
+INSERT INTO post_draft_caption_hashtags(draft_id, hashtag, hashtag_order)
+VALUES (?, ?, ?);
+
+selectPostDraftCaptionHashtags:
+SELECT hashtag FROM post_draft_caption_hashtags
+WHERE draft_id = ?
+ORDER BY hashtag_order ASC;
+
+insertVisionDescription:
+INSERT OR IGNORE INTO vision_descriptions(
+  id,
+  draft_id,
+  media_asset_id,
+  description,
+  model_name,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?);
+
+updateVisionDescription:
+UPDATE vision_descriptions
+SET draft_id = ?,
+    media_asset_id = ?,
+    description = ?,
+    model_name = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteVisionDescriptionsByDraftId:
+DELETE FROM vision_descriptions WHERE draft_id = ?;
+
+selectVisionDescriptionsByDraftId:
+SELECT * FROM vision_descriptions
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+insertCaptionRequest:
+INSERT OR IGNORE INTO caption_requests(
+  id,
+  draft_id,
+  target_platform,
+  prompt,
+  tone,
+  brand_profile_id,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateCaptionRequest:
+UPDATE caption_requests
+SET draft_id = ?,
+    target_platform = ?,
+    prompt = ?,
+    tone = ?,
+    brand_profile_id = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteCaptionRequestsByDraftId:
+DELETE FROM caption_requests WHERE draft_id = ?;
+
+selectCaptionRequestsByDraftId:
+SELECT * FROM caption_requests
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+insertCaptionResult:
+INSERT OR IGNORE INTO caption_results(
+  id,
+  request_id,
+  draft_id,
+  target_platform,
+  caption,
+  model_name,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateCaptionResult:
+UPDATE caption_results
+SET request_id = ?,
+    draft_id = ?,
+    target_platform = ?,
+    caption = ?,
+    model_name = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteCaptionResultsByDraftId:
+DELETE FROM caption_results WHERE draft_id = ?;
+
+selectCaptionResultsByDraftId:
+SELECT * FROM caption_results
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+deleteCaptionResultHashtagsByDraftId:
+DELETE FROM caption_result_hashtags
+WHERE result_id IN (
+  SELECT id FROM caption_results WHERE draft_id = ?
+);
+
+deleteCaptionResultHashtags:
+DELETE FROM caption_result_hashtags WHERE result_id = ?;
+
+insertCaptionResultHashtag:
+INSERT INTO caption_result_hashtags(result_id, hashtag, hashtag_order)
+VALUES (?, ?, ?);
+
+selectCaptionResultHashtags:
+SELECT hashtag FROM caption_result_hashtags
+WHERE result_id = ?
+ORDER BY hashtag_order ASC;
+
+insertAltTextResult:
+INSERT OR IGNORE INTO alt_text_results(
+  id,
+  draft_id,
+  media_asset_id,
+  alt_text,
+  model_name,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?);
+
+updateAltTextResult:
+UPDATE alt_text_results
+SET draft_id = ?,
+    media_asset_id = ?,
+    alt_text = ?,
+    model_name = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteAltTextResultsByDraftId:
+DELETE FROM alt_text_results WHERE draft_id = ?;
+
+selectAltTextResultsByDraftId:
+SELECT * FROM alt_text_results
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+insertPhotoEditRequest:
+INSERT OR IGNORE INTO photo_edit_requests(
+  id,
+  draft_id,
+  source_media_asset_id,
+  intent,
+  realism_level,
+  quality_tier,
+  prompt,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updatePhotoEditRequest:
+UPDATE photo_edit_requests
+SET draft_id = ?,
+    source_media_asset_id = ?,
+    intent = ?,
+    realism_level = ?,
+    quality_tier = ?,
+    prompt = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deletePhotoEditRequestsByDraftId:
+DELETE FROM photo_edit_requests WHERE draft_id = ?;
+
+selectPhotoEditRequestsByDraftId:
+SELECT * FROM photo_edit_requests
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+insertPhotoEditResult:
+INSERT OR IGNORE INTO photo_edit_results(
+  id,
+  request_id,
+  draft_id,
+  edited_media_asset_id,
+  summary,
+  model_name,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updatePhotoEditResult:
+UPDATE photo_edit_results
+SET request_id = ?,
+    draft_id = ?,
+    edited_media_asset_id = ?,
+    summary = ?,
+    model_name = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deletePhotoEditResultsByDraftId:
+DELETE FROM photo_edit_results WHERE draft_id = ?;
+
+selectPhotoEditResultsByDraftId:
+SELECT photo_edit_results.*, media_assets.type, media_assets.uri, media_assets.mime_type,
+       media_assets.width_px, media_assets.height_px, media_assets.created_at_epoch_millis AS media_created_at_epoch_millis
+FROM photo_edit_results
+JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
+WHERE photo_edit_results.draft_id = ?
+ORDER BY photo_edit_results.created_at_epoch_millis ASC;
+
+insertPromptHistoryEntry:
+INSERT OR IGNORE INTO prompt_history_entries(
+  id,
+  draft_id,
+  operation_type,
+  prompt,
+  response_summary,
+  model_name,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updatePromptHistoryEntry:
+UPDATE prompt_history_entries
+SET draft_id = ?,
+    operation_type = ?,
+    prompt = ?,
+    response_summary = ?,
+    model_name = ?,
+    created_at_epoch_millis = ?
+WHERE id = ?;
+
+deletePromptHistoryEntriesByDraftId:
+DELETE FROM prompt_history_entries WHERE draft_id = ?;
+
+selectPromptHistoryEntriesByDraftId:
+SELECT * FROM prompt_history_entries
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+insertExportRecord:
+INSERT OR IGNORE INTO export_records(
+  id,
+  draft_id,
+  target_platform,
+  status,
+  destination_uri,
+  error_message,
+  created_at_epoch_millis,
+  completed_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateExportRecord:
+UPDATE export_records
+SET draft_id = ?,
+    target_platform = ?,
+    status = ?,
+    destination_uri = ?,
+    error_message = ?,
+    created_at_epoch_millis = ?,
+    completed_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteExportRecordsByDraftId:
+DELETE FROM export_records WHERE draft_id = ?;
+
+selectExportRecordsByDraftId:
+SELECT * FROM export_records
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+deleteAllExportRecords:
+DELETE FROM export_records;
+
+deleteAllPromptHistoryEntries:
+DELETE FROM prompt_history_entries;
+
+deleteAllPhotoEditResults:
+DELETE FROM photo_edit_results;
+
+deleteAllPhotoEditRequests:
+DELETE FROM photo_edit_requests;
+
+deleteAllAltTextResults:
+DELETE FROM alt_text_results;
+
+deleteAllCaptionResultHashtags:
+DELETE FROM caption_result_hashtags;
+
+deleteAllCaptionResults:
+DELETE FROM caption_results;
+
+deleteAllCaptionRequests:
+DELETE FROM caption_requests;
+
+deleteAllVisionDescriptions:
+DELETE FROM vision_descriptions;
+
+deleteAllPostDraftCaptionHashtags:
+DELETE FROM post_draft_caption_hashtags;
+
+deleteAllPostDraftMediaItems:
+DELETE FROM post_draft_media_items;
+
+deleteAllPostDraftTargetPlatforms:
+DELETE FROM post_draft_target_platforms;
+
+deleteAllPostDrafts:
+DELETE FROM post_drafts;
+
+deleteAllBrandImageAssets:
+DELETE FROM brand_image_assets;
+
+deleteAllBrandProfileDefaultHashtags:
+DELETE FROM brand_profile_default_hashtags;
+
+deleteAllBrandProfiles:
+DELETE FROM brand_profiles;
+
+deleteAllMediaAssets:
+DELETE FROM media_assets;
