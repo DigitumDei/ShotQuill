@@ -33,10 +33,9 @@ you can inspect them without re-running locally.
 
 Per issue #1, the coverage gate exists from day one. As you add new
 **domain, repository, prompt, or orchestration** code, include unit tests in
-the same PR. The line-coverage gate starts at **66%** (the skeleton's
-baseline) and ratchets upward with each PR that adds production code until
-it reaches **80%**. Never regress the gate; raise it in the same PR that
-raises actual coverage.
+the same PR. The line-coverage gate is **90%** and should ratchet upward with
+each PR that adds production code. Never regress the gate; raise it in the same
+PR that raises actual coverage.
 
 The threshold is configured in the root [`build.gradle.kts`](build.gradle.kts)
 under the `kover { reports { verify { ... } } }` block — bump `minBound` in
