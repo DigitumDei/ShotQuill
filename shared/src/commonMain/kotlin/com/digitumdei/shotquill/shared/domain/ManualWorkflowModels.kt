@@ -1,9 +1,13 @@
 package com.digitumdei.shotquill.shared.domain
 
+import kotlinx.datetime.Instant
+
 data class PostDraft(
     val id: PostDraftId,
+    val format: PostFormat,
     val status: DraftStatus,
-    val mediaAsset: MediaAsset,
+    val mediaItems: List<PostMediaItem>,
+    val caption: CaptionDraft?,
     val targetPlatforms: Set<TargetPlatform>,
     val brandProfile: BrandProfile?,
     val visionDescription: VisionDescription?,
@@ -14,14 +18,33 @@ data class PostDraft(
     val photoEditResults: List<PhotoEditResult>,
     val promptHistory: List<PromptHistoryEntry>,
     val exportRecords: List<ExportRecord>,
-    val createdAtEpochMillis: Long,
-    val updatedAtEpochMillis: Long,
+    val createdAt: Instant,
+    val updatedAt: Instant,
 ) {
-    fun transitionTo(next: DraftStatus, updatedAtEpochMillis: Long): PostDraft {
+    init {
+        require(mediaItems.isNotEmpty()) { "Post draft must include at least one media item" }
+        require(mediaItems.map { it.order }.toSet().size == mediaItems.size) {
+            "Post draft media item orders must be unique"
+        }
+        require(format != PostFormat.SingleImage || mediaItems.size == 1) {
+            "Single image post drafts must include exactly one media item"
+        }
+    }
+
+    fun transitionTo(next: DraftStatus, updatedAt: Instant): PostDraft {
         require(status.canTransitionTo(next)) {
             "Cannot transition post draft from ${status.wireValue} to ${next.wireValue}"
         }
-        return copy(status = next, updatedAtEpochMillis = updatedAtEpochMillis)
+        return copy(status = next, updatedAt = updatedAt)
+    }
+}
+
+data class PostMediaItem(
+    val mediaAsset: MediaAsset,
+    val order: Int,
+) {
+    init {
+        require(order >= 0) { "Post media item order must be zero or greater" }
     }
 }
 
@@ -33,6 +56,11 @@ data class MediaAsset(
     val widthPx: Int?,
     val heightPx: Int?,
     val createdAtEpochMillis: Long,
+)
+
+data class CaptionDraft(
+    val text: String,
+    val hashtags: List<String>,
 )
 
 data class VisionDescription(

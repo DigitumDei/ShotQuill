@@ -3,6 +3,7 @@ agp = "8.7.3"
 kotlin = "2.0.21"
 compose-multiplatform = "1.7.3"
 kover = "0.9.1"
+kotlinx-datetime = "0.6.1"
 
 android-compileSdk = "35"
 android-minSdk = "24"
@@ -19,6 +20,7 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

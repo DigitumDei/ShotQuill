@@ -1,5 +1,11 @@
 package com.digitumdei.shotquill.shared.domain
 
+enum class PostFormat {
+    SingleImage,
+    Carousel,
+    Story,
+}
+
 enum class DraftStatus(val wireValue: String) {
     Draft("draft"),
     PhotoAdded("photo_added"),

@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.shared.domain
 
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -161,11 +162,69 @@ class ManualWorkflowModelsTest {
         val draft = samplePostDraft()
 
         assertEquals(draftId, draft.id)
+        assertEquals(PostFormat.SingleImage, draft.format)
         assertEquals(DraftStatus.PhotoAdded, draft.status)
-        assertEquals(mediaAssetId, draft.mediaAsset.id)
+        assertEquals(mediaAssetId, draft.mediaItems.single().mediaAsset.id)
+        assertEquals(0, draft.mediaItems.single().order)
+        assertEquals("Morning focus, freshly brewed.", draft.caption?.text)
         assertEquals(setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn), draft.targetPlatforms)
         assertTrue(draft.captionRequests.isNotEmpty())
         assertTrue(draft.photoEditRequests.isNotEmpty())
+    }
+
+    @Test
+    fun createsStoryPostDraftWithMultipleMediaItems() {
+        val story = samplePostDraft().copy(
+            format = PostFormat.Story,
+            mediaItems = listOf(
+                PostMediaItem(mediaAsset = sampleMediaAsset(), order = 0),
+                PostMediaItem(
+                    mediaAsset = sampleMediaAsset().copy(
+                        id = MediaAssetId("media-2"),
+                        uri = "file://photo-2.jpg",
+                    ),
+                    order = 1,
+                ),
+            ),
+        )
+
+        assertEquals(PostFormat.Story, story.format)
+        assertEquals(listOf(0, 1), story.mediaItems.map { it.order })
+    }
+
+    @Test
+    fun rejectsSingleImagePostDraftWithMultipleMediaItems() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePostDraft().copy(
+                mediaItems = listOf(
+                    PostMediaItem(mediaAsset = sampleMediaAsset(), order = 0),
+                    PostMediaItem(
+                        mediaAsset = sampleMediaAsset().copy(id = MediaAssetId("media-2")),
+                        order = 1,
+                    ),
+                ),
+            )
+        }
+
+        assertEquals("Single image post drafts must include exactly one media item", failure.message)
+    }
+
+    @Test
+    fun rejectsPostDraftWithDuplicateMediaItemOrder() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePostDraft().copy(
+                format = PostFormat.Carousel,
+                mediaItems = listOf(
+                    PostMediaItem(mediaAsset = sampleMediaAsset(), order = 0),
+                    PostMediaItem(
+                        mediaAsset = sampleMediaAsset().copy(id = MediaAssetId("media-2")),
+                        order = 0,
+                    ),
+                ),
+            )
+        }
+
+        assertEquals("Post draft media item orders must be unique", failure.message)
     }
 
     @Test
@@ -205,11 +264,11 @@ class ManualWorkflowModelsTest {
     fun transitionsPostDraftWhenAllowed() {
         val transitioned = samplePostDraft().transitionTo(
             next = DraftStatus.TextGenerated,
-            updatedAtEpochMillis = updatedAt,
+            updatedAt = Instant.fromEpochMilliseconds(updatedAt),
         )
 
         assertEquals(DraftStatus.TextGenerated, transitioned.status)
-        assertEquals(updatedAt, transitioned.updatedAtEpochMillis)
+        assertEquals(Instant.fromEpochMilliseconds(updatedAt), transitioned.updatedAt)
     }
 
     @Test
@@ -217,7 +276,7 @@ class ManualWorkflowModelsTest {
         val failure = assertFailsWith<IllegalArgumentException> {
             samplePostDraft().transitionTo(
                 next = DraftStatus.Shared,
-                updatedAtEpochMillis = updatedAt,
+                updatedAt = Instant.fromEpochMilliseconds(updatedAt),
             )
         }
 
@@ -226,8 +285,13 @@ class ManualWorkflowModelsTest {
 
     private fun samplePostDraft(): PostDraft = PostDraft(
         id = draftId,
+        format = PostFormat.SingleImage,
         status = DraftStatus.PhotoAdded,
-        mediaAsset = sampleMediaAsset(),
+        mediaItems = listOf(PostMediaItem(mediaAsset = sampleMediaAsset(), order = 0)),
+        caption = CaptionDraft(
+            text = "Morning focus, freshly brewed.",
+            hashtags = listOf("#coffee", "#work"),
+        ),
         targetPlatforms = setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn),
         brandProfile = sampleBrandProfile(),
         visionDescription = null,
@@ -238,8 +302,8 @@ class ManualWorkflowModelsTest {
         photoEditResults = emptyList(),
         promptHistory = emptyList(),
         exportRecords = emptyList(),
-        createdAtEpochMillis = createdAt,
-        updatedAtEpochMillis = createdAt,
+        createdAt = Instant.fromEpochMilliseconds(createdAt),
+        updatedAt = Instant.fromEpochMilliseconds(createdAt),
     )
 
     private fun sampleMediaAsset(): MediaAsset = MediaAsset(
