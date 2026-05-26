@@ -33,9 +33,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.screen.NewPostScreen
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
@@ -45,18 +50,88 @@ import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
+import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import kotlinx.datetime.Instant
+
+private enum class AppScreen {
+    NewPost,
+    Settings,
+}
 
 @Composable
 fun App(
     settingsRepository: LocalSettingsRepository? = null,
     brandProfileRepository: BrandProfileRepository? = null,
+    manualWorkflowRepository: ManualWorkflowRepository? = null,
+    onCaptureFromCamera: (() -> Unit)? = null,
+    onPickFromGallery: (() -> Unit)? = null,
+    captureResult: MediaCaptureResult? = null,
+    captureError: String? = null,
+    onClearCaptureResult: (() -> Unit)? = null,
+    onClearCaptureError: (() -> Unit)? = null,
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
+    var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
+
+    val newPostCreator = remember(manualWorkflowRepository) {
+        manualWorkflowRepository?.let { NewPostCreator(it, it) }
+    }
+
+    var draftCreatedMessage by remember { mutableStateOf<String?>(null) }
+    val captureResultValue = captureResult
+    LaunchedEffect(captureResultValue) {
+        if (captureResultValue != null && newPostCreator != null) {
+            val nowEpochMillis = captureResultValue.createdAtEpochMillis
+            val draftId = PostDraftId("draft-${nowEpochMillis}")
+            val mediaAssetId = MediaAssetId("media-${nowEpochMillis}")
+            runCatching {
+                newPostCreator.createDraftFromMedia(
+                    draftId = draftId,
+                    mediaAssetId = mediaAssetId,
+                    format = PostFormat.SingleImage,
+                    uri = captureResultValue.uri,
+                    mimeType = captureResultValue.mimeType,
+                    widthPx = captureResultValue.widthPx,
+                    heightPx = captureResultValue.heightPx,
+                )
+            }.onSuccess { draft ->
+                draftCreatedMessage = "Draft ${draft.id.value} created"
+            }.onFailure {
+                draftCreatedMessage = "Failed to create draft: ${it.message}"
+            }
+        }
+    }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            SettingsScreen(repository = repository, brandProfileRepository = profileRepository)
+            when (currentScreen) {
+                AppScreen.NewPost -> {
+                    NewPostScreen(
+                        onCaptureFromCamera = onCaptureFromCamera ?: {},
+                        onPickFromGallery = onPickFromGallery ?: {},
+                        onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                        captureResult = captureResult,
+                        errorMessage = captureError,
+                        onDismissResult = {
+                            onClearCaptureResult?.invoke()
+                            draftCreatedMessage = null
+                        },
+                        onDismissError = {
+                            onClearCaptureError?.invoke()
+                        },
+                    )
+                }
+
+                AppScreen.Settings -> {
+                    SettingsScreen(
+                        repository = repository,
+                        brandProfileRepository = profileRepository,
+                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost },
+                    )
+                }
+            }
         }
     }
 }
@@ -66,6 +141,7 @@ fun App(
 private fun SettingsScreen(
     repository: LocalSettingsRepository,
     brandProfileRepository: BrandProfileRepository,
+    onNavigateToNewPost: () -> Unit,
 ) {
     var settings by remember(repository) { mutableStateOf(repository.readSettings()) }
     val activeBrandProfileStore = remember(repository, brandProfileRepository) {
@@ -96,7 +172,17 @@ private fun SettingsScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text(text = "ShotQuill Settings", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = "ShotQuill Settings", style = MaterialTheme.typography.headlineSmall)
+            OutlinedButton(onClick = onNavigateToNewPost) {
+                Text("New Post")
+            }
+        }
+
         Text(text = status, style = MaterialTheme.typography.bodyMedium)
 
         OutlinedTextField(

@@ -24,6 +24,8 @@ kover {
                     "*MainActivity*",
                     "*AndroidBrandProfileRepositoryFactory*",
                     "*EpochClock*",
+                    "com.digitumdei.shotquill.media.MediaFileManager*",
+                    "com.digitumdei.shotquill.media.MediaCaptureHandler*",
                     "com.digitumdei.shotquill.shared.db.*",
                 )
             }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="camera_captures" path="camera_captures/" />
+    <files-path name="gallery_imports" path="gallery_imports/" />
+</paths>
