@@ -26,7 +26,7 @@ kover {
                     "*AndroidBrandProfileRepositoryFactory*",
                     "*EpochClock*",
                     "com.digitumdei.shotquill.media.*",
-                    "com.digitumdei.shotquill.screen.*",
+                    "com.digitumdei.shotquill.screen.NewPostScreenKt",
                     "com.digitumdei.shotquill.shared.db.*",
                 )
             }

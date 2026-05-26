@@ -2,7 +2,6 @@ package com.digitumdei.shotquill.media
 
 import android.Manifest
 import android.content.Context
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,15 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
+import com.digitumdei.shotquill.BuildConfig
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-
-private data class CameraCaptureRef(
-    val file: File,
-    val uri: Uri,
-)
 
 class MediaCaptureHandler(
     val launchCamera: () -> Unit,
@@ -32,24 +32,35 @@ fun rememberMediaCaptureHandler(
     onResult: (MediaCaptureResult) -> Unit,
     onError: (String) -> Unit,
 ): MediaCaptureHandler {
-    var cameraRef by remember { mutableStateOf<CameraCaptureRef?>(null) }
+    var cameraFilePath by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
     ) { success ->
         if (success) {
-            val ref = cameraRef
-            if (ref != null) {
-                runCatching {
-                    mediaFileManager.handleCameraCapture(ref.file)
-                }.onSuccess { result ->
-                    onResult(result)
-                }.onFailure { e ->
-                    onError("Failed to process camera capture: ${e.message}")
+            val path = cameraFilePath
+            if (path != null) {
+                scope.launch {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            mediaFileManager.handleCameraCapture(File(path))
+                        }
+                    }.onSuccess { result ->
+                        onResult(result)
+                    }.onFailure { e ->
+                        onError("Failed to process camera capture: ${e.message}")
+                    }
                 }
+            } else {
+                onError("Camera capture failed - session was lost")
             }
         } else {
-            onError("Camera capture cancelled")
+            val path = cameraFilePath
+            cameraFilePath = null
+            if (path != null) {
+                runCatching { File(path).delete() }
+            }
         }
     }
 
@@ -60,10 +71,10 @@ fun rememberMediaCaptureHandler(
             val file = mediaFileManager.createCameraCaptureFile()
             val uri = FileProvider.getUriForFile(
                 context,
-                "${context.packageName}.fileprovider",
+                "${BuildConfig.APPLICATION_ID}.fileprovider",
                 file,
             )
-            cameraRef = CameraCaptureRef(file, uri)
+            cameraFilePath = file.absolutePath
             cameraLauncher.launch(uri)
         } else {
             onError("Camera permission denied")
@@ -74,15 +85,17 @@ fun rememberMediaCaptureHandler(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            runCatching {
-                mediaFileManager.importFromContentUri(uri)
-            }.onSuccess { result ->
-                onResult(result)
-            }.onFailure { e ->
-                onError("Failed to import image: ${e.message}")
+            scope.launch {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        mediaFileManager.importFromContentUri(uri)
+                    }
+                }.onSuccess { result ->
+                    onResult(result)
+                }.onFailure { e ->
+                    onError("Failed to import image: ${e.message}")
+                }
             }
-        } else {
-            onError("Gallery selection cancelled")
         }
     }
 

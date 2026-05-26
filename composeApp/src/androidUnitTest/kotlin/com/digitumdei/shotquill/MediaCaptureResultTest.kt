@@ -10,14 +10,14 @@ class MediaCaptureResultTest {
     @Test
     fun storesAllMetadata() {
         val result = MediaCaptureResult(
-            uri = "file://test/photo.jpg",
+            uri = "/data/media/originals/photo.jpg",
             mimeType = "image/jpeg",
             widthPx = 1920,
             heightPx = 1080,
             createdAtEpochMillis = 1_700_000_000_000L,
         )
 
-        assertEquals("file://test/photo.jpg", result.uri)
+        assertEquals("/data/media/originals/photo.jpg", result.uri)
         assertEquals("image/jpeg", result.mimeType)
         assertEquals(1920, result.widthPx)
         assertEquals(1080, result.heightPx)
@@ -27,14 +27,14 @@ class MediaCaptureResultTest {
     @Test
     fun handlesNullMetadata() {
         val result = MediaCaptureResult(
-            uri = "file://test/unknown.bin",
+            uri = "/data/media/originals/unknown.bin",
             mimeType = null,
             widthPx = null,
             heightPx = null,
             createdAtEpochMillis = 1_700_000_000_000L,
         )
 
-        assertEquals("file://test/unknown.bin", result.uri)
+        assertEquals("/data/media/originals/unknown.bin", result.uri)
         assertNull(result.mimeType)
         assertNull(result.widthPx)
         assertNull(result.heightPx)

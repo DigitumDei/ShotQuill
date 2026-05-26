@@ -39,14 +39,16 @@ fun NewPostScreen(
     onNavigateToSettings: () -> Unit,
     captureResult: MediaCaptureResult?,
     errorMessage: String?,
+    draftCreatedMessage: String? = null,
     onDismissResult: () -> Unit,
     onDismissError: () -> Unit,
 ) {
-    var step by remember(captureResult, errorMessage) {
+    var step by remember(captureResult, draftCreatedMessage, errorMessage) {
         mutableStateOf(
             when {
-                captureResult != null -> NewPostStep.Complete
+                draftCreatedMessage != null -> NewPostStep.Complete
                 errorMessage != null -> NewPostStep.Error
+                captureResult != null -> NewPostStep.Processing
                 else -> NewPostStep.ChooseSource
             },
         )
@@ -109,7 +111,7 @@ fun NewPostScreen(
             NewPostStep.Complete -> {
                 val result = captureResult ?: return@Column
                 Text(
-                    text = "Draft created!",
+                    text = draftCreatedMessage ?: "Draft created!",
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(

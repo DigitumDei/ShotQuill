@@ -45,6 +45,7 @@ import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
+import kotlin.random.Random
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
@@ -79,12 +80,15 @@ fun App(
     }
 
     var draftCreatedMessage by remember { mutableStateOf<String?>(null) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     val captureResultValue = captureResult
     LaunchedEffect(captureResultValue) {
+        draftCreatedMessage = null
+        saveError = null
         if (captureResultValue != null && newPostCreator != null) {
-            val nowEpochMillis = captureResultValue.createdAtEpochMillis
-            val draftId = PostDraftId("draft-${nowEpochMillis}")
-            val mediaAssetId = MediaAssetId("media-${nowEpochMillis}")
+            val suffix = Random.nextInt()
+            val draftId = PostDraftId("draft-${captureResultValue.createdAtEpochMillis}-${suffix}")
+            val mediaAssetId = MediaAssetId("media-${captureResultValue.createdAtEpochMillis}-${suffix}")
             runCatching {
                 newPostCreator.createDraftFromMedia(
                     draftId = draftId,
@@ -97,8 +101,8 @@ fun App(
                 )
             }.onSuccess { draft ->
                 draftCreatedMessage = "Draft ${draft.id.value} created"
-            }.onFailure {
-                draftCreatedMessage = "Failed to create draft: ${it.message}"
+            }.onFailure { e ->
+                saveError = "Failed to create draft: ${e.message}"
             }
         }
     }
@@ -112,13 +116,16 @@ fun App(
                         onPickFromGallery = onPickFromGallery ?: {},
                         onNavigateToSettings = { currentScreen = AppScreen.Settings },
                         captureResult = captureResult,
-                        errorMessage = captureError,
+                        errorMessage = captureError ?: saveError,
+                        draftCreatedMessage = draftCreatedMessage,
                         onDismissResult = {
                             onClearCaptureResult?.invoke()
                             draftCreatedMessage = null
+                            saveError = null
                         },
                         onDismissError = {
                             onClearCaptureError?.invoke()
+                            saveError = null
                         },
                     )
                 }

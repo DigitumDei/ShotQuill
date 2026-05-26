@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
@@ -12,7 +14,7 @@ class MediaFileManager(
     private val contentResolver: ContentResolver,
     private val filesDir: File,
 ) {
-    fun importFromContentUri(contentUri: Uri): MediaCaptureResult {
+    suspend fun importFromContentUri(contentUri: Uri): MediaCaptureResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val displayName = queryDisplayName(contentUri) ?: "img_${now}.jpg"
         val mimeType = contentResolver.getType(contentUri) ?: guessMimeType(displayName)
@@ -28,8 +30,8 @@ class MediaFileManager(
         } ?: error("Unable to open input stream for $contentUri")
 
         val (width, height) = readImageDimensions(destFile.absolutePath)
-        return MediaCaptureResult(
-            uri = destFile.toURI().toString(),
+        MediaCaptureResult(
+            uri = destFile.absolutePath,
             mimeType = mimeType,
             widthPx = width,
             heightPx = height,
@@ -37,12 +39,12 @@ class MediaFileManager(
         )
     }
 
-    fun handleCameraCapture(captureFile: File): MediaCaptureResult {
+    suspend fun handleCameraCapture(captureFile: File): MediaCaptureResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val mimeType = "image/jpeg"
         val (width, height) = readImageDimensions(captureFile.absolutePath)
-        return MediaCaptureResult(
-            uri = captureFile.toURI().toString(),
+        MediaCaptureResult(
+            uri = captureFile.absolutePath,
             mimeType = mimeType,
             widthPx = width,
             heightPx = height,
@@ -57,12 +59,16 @@ class MediaFileManager(
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        val cursor = contentResolver.query(uri, null, null, null, null) ?: return null
-        return cursor.use {
-            if (it.moveToFirst()) {
-                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) it.getString(nameIndex) else null
-            } else null
+        return try {
+            val cursor = contentResolver.query(uri, null, null, null, null) ?: return null
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) it.getString(nameIndex) else null
+                } else null
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -91,13 +97,16 @@ class MediaFileManager(
         }
     }
 
-    private fun mimeTypeToExtension(mimeType: String): String = when {
-        mimeType.contains("png") -> ".png"
-        mimeType.contains("webp") -> ".webp"
-        mimeType.contains("gif") -> ".gif"
-        mimeType.contains("bmp") -> ".bmp"
-        mimeType.contains("heic") -> ".heic"
-        mimeType.contains("heif") -> ".heif"
-        else -> ".jpg"
+    private fun mimeTypeToExtension(mimeType: String): String {
+        val mt = mimeType.lowercase()
+        return when {
+            mt.contains("png") -> ".png"
+            mt.contains("webp") -> ".webp"
+            mt.contains("gif") -> ".gif"
+            mt.contains("bmp") -> ".bmp"
+            mt.contains("heic") -> ".heic"
+            mt.contains("heif") -> ".heif"
+            else -> ".jpg"
+        }
     }
 }
