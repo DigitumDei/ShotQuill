@@ -18,7 +18,7 @@ class MediaFileManager(
         val mimeType = contentResolver.getType(contentUri) ?: guessMimeType(displayName)
         val extension = mimeTypeToExtension(mimeType)
         val fileName = "img_${now}_gallery$extension"
-        val destDir = File(filesDir, "gallery_imports").also { it.mkdirs() }
+        val destDir = File(filesDir, "media/originals/gallery").also { it.mkdirs() }
         val destFile = File(destDir, fileName)
 
         contentResolver.openInputStream(contentUri)?.use { input ->
@@ -52,7 +52,7 @@ class MediaFileManager(
 
     fun createCameraCaptureFile(): File {
         val now = System.currentTimeMillis()
-        val dir = File(filesDir, "camera_captures").also { it.mkdirs() }
+        val dir = File(filesDir, "media/originals/camera").also { it.mkdirs() }
         return File(dir, "img_${now}_camera.jpg")
     }
 

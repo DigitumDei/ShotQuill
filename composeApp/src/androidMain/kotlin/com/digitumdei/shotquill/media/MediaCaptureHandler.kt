@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,7 +71,7 @@ fun rememberMediaCaptureHandler(
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
             runCatching {
@@ -91,7 +92,7 @@ fun rememberMediaCaptureHandler(
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             },
             launchGallery = {
-                galleryLauncher.launch("image/*")
+                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
         )
     }
