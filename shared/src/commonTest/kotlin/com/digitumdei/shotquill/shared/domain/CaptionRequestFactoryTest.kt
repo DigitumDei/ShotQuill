@@ -5,6 +5,7 @@ import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -69,6 +70,40 @@ class CaptionRequestFactoryTest {
 
         assertTrue(prompt.contains("Brand name: Copper Trail"))
         assertTrue(prompt.contains("Default tone: Friendly and crisp"))
+    }
+
+    @Test
+    fun omitsOptionalBrandFieldsWhenTheyAreMissing() {
+        val settingsRepository = InMemoryLocalSettingsRepository()
+        val profileRepository = InMemoryBrandProfileRepository()
+        val store = ActiveBrandProfileStore(settingsRepository, profileRepository)
+        store.saveActiveBrandProfile(
+            sampleProfile().copy(
+                audience = null,
+                defaultHashtags = emptyList(),
+                websiteOrSocialLinks = emptyList(),
+                visualStyleNotes = null,
+                productNamingNotes = null,
+            ),
+        )
+        val factory = CaptionRequestFactory(store)
+
+        val request = factory.createCaptionRequest(
+            id = CaptionRequestId("caption-request-2"),
+            draftId = PostDraftId("draft-1"),
+            targetPlatform = TargetPlatform.InstagramStory,
+            photoDescription = "A clean product shot.",
+            createdAtEpochMillis = 1_700_000_000_000L,
+        )
+        val altTextPrompt = factory.buildAltTextPrompt("A clean product shot.")
+
+        assertTrue(request.prompt.contains("Brand name: Copper Trail"))
+        assertTrue(altTextPrompt.contains("Brand name: Copper Trail"))
+        assertFalse(request.prompt.contains("Short description:"))
+        assertFalse(request.prompt.contains("Default hashtags:"))
+        assertFalse(request.prompt.contains("Website/social links:"))
+        assertFalse(request.prompt.contains("Visual style notes:"))
+        assertFalse(request.prompt.contains("Product or beer naming notes:"))
     }
 
     private fun sampleProfile(): BrandProfile =
