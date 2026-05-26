@@ -91,7 +91,7 @@ class CaptionRequestFactoryTest {
         val request = factory.createCaptionRequest(
             id = CaptionRequestId("caption-request-2"),
             draftId = PostDraftId("draft-1"),
-            targetPlatform = TargetPlatform.InstagramStory,
+            targetPlatform = TargetPlatform.InstagramStoryReel,
             photoDescription = "A clean product shot.",
             createdAtEpochMillis = 1_700_000_000_000L,
         )
