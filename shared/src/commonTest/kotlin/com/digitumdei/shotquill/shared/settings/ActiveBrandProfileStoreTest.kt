@@ -44,6 +44,20 @@ class ActiveBrandProfileStoreTest {
         assertNull(store.readActiveBrandProfile())
     }
 
+    @Test
+    fun clearsActiveBrandProfileWithoutDeletingSavedProfile() {
+        val settingsRepository = InMemoryLocalSettingsRepository()
+        val profileRepository = InMemoryBrandProfileRepository()
+        val store = ActiveBrandProfileStore(settingsRepository, profileRepository)
+
+        store.saveActiveBrandProfile(sampleProfile())
+        store.clearActiveBrandProfile()
+
+        assertNull(store.readActiveBrandProfile())
+        assertNull(settingsRepository.readSettings().activeBrandProfileId)
+        assertEquals("Brand brand-1", profileRepository.get(BrandProfileId("brand-1"))?.displayName)
+    }
+
     private fun sampleProfile(id: BrandProfileId = BrandProfileId("brand-1")): BrandProfile =
         BrandProfile(
             id = id,
