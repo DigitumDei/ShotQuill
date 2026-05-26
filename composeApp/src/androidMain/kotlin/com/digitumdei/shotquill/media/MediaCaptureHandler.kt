@@ -33,23 +33,6 @@ fun rememberMediaCaptureHandler(
 ): MediaCaptureHandler {
     var cameraRef by remember { mutableStateOf<CameraCaptureRef?>(null) }
 
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            val file = mediaFileManager.createCameraCaptureFile()
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file,
-            )
-            cameraRef = CameraCaptureRef(file, uri)
-            cameraLauncher.launch(uri)
-        } else {
-            onError("Camera permission denied")
-        }
-    }
-
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
     ) { success ->
@@ -66,6 +49,23 @@ fun rememberMediaCaptureHandler(
             }
         } else {
             onError("Camera capture cancelled")
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            val file = mediaFileManager.createCameraCaptureFile()
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file,
+            )
+            cameraRef = CameraCaptureRef(file, uri)
+            cameraLauncher.launch(uri)
+        } else {
+            onError("Camera permission denied")
         }
     }
 

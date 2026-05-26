@@ -32,6 +32,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtime.ktx)
+            implementation(libs.sqldelight.android.driver)
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)
