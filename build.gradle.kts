@@ -21,11 +21,12 @@ kover {
                     "*ComposableSingletons*",
                     "*_PreviewKt*",
                     "com.digitumdei.shotquill.AppKt*",
+                    "com.digitumdei.shotquill.AppScreen",
                     "*MainActivity*",
                     "*AndroidBrandProfileRepositoryFactory*",
                     "*EpochClock*",
-                    "com.digitumdei.shotquill.media.MediaFileManager*",
-                    "com.digitumdei.shotquill.media.MediaCaptureHandler*",
+                    "com.digitumdei.shotquill.media.*",
+                    "com.digitumdei.shotquill.screen.*",
                     "com.digitumdei.shotquill.shared.db.*",
                 )
             }
