@@ -26,6 +26,7 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.androidx.security.crypto)
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)

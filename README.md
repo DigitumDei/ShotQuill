@@ -68,3 +68,12 @@ Reports are written to:
 
 - `build/reports/kover/html/index.html` (human-readable)
 - `build/reports/kover/report.xml` (machine-readable, for coverage badges/tools)
+
+## Local settings
+
+ShotQuill stores non-secret local settings behind the shared
+`LocalSettingsRepository` abstraction. The bring-your-own-key OpenAI API key is
+kept separately on Android with `EncryptedSharedPreferences`, using an Android
+Keystore-backed `MasterKey`. The key is never returned to the UI for display;
+settings screens only show whether a key is configured and allow saving or
+clearing it.

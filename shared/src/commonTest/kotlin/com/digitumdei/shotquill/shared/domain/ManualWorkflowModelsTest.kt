@@ -57,7 +57,7 @@ class ManualWorkflowModelsTest {
         val request = sampleCaptionRequest()
 
         assertEquals(captionRequestId, request.id)
-        assertEquals(TargetPlatform.Instagram, request.targetPlatform)
+        assertEquals(TargetPlatform.InstagramFeedSquare, request.targetPlatform)
         assertEquals(brandProfileId, request.brandProfileId)
     }
 
@@ -67,7 +67,7 @@ class ManualWorkflowModelsTest {
             id = CaptionResultId("caption-result-1"),
             requestId = captionRequestId,
             draftId = draftId,
-            targetPlatform = TargetPlatform.Instagram,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
             caption = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
             modelName = "caption-model",
@@ -146,7 +146,7 @@ class ManualWorkflowModelsTest {
         val record = ExportRecord(
             id = ExportRecordId("export-1"),
             draftId = draftId,
-            targetPlatform = TargetPlatform.LinkedIn,
+            targetPlatform = TargetPlatform.BlueskyPost,
             status = ExportStatus.Exported,
             destinationUri = "content://share/export-1",
             errorMessage = null,
@@ -154,7 +154,7 @@ class ManualWorkflowModelsTest {
             completedAtEpochMillis = updatedAt,
         )
 
-        assertEquals(TargetPlatform.LinkedIn, record.targetPlatform)
+        assertEquals(TargetPlatform.BlueskyPost, record.targetPlatform)
         assertEquals(ExportStatus.Exported, record.status)
         assertEquals(updatedAt, record.completedAtEpochMillis)
     }
@@ -169,7 +169,7 @@ class ManualWorkflowModelsTest {
         assertEquals(mediaAssetId, draft.mediaItems.single().mediaAsset.id)
         assertEquals(0, draft.mediaItems.single().order)
         assertEquals("Morning focus, freshly brewed.", draft.caption?.text)
-        assertEquals(setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn), draft.targetPlatforms)
+        assertEquals(setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost), draft.targetPlatforms)
         assertTrue(draft.captionRequests.isNotEmpty())
         assertTrue(draft.photoEditRequests.isNotEmpty())
     }
@@ -286,7 +286,7 @@ class ManualWorkflowModelsTest {
             ExportRecord(
                 id = ExportRecordId("export-1"),
                 draftId = draftId,
-                targetPlatform = TargetPlatform.LinkedIn,
+                targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Exported,
                 destinationUri = "content://share/export-1",
                 errorMessage = null,
@@ -334,13 +334,55 @@ class ManualWorkflowModelsTest {
     @Test
     fun mapsEnumsToAndFromWireValues() {
         assertEquals(DraftStatus.ReadyToShare, DraftStatus.fromWireValue("ready_to_share"))
-        assertEquals(TargetPlatform.Threads, TargetPlatform.fromWireValue("threads"))
+        assertEquals(TargetPlatform.Original, TargetPlatform.fromWireValue("original"))
         assertEquals(MediaType.EditedPhoto, MediaType.fromWireValue("edited_photo"))
         assertEquals(EditIntent.RemoveBackground, EditIntent.fromWireValue("remove_background"))
         assertEquals(RealismLevel.Polished, RealismLevel.fromWireValue("polished"))
         assertEquals(QualityTier.Standard, QualityTier.fromWireValue("standard"))
         assertEquals(AiOperationType.AltTextGeneration, AiOperationType.fromWireValue("alt_text_generation"))
         assertEquals(ExportStatus.Cancelled, ExportStatus.fromWireValue("cancelled"))
+    }
+
+    @Test
+    fun targetPlatformMembersAndWireValuesRemainStable() {
+        assertEquals(
+            listOf(
+                "InstagramFeedSquare" to "instagram_feed_square",
+                "InstagramPortrait" to "instagram_portrait",
+                "InstagramStoryReel" to "instagram_story_reel",
+                "FacebookPost" to "facebook_post",
+                "BlueskyPost" to "bluesky_post",
+                "Original" to "original",
+            ),
+            TargetPlatform.entries.map { it.name to it.wireValue },
+        )
+    }
+
+    @Test
+    fun realismLevelMembersAndWireValuesRemainStable() {
+        assertEquals(
+            listOf(
+                "Photoreal" to "photoreal",
+                "Polished" to "polished",
+                "Stylized" to "stylized",
+            ),
+            RealismLevel.entries.map { it.name to it.wireValue },
+        )
+        assertTrue(RealismLevel.Photoreal.promptIntent.contains("realism"))
+    }
+
+    @Test
+    fun qualityTierMembersAndWireValuesRemainStable() {
+        assertEquals(
+            listOf(
+                "Draft" to "draft",
+                "Standard" to "standard",
+                "High" to "high",
+            ),
+            QualityTier.entries.map { it.name to it.wireValue },
+        )
+        assertTrue(QualityTier.High.modelMappingNote.contains("AI provider"))
+        assertTrue(QualityTier.High.costNote.contains("Highest"))
     }
 
     @Test
@@ -410,7 +452,7 @@ class ManualWorkflowModelsTest {
             text = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
         ),
-        targetPlatforms = setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn),
+        targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
         visionDescription = null,
         captionRequests = listOf(sampleCaptionRequest()),
@@ -454,7 +496,7 @@ class ManualWorkflowModelsTest {
     private fun sampleCaptionRequest(): CaptionRequest = CaptionRequest(
         id = captionRequestId,
         draftId = draftId,
-        targetPlatform = TargetPlatform.Instagram,
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
         prompt = "Write a caption for this image.",
         tone = "Friendly",
         brandProfileId = brandProfileId,
@@ -466,7 +508,7 @@ class ManualWorkflowModelsTest {
         draftId = draftId,
         sourceMediaAssetId = mediaAssetId,
         intent = EditIntent.ColorCorrect,
-        realismLevel = RealismLevel.Natural,
+        realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",
         createdAtEpochMillis = createdAt,

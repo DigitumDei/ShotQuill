@@ -36,6 +36,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -110,7 +111,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val stored = repository.get(PostDraftId("draft-1"))
         assertEquals(DraftStatus.ReadyToShare, stored?.status)
         assertEquals(Instant.fromEpochMilliseconds(updatedAt), stored?.updatedAt)
-        assertEquals(setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn), stored?.targetPlatforms)
+        assertEquals(setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost), stored?.targetPlatforms)
         driver.close()
     }
 
@@ -233,7 +234,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val mappedCaptionRequest = ManualWorkflowStorageMapper.captionRequest(
             requestId = "caption-request-1",
             draftId = "draft-1",
-            targetPlatform = "instagram",
+            targetPlatform = "instagram_feed_square",
             prompt = "Write a caption.",
             tone = "Warm",
             brandProfileId = "brand-1",
@@ -251,7 +252,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             resultId = "caption-result-1",
             requestId = "caption-request-1",
             draftId = "draft-1",
-            targetPlatform = "instagram",
+            targetPlatform = "instagram_feed_square",
             caption = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
             modelName = "caption-model",
@@ -270,7 +271,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             draftId = "draft-1",
             sourceMediaAssetId = "media-1",
             intent = "color_correct",
-            realismLevel = "natural",
+            realismLevel = "photoreal",
             qualityTier = "high",
             prompt = "Make the image brighter while keeping it realistic.",
             createdAt = createdAt,
@@ -294,25 +295,25 @@ class SqlDelightManualWorkflowRepositoryTest {
             entryId = "prompt-1",
             draftId = "draft-1",
             operationType = "caption_generation",
-            prompt = "Write a concise caption.",
-            responseSummary = "Generated one caption.",
+            prompt = "Write a concise caption with sk-live_abcdefghi123456.",
+            responseSummary = "Generated with sk-live_abcdefghi123456.",
             modelName = "caption-model",
             createdAt = createdAt,
         )
         val mappedExport = ManualWorkflowStorageMapper.exportRecord(
             recordId = "export-1",
             draftId = "draft-1",
-            targetPlatform = "linkedin",
+            targetPlatform = "bluesky_post",
             status = "exported",
             destinationUri = "content://export",
-            errorMessage = null,
+            errorMessage = "Export failed after sk-live_abcdefghi123456.",
             createdAt = createdAt,
             completedAt = updatedAt,
         )
 
         assertEquals(sampleMediaAsset(), mappedMedia)
         assertEquals(CaptionRequestId("caption-request-1"), mappedCaptionRequest.id)
-        assertEquals(TargetPlatform.Instagram, mappedCaptionRequest.targetPlatform)
+        assertEquals(TargetPlatform.InstagramFeedSquare, mappedCaptionRequest.targetPlatform)
         assertEquals(VisionDescriptionId("vision-1"), mappedVision.id)
         assertEquals(sampleCaptionResult(), mappedCaptionResult)
         assertEquals(AltTextResultId("alt-text-1"), mappedAltText.id)
@@ -321,8 +322,11 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(MediaType.EditedPhoto, mappedPhotoEditResult.editedMediaAsset.type)
         assertEquals(PromptHistoryEntryId("prompt-1"), mappedPrompt.id)
         assertEquals(AiOperationType.CaptionGeneration, mappedPrompt.operationType)
+        assertEquals("Write a concise caption with ${SecretRedactor.Redacted}.", mappedPrompt.prompt)
+        assertEquals("Generated with ${SecretRedactor.Redacted}.", mappedPrompt.responseSummary)
         assertEquals(ExportStatus.Exported, mappedExport.status)
-        assertEquals(TargetPlatform.LinkedIn, mappedExport.targetPlatform)
+        assertEquals(TargetPlatform.BlueskyPost, mappedExport.targetPlatform)
+        assertEquals("Export failed after ${SecretRedactor.Redacted}.", mappedExport.errorMessage)
     }
 
     @Test
@@ -400,7 +404,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             ExportRecord(
                 id = ExportRecordId("export-1"),
                 draftId = PostDraftId("draft-1"),
-                targetPlatform = TargetPlatform.LinkedIn,
+                targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Failed,
                 destinationUri = null,
                 errorMessage = "Share target unavailable.",
@@ -425,6 +429,44 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun redactsOpenAiApiKeysWhenSavingPromptHistoryAndExportErrors() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-1"),
+                draftId = PostDraftId("draft-1"),
+                operationType = AiOperationType.CaptionGeneration,
+                prompt = "Use sk-live_abcdefghi123456 in prompt.",
+                responseSummary = "Model returned sk-live_abcdefghi123456.",
+                modelName = "caption-model",
+                createdAtEpochMillis = createdAt,
+            ),
+        )
+        repository.saveExportRecord(
+            ExportRecord(
+                id = ExportRecordId("export-1"),
+                draftId = PostDraftId("draft-1"),
+                targetPlatform = TargetPlatform.BlueskyPost,
+                status = ExportStatus.Failed,
+                destinationUri = null,
+                errorMessage = "Failed with sk-live_abcdefghi123456.",
+                createdAtEpochMillis = createdAt,
+                completedAtEpochMillis = null,
+            ),
+        )
+
+        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-1"))
+        val storedExport = repository.get(ExportRecordId("export-1"))
+        assertEquals("Use ${SecretRedactor.Redacted} in prompt.", storedPrompt?.prompt)
+        assertEquals("Model returned ${SecretRedactor.Redacted}.", storedPrompt?.responseSummary)
+        assertEquals("Failed with ${SecretRedactor.Redacted}.", storedExport?.errorMessage)
+        driver.close()
+    }
+
+    @Test
     fun hasMigrationScaffoldForVersionOne() {
         assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
     }
@@ -443,7 +485,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             text = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
         ),
-        targetPlatforms = setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn),
+        targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
         visionDescription = VisionDescription(
             id = VisionDescriptionId("vision-1"),
@@ -496,7 +538,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             ExportRecord(
                 id = ExportRecordId("export-1"),
                 draftId = PostDraftId("draft-1"),
-                targetPlatform = TargetPlatform.LinkedIn,
+                targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Exported,
                 destinationUri = "content://share/export-1",
                 errorMessage = null,
@@ -538,7 +580,7 @@ class SqlDelightManualWorkflowRepositoryTest {
     private fun sampleCaptionRequest(): CaptionRequest = CaptionRequest(
         id = CaptionRequestId("caption-request-1"),
         draftId = PostDraftId("draft-1"),
-        targetPlatform = TargetPlatform.Instagram,
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
         prompt = "Write a caption for this image.",
         tone = "Friendly",
         brandProfileId = BrandProfileId("brand-1"),
@@ -549,7 +591,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         id = CaptionResultId("caption-result-1"),
         requestId = CaptionRequestId("caption-request-1"),
         draftId = PostDraftId("draft-1"),
-        targetPlatform = TargetPlatform.Instagram,
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
         caption = "Morning focus, freshly brewed.",
         hashtags = listOf("#coffee", "#work"),
         modelName = "caption-model",
@@ -561,7 +603,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         draftId = PostDraftId("draft-1"),
         sourceMediaAssetId = MediaAssetId("media-1"),
         intent = EditIntent.ColorCorrect,
-        realismLevel = RealismLevel.Natural,
+        realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",
         createdAtEpochMillis = createdAt,
