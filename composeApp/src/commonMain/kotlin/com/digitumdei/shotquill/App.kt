@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +72,10 @@ private fun SettingsScreen(
         ActiveBrandProfileStore(repository, brandProfileRepository)
     }
     var activeBrandProfile by remember(repository, brandProfileRepository) {
-        mutableStateOf(activeBrandProfileStore.readActiveBrandProfile())
+        mutableStateOf<BrandProfile?>(null)
+    }
+    LaunchedEffect(activeBrandProfileStore) {
+        activeBrandProfile = activeBrandProfileStore.readActiveBrandProfile()
     }
     var apiKeyInput by remember(repository) { mutableStateOf("") }
     var hasApiKey by remember(repository) { mutableStateOf(repository.hasOpenAiApiKey()) }
