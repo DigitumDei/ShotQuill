@@ -21,6 +21,7 @@ kover {
                     "*ComposableSingletons*",
                     "*_PreviewKt*",
                     "*MainActivity*",
+                    "com.digitumdei.shotquill.shared.db.*",
                 )
             }
         }
