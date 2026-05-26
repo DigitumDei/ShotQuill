@@ -13,7 +13,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
-import com.digitumdei.shotquill.BuildConfig
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,7 +70,7 @@ fun rememberMediaCaptureHandler(
             val file = mediaFileManager.createCameraCaptureFile()
             val uri = FileProvider.getUriForFile(
                 context,
-                "${BuildConfig.APPLICATION_ID}.fileprovider",
+                "${context.packageName}.fileprovider",
                 file,
             )
             cameraFilePath = file.absolutePath
