@@ -473,6 +473,27 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun clearsAllSavedWorkflowRecords() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        repository.clearAll()
+
+        assertNull(repository.get(MediaAssetId("media-1")))
+        assertNull(repository.get(BrandProfileId("brand-1")))
+        assertNull(repository.get(PostDraftId("draft-1")))
+        assertNull(repository.getCaptionRequest(CaptionRequestId("caption-request-1")))
+        assertNull(repository.getCaptionResult(CaptionResultId("caption-result-1")))
+        assertNull(repository.get(AltTextResultId("alt-text-1")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-1")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-1")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-1")))
+        assertNull(repository.get(ExportRecordId("export-1")))
+        driver.close()
+    }
+
+    @Test
     fun hasMigrationScaffoldForVersionOne() {
         assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
     }
