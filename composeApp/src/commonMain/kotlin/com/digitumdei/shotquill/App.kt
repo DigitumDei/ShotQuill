@@ -23,9 +23,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
+import kotlinx.coroutines.delay
 
 @Composable
 fun App(settingsRepository: LocalSettingsRepository? = null) {
@@ -55,6 +58,7 @@ fun App(settingsRepository: LocalSettingsRepository? = null) {
 @Composable
 private fun SettingsScreen(repository: LocalSettingsRepository) {
     var settings by remember(repository) { mutableStateOf(repository.readSettings()) }
+    val latestSettings by rememberUpdatedState(settings)
     var apiKeyInput by remember(repository) { mutableStateOf("") }
     var hasApiKey by remember(repository) { mutableStateOf(repository.hasOpenAiApiKey()) }
     var status by remember(repository) {
@@ -147,12 +151,22 @@ private fun SettingsScreen(repository: LocalSettingsRepository) {
             },
         )
 
-        OutlinedTextField(
-            value = settings.activeBrandProfileId?.value.orEmpty(),
-            onValueChange = { value ->
-                settings = settings.copy(activeBrandProfileId = value.trim().takeIf { it.isNotEmpty() }?.let(::BrandProfileId))
+        var brandProfileIdInput by remember(settings.activeBrandProfileId) {
+            mutableStateOf(settings.activeBrandProfileId?.value.orEmpty())
+        }
+        LaunchedEffect(repository, brandProfileIdInput) {
+            delay(500)
+            val activeBrandProfileId = brandProfileIdInput.trim()
+                .takeIf { it.isNotEmpty() }
+                ?.let(::BrandProfileId)
+            if (activeBrandProfileId != latestSettings.activeBrandProfileId) {
+                settings = latestSettings.copy(activeBrandProfileId = activeBrandProfileId)
                     .also(repository::saveSettings)
-            },
+            }
+        }
+        OutlinedTextField(
+            value = brandProfileIdInput,
+            onValueChange = { value -> brandProfileIdInput = value },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Active brand profile ID") },
             singleLine = true,

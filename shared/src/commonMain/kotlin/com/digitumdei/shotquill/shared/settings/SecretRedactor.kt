@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.settings
 object SecretRedactor {
     const val Redacted = "[REDACTED]"
 
+    private const val MinimumKnownSecretLength = 6
     private val openAiApiKeyPattern = Regex("""sk-[A-Za-z0-9_\-]{8,}""")
 
     fun maskOpenAiApiKey(apiKey: String?): String =
@@ -15,7 +16,7 @@ object SecretRedactor {
     fun redactKnownSecrets(message: String, secrets: Iterable<String?>): String {
         val withoutKnownSecrets = secrets
             .filterNotNull()
-            .filter { it.isNotBlank() }
+            .filter { it.length >= MinimumKnownSecretLength }
             .fold(message) { redacted, secret -> redacted.replace(secret, Redacted) }
         return redactOpenAiApiKeys(withoutKnownSecrets)
     }

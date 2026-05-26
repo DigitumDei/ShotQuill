@@ -36,6 +36,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.datetime.Instant
 
 class SqlDelightManualWorkflowRepository(
@@ -377,8 +378,8 @@ class SqlDelightManualWorkflowRepository(
             id = promptHistoryEntry.id.value,
             draft_id = promptHistoryEntry.draftId.value,
             operation_type = promptHistoryEntry.operationType.wireValue,
-            prompt = promptHistoryEntry.prompt,
-            response_summary = promptHistoryEntry.responseSummary,
+            prompt = SecretRedactor.redactOpenAiApiKeys(promptHistoryEntry.prompt),
+            response_summary = promptHistoryEntry.responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
             model_name = promptHistoryEntry.modelName,
             created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
         )
@@ -400,7 +401,7 @@ class SqlDelightManualWorkflowRepository(
             target_platform = exportRecord.targetPlatform.wireValue,
             status = exportRecord.status.wireValue,
             destination_uri = exportRecord.destinationUri,
-            error_message = exportRecord.errorMessage,
+            error_message = exportRecord.errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
             created_at_epoch_millis = exportRecord.createdAtEpochMillis,
             completed_at_epoch_millis = exportRecord.completedAtEpochMillis,
         )
@@ -830,8 +831,8 @@ internal object ManualWorkflowStorageMapper {
         id = PromptHistoryEntryId(entryId),
         draftId = PostDraftId(draftId),
         operationType = enumFromWire(operationType, AiOperationType::fromWireValue),
-        prompt = prompt,
-        responseSummary = responseSummary,
+        prompt = SecretRedactor.redactOpenAiApiKeys(prompt),
+        responseSummary = responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
         modelName = modelName,
         createdAtEpochMillis = createdAt,
     )
@@ -851,7 +852,7 @@ internal object ManualWorkflowStorageMapper {
         targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
         status = enumFromWire(status, ExportStatus::fromWireValue),
         destinationUri = destinationUri,
-        errorMessage = errorMessage,
+        errorMessage = errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
         createdAtEpochMillis = createdAt,
         completedAtEpochMillis = completedAt,
     )

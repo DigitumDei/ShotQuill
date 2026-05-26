@@ -71,7 +71,19 @@ class AndroidLocalSettingsRepository(
         fromWireValue: (String) -> T?,
     ): T = getString(key, null)?.let(fromWireValue) ?: defaultValue
 
-    private fun createSecretPreferences(context: Context): SharedPreferences {
+    private fun createSecretPreferences(context: Context): SharedPreferences =
+        try {
+            createEncryptedSecretPreferences(context)
+        } catch (firstFailure: Exception) {
+            context.deleteSharedPreferences(SecretPreferencesName)
+            try {
+                createEncryptedSecretPreferences(context)
+            } catch (fallbackFailure: Exception) {
+                context.getSharedPreferences(SecretPreferencesName, Context.MODE_PRIVATE)
+            }
+        }
+
+    private fun createEncryptedSecretPreferences(context: Context): SharedPreferences {
         // BYOK secrets are encrypted through AndroidX Security Crypto, backed by
         // a MasterKey stored in the Android Keystore.
         val masterKey = MasterKey.Builder(context)

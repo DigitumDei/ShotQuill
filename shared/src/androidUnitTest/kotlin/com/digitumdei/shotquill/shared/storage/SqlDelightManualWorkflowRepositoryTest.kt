@@ -36,6 +36,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -294,8 +295,8 @@ class SqlDelightManualWorkflowRepositoryTest {
             entryId = "prompt-1",
             draftId = "draft-1",
             operationType = "caption_generation",
-            prompt = "Write a concise caption.",
-            responseSummary = "Generated one caption.",
+            prompt = "Write a concise caption with sk-live_abcdefghi123456.",
+            responseSummary = "Generated with sk-live_abcdefghi123456.",
             modelName = "caption-model",
             createdAt = createdAt,
         )
@@ -305,7 +306,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             targetPlatform = "bluesky_post",
             status = "exported",
             destinationUri = "content://export",
-            errorMessage = null,
+            errorMessage = "Export failed after sk-live_abcdefghi123456.",
             createdAt = createdAt,
             completedAt = updatedAt,
         )
@@ -321,8 +322,11 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(MediaType.EditedPhoto, mappedPhotoEditResult.editedMediaAsset.type)
         assertEquals(PromptHistoryEntryId("prompt-1"), mappedPrompt.id)
         assertEquals(AiOperationType.CaptionGeneration, mappedPrompt.operationType)
+        assertEquals("Write a concise caption with ${SecretRedactor.Redacted}.", mappedPrompt.prompt)
+        assertEquals("Generated with ${SecretRedactor.Redacted}.", mappedPrompt.responseSummary)
         assertEquals(ExportStatus.Exported, mappedExport.status)
         assertEquals(TargetPlatform.BlueskyPost, mappedExport.targetPlatform)
+        assertEquals("Export failed after ${SecretRedactor.Redacted}.", mappedExport.errorMessage)
     }
 
     @Test
@@ -421,6 +425,44 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals("file://photo-edited-v2.jpg", stored.photoEditResults.single().editedMediaAsset.uri)
         assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.single().operationType)
         assertEquals(ExportStatus.Failed, stored.exportRecords.single().status)
+        driver.close()
+    }
+
+    @Test
+    fun redactsOpenAiApiKeysWhenSavingPromptHistoryAndExportErrors() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-1"),
+                draftId = PostDraftId("draft-1"),
+                operationType = AiOperationType.CaptionGeneration,
+                prompt = "Use sk-live_abcdefghi123456 in prompt.",
+                responseSummary = "Model returned sk-live_abcdefghi123456.",
+                modelName = "caption-model",
+                createdAtEpochMillis = createdAt,
+            ),
+        )
+        repository.saveExportRecord(
+            ExportRecord(
+                id = ExportRecordId("export-1"),
+                draftId = PostDraftId("draft-1"),
+                targetPlatform = TargetPlatform.BlueskyPost,
+                status = ExportStatus.Failed,
+                destinationUri = null,
+                errorMessage = "Failed with sk-live_abcdefghi123456.",
+                createdAtEpochMillis = createdAt,
+                completedAtEpochMillis = null,
+            ),
+        )
+
+        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-1"))
+        val storedExport = repository.get(ExportRecordId("export-1"))
+        assertEquals("Use ${SecretRedactor.Redacted} in prompt.", storedPrompt?.prompt)
+        assertEquals("Model returned ${SecretRedactor.Redacted}.", storedPrompt?.responseSummary)
+        assertEquals("Failed with ${SecretRedactor.Redacted}.", storedExport?.errorMessage)
         driver.close()
     }
 
