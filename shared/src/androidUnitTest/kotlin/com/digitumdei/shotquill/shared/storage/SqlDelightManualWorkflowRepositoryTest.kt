@@ -39,7 +39,10 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SqlDelightManualWorkflowRepositoryTest {
     private val createdAt = 1_700_000_000_000L
@@ -134,6 +137,191 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(PromptHistoryEntryId("prompt-1"), stored.promptHistory.single().id)
         assertEquals(ExportRecordId("export-1"), stored.exportRecords.single().id)
         driver.close()
+    }
+
+    @Test
+    fun repositoryInterfacesLoadSavedRecordsIndividually() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+
+        assertEquals(VisionDescriptionId("vision-1"), repository.get(VisionDescriptionId("vision-1"))?.id)
+        assertEquals(listOf(VisionDescriptionId("vision-1")), repository.listVisionDescriptionsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(CaptionRequestId("caption-request-1"), repository.getCaptionRequest(CaptionRequestId("caption-request-1"))?.id)
+        assertEquals(listOf(CaptionRequestId("caption-request-1")), repository.listCaptionRequestsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(CaptionResultId("caption-result-1"), repository.getCaptionResult(CaptionResultId("caption-result-1"))?.id)
+        assertEquals(listOf(CaptionResultId("caption-result-1")), repository.listCaptionResultsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(AltTextResultId("alt-text-1"), repository.get(AltTextResultId("alt-text-1"))?.id)
+        assertEquals(listOf(AltTextResultId("alt-text-1")), repository.listAltTextResultsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(PhotoEditRequestId("photo-edit-request-1"), repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-1"))?.id)
+        assertEquals(listOf(PhotoEditRequestId("photo-edit-request-1")), repository.listPhotoEditRequestsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(PhotoEditResultId("photo-edit-result-1"), repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-1"))?.id)
+        assertEquals(listOf(PhotoEditResultId("photo-edit-result-1")), repository.listPhotoEditResultsForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(PromptHistoryEntryId("prompt-1"), repository.get(PromptHistoryEntryId("prompt-1"))?.id)
+        assertEquals(listOf(PromptHistoryEntryId("prompt-1")), repository.listPromptHistoryForDraft(PostDraftId("draft-1")).map { it.id })
+        assertEquals(ExportRecordId("export-1"), repository.get(ExportRecordId("export-1"))?.id)
+        assertEquals(listOf(ExportRecordId("export-1")), repository.listExportRecordsForDraft(PostDraftId("draft-1")).map { it.id })
+        driver.close()
+    }
+
+    @Test
+    fun returnsNullOrEmptyForMissingRecords() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        assertNull(repository.get(MediaAssetId("missing-media")))
+        assertNull(repository.get(BrandProfileId("missing-brand")))
+        assertNull(repository.get(PostDraftId("missing-draft")))
+        assertNull(repository.get(VisionDescriptionId("missing-vision")))
+        assertNull(repository.getCaptionRequest(CaptionRequestId("missing-caption-request")))
+        assertNull(repository.getCaptionResult(CaptionResultId("missing-caption-result")))
+        assertNull(repository.get(AltTextResultId("missing-alt-text")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("missing-photo-edit-request")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("missing-photo-edit-result")))
+        assertNull(repository.get(PromptHistoryEntryId("missing-prompt")))
+        assertNull(repository.get(ExportRecordId("missing-export")))
+        assertEquals(emptyList(), repository.listVisionDescriptionsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listCaptionRequestsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listCaptionResultsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listAltTextResultsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listPhotoEditRequestsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listPhotoEditResultsForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listPromptHistoryForDraft(PostDraftId("missing-draft")))
+        assertEquals(emptyList(), repository.listExportRecordsForDraft(PostDraftId("missing-draft")))
+        driver.close()
+    }
+
+    @Test
+    fun updatesDraftStatusAndLinkedMediaIds() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val secondMedia = sampleMediaAsset().copy(id = MediaAssetId("media-2"), uri = "file://photo-2.jpg")
+
+        repository.save(samplePostDraft().copy(format = PostFormat.Carousel))
+        repository.save(secondMedia)
+
+        assertTrue(
+            repository.updateStatus(
+                id = PostDraftId("draft-1"),
+                status = DraftStatus.TextGenerated,
+                updatedAt = Instant.fromEpochMilliseconds(updatedAt),
+            ),
+        )
+        assertTrue(repository.replaceMediaItems(PostDraftId("draft-1"), listOf(MediaAssetId("media-2"), MediaAssetId("media-1"))))
+        assertFalse(repository.updateStatus(PostDraftId("missing-draft"), DraftStatus.TextGenerated, Instant.fromEpochMilliseconds(updatedAt)))
+        assertFalse(repository.replaceMediaItems(PostDraftId("draft-1"), listOf(MediaAssetId("missing-media"))))
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(DraftStatus.TextGenerated, stored?.status)
+        assertEquals(listOf(MediaAssetId("media-2"), MediaAssetId("media-1")), stored?.mediaItems?.map { it.mediaAsset.id })
+        driver.close()
+    }
+
+    @Test
+    fun mapsDatabaseRowsToDomainModelsExplicitly() {
+        val mappedMedia = ManualWorkflowStorageMapper.mediaAsset(
+            id = "media-1",
+            type = "photo",
+            uri = "file://photo.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080L,
+            heightPx = 1080L,
+            createdAt = createdAt,
+        )
+        val mappedCaptionRequest = ManualWorkflowStorageMapper.captionRequest(
+            requestId = "caption-request-1",
+            draftId = "draft-1",
+            targetPlatform = "instagram",
+            prompt = "Write a caption.",
+            tone = "Warm",
+            brandProfileId = "brand-1",
+            createdAt = createdAt,
+        )
+        val mappedVision = ManualWorkflowStorageMapper.visionDescription(
+            visionId = "vision-1",
+            draftId = "draft-1",
+            mediaAssetId = "media-1",
+            description = "A coffee cup on a desk near a notebook.",
+            modelName = "vision-model",
+            createdAt = createdAt,
+        )
+        val mappedCaptionResult = ManualWorkflowStorageMapper.captionResult(
+            resultId = "caption-result-1",
+            requestId = "caption-request-1",
+            draftId = "draft-1",
+            targetPlatform = "instagram",
+            caption = "Morning focus, freshly brewed.",
+            hashtags = listOf("#coffee", "#work"),
+            modelName = "caption-model",
+            createdAt = createdAt,
+        )
+        val mappedAltText = ManualWorkflowStorageMapper.altTextResult(
+            resultId = "alt-text-1",
+            draftId = "draft-1",
+            mediaAssetId = "media-1",
+            altText = "Coffee cup beside an open notebook.",
+            modelName = "alt-text-model",
+            createdAt = createdAt,
+        )
+        val mappedPhotoEditRequest = ManualWorkflowStorageMapper.photoEditRequest(
+            requestId = "photo-edit-request-1",
+            draftId = "draft-1",
+            sourceMediaAssetId = "media-1",
+            intent = "color_correct",
+            realismLevel = "natural",
+            qualityTier = "high",
+            prompt = "Make the image brighter while keeping it realistic.",
+            createdAt = createdAt,
+        )
+        val mappedPhotoEditResult = ManualWorkflowStorageMapper.photoEditResult(
+            resultId = "photo-edit-result-1",
+            requestId = "photo-edit-request-1",
+            draftId = "draft-1",
+            editedMediaAssetId = "media-edited-1",
+            summary = "Adjusted brightness and contrast.",
+            modelName = "edit-model",
+            createdAt = updatedAt,
+            type = "edited_photo",
+            uri = "file://photo-edited.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080L,
+            heightPx = 1080L,
+            mediaCreatedAt = createdAt,
+        )
+        val mappedPrompt = ManualWorkflowStorageMapper.promptHistoryEntry(
+            entryId = "prompt-1",
+            draftId = "draft-1",
+            operationType = "caption_generation",
+            prompt = "Write a concise caption.",
+            responseSummary = "Generated one caption.",
+            modelName = "caption-model",
+            createdAt = createdAt,
+        )
+        val mappedExport = ManualWorkflowStorageMapper.exportRecord(
+            recordId = "export-1",
+            draftId = "draft-1",
+            targetPlatform = "linkedin",
+            status = "exported",
+            destinationUri = "content://export",
+            errorMessage = null,
+            createdAt = createdAt,
+            completedAt = updatedAt,
+        )
+
+        assertEquals(sampleMediaAsset(), mappedMedia)
+        assertEquals(CaptionRequestId("caption-request-1"), mappedCaptionRequest.id)
+        assertEquals(TargetPlatform.Instagram, mappedCaptionRequest.targetPlatform)
+        assertEquals(VisionDescriptionId("vision-1"), mappedVision.id)
+        assertEquals(sampleCaptionResult(), mappedCaptionResult)
+        assertEquals(AltTextResultId("alt-text-1"), mappedAltText.id)
+        assertEquals(samplePhotoEditRequest(), mappedPhotoEditRequest)
+        assertEquals(PhotoEditResultId("photo-edit-result-1"), mappedPhotoEditResult.id)
+        assertEquals(MediaType.EditedPhoto, mappedPhotoEditResult.editedMediaAsset.type)
+        assertEquals(PromptHistoryEntryId("prompt-1"), mappedPrompt.id)
+        assertEquals(AiOperationType.CaptionGeneration, mappedPrompt.operationType)
+        assertEquals(ExportStatus.Exported, mappedExport.status)
+        assertEquals(TargetPlatform.LinkedIn, mappedExport.targetPlatform)
     }
 
     @Test

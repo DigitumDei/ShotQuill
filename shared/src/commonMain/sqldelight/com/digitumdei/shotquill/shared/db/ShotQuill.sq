@@ -238,6 +238,11 @@ ON CONFLICT(id) DO UPDATE SET
 selectPostDraftById:
 SELECT * FROM post_drafts WHERE id = ?;
 
+updatePostDraftStatus:
+UPDATE post_drafts
+SET status = ?, updated_at_epoch_millis = ?
+WHERE id = ?;
+
 deletePostDraftTargetPlatforms:
 DELETE FROM post_draft_target_platforms WHERE draft_id = ?;
 
@@ -300,6 +305,9 @@ SELECT * FROM vision_descriptions
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
+selectVisionDescriptionById:
+SELECT * FROM vision_descriptions WHERE id = ?;
+
 upsertCaptionRequest:
 INSERT INTO caption_requests(
   id,
@@ -326,6 +334,9 @@ SELECT * FROM caption_requests
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
+selectCaptionRequestById:
+SELECT * FROM caption_requests WHERE id = ?;
+
 upsertCaptionResult:
 INSERT INTO caption_results(
   id,
@@ -351,6 +362,9 @@ selectCaptionResultsByDraftId:
 SELECT * FROM caption_results
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
+
+selectCaptionResultById:
+SELECT * FROM caption_results WHERE id = ?;
 
 deleteCaptionResultHashtagsByDraftId:
 DELETE FROM caption_result_hashtags
@@ -394,6 +408,9 @@ SELECT * FROM alt_text_results
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
+selectAltTextResultById:
+SELECT * FROM alt_text_results WHERE id = ?;
+
 upsertPhotoEditRequest:
 INSERT INTO photo_edit_requests(
   id,
@@ -421,6 +438,9 @@ selectPhotoEditRequestsByDraftId:
 SELECT * FROM photo_edit_requests
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
+
+selectPhotoEditRequestById:
+SELECT * FROM photo_edit_requests WHERE id = ?;
 
 upsertPhotoEditResult:
 INSERT INTO photo_edit_results(
@@ -451,6 +471,13 @@ JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
 WHERE photo_edit_results.draft_id = ?
 ORDER BY photo_edit_results.created_at_epoch_millis ASC;
 
+selectPhotoEditResultById:
+SELECT photo_edit_results.*, media_assets.type, media_assets.uri, media_assets.mime_type,
+       media_assets.width_px, media_assets.height_px, media_assets.created_at_epoch_millis AS media_created_at_epoch_millis
+FROM photo_edit_results
+JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
+WHERE photo_edit_results.id = ?;
+
 upsertPromptHistoryEntry:
 INSERT INTO prompt_history_entries(
   id,
@@ -476,6 +503,9 @@ selectPromptHistoryEntriesByDraftId:
 SELECT * FROM prompt_history_entries
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
+
+selectPromptHistoryEntryById:
+SELECT * FROM prompt_history_entries WHERE id = ?;
 
 upsertExportRecord:
 INSERT INTO export_records(
@@ -504,6 +534,9 @@ selectExportRecordsByDraftId:
 SELECT * FROM export_records
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
+
+selectExportRecordById:
+SELECT * FROM export_records WHERE id = ?;
 
 deleteAllExportRecords:
 DELETE FROM export_records;
