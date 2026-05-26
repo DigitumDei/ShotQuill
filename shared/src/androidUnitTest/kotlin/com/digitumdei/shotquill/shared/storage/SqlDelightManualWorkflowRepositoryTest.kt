@@ -211,6 +211,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertTrue(repository.replaceMediaItems(PostDraftId("draft-1"), listOf(MediaAssetId("media-2"), MediaAssetId("media-1"))))
         assertFalse(repository.updateStatus(PostDraftId("missing-draft"), DraftStatus.TextGenerated, Instant.fromEpochMilliseconds(updatedAt)))
         assertFalse(repository.replaceMediaItems(PostDraftId("draft-1"), listOf(MediaAssetId("missing-media"))))
+        assertFalse(repository.replaceMediaItems(PostDraftId("draft-1"), listOf(MediaAssetId("media-1"), MediaAssetId("media-1"))))
 
         val stored = repository.get(PostDraftId("draft-1"))
         assertEquals(DraftStatus.TextGenerated, stored?.status)

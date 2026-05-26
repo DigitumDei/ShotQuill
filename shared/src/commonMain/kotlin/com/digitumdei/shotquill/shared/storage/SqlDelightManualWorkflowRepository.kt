@@ -207,6 +207,9 @@ class SqlDelightManualWorkflowRepository(
         if (mediaItems.isEmpty() || queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) {
             return false
         }
+        if (mediaItems.size != mediaItems.distinct().size) {
+            return false
+        }
         if (mediaItems.any { selectMediaAsset(it) == null }) {
             return false
         }
@@ -291,27 +294,11 @@ class SqlDelightManualWorkflowRepository(
         }
     }
 
-    override fun getCaptionResult(id: CaptionResultId): CaptionResult? =
-        queries.selectCaptionResultById(id.value) {
-                resultId,
-                requestId,
-                draftId,
-                targetPlatform,
-                caption,
-                modelName,
-                createdAt,
-            ->
-            ManualWorkflowStorageMapper.captionResult(
-                resultId = resultId,
-                requestId = requestId,
-                draftId = draftId,
-                targetPlatform = targetPlatform,
-                caption = caption,
-                hashtags = queries.selectCaptionResultHashtags(resultId).executeAsList(),
-                modelName = modelName,
-                createdAt = createdAt,
-            )
-        }.executeAsOneOrNull()
+    override fun getCaptionResult(id: CaptionResultId): CaptionResult? {
+        val result = queries.selectCaptionResultById(id.value, ::captionResultWithoutHashtags).executeAsOneOrNull()
+            ?: return null
+        return result.withCaptionResultHashtags()
+    }
 
     override fun listCaptionResultsForDraft(id: PostDraftId): List<CaptionResult> = selectCaptionResults(id)
 
@@ -530,26 +517,31 @@ class SqlDelightManualWorkflowRepository(
         }.executeAsList()
 
     private fun selectCaptionResults(id: PostDraftId): List<CaptionResult> =
-        queries.selectCaptionResultsByDraftId(id.value) {
-                resultId,
-                requestId,
-                draftId,
-                targetPlatform,
-                caption,
-                modelName,
-                createdAt,
-            ->
-            ManualWorkflowStorageMapper.captionResult(
-                resultId = resultId,
-                requestId = requestId,
-                draftId = draftId,
-                targetPlatform = targetPlatform,
-                caption = caption,
-                hashtags = queries.selectCaptionResultHashtags(resultId).executeAsList(),
-                modelName = modelName,
-                createdAt = createdAt,
-            )
-        }.executeAsList()
+        queries.selectCaptionResultsByDraftId(id.value, ::captionResultWithoutHashtags)
+            .executeAsList()
+            .map { it.withCaptionResultHashtags() }
+
+    private fun captionResultWithoutHashtags(
+        resultId: String,
+        requestId: String,
+        draftId: String,
+        targetPlatform: String,
+        caption: String,
+        modelName: String?,
+        createdAt: Long,
+    ): CaptionResult = ManualWorkflowStorageMapper.captionResult(
+        resultId = resultId,
+        requestId = requestId,
+        draftId = draftId,
+        targetPlatform = targetPlatform,
+        caption = caption,
+        hashtags = emptyList(),
+        modelName = modelName,
+        createdAt = createdAt,
+    )
+
+    private fun CaptionResult.withCaptionResultHashtags(): CaptionResult =
+        copy(hashtags = queries.selectCaptionResultHashtags(id.value).executeAsList())
 
     private fun selectAltTextResults(id: PostDraftId): List<AltTextResult> =
         queries.selectAltTextResultsByDraftId(id.value) {
