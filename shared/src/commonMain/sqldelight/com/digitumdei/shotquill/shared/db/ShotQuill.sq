@@ -151,8 +151,8 @@ CREATE TABLE export_records (
   completed_at_epoch_millis INTEGER
 );
 
-insertMediaAsset:
-INSERT OR IGNORE INTO media_assets(
+upsertMediaAsset:
+INSERT INTO media_assets(
   id,
   type,
   uri,
@@ -160,39 +160,33 @@ INSERT OR IGNORE INTO media_assets(
   width_px,
   height_px,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updateMediaAsset:
-UPDATE media_assets
-SET type = ?,
-    uri = ?,
-    mime_type = ?,
-    width_px = ?,
-    height_px = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  type = excluded.type,
+  uri = excluded.uri,
+  mime_type = excluded.mime_type,
+  width_px = excluded.width_px,
+  height_px = excluded.height_px,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 selectMediaAssetById:
 SELECT * FROM media_assets WHERE id = ?;
 
-insertBrandProfile:
-INSERT OR IGNORE INTO brand_profiles(
+upsertBrandProfile:
+INSERT INTO brand_profiles(
   id,
   display_name,
   voice,
   audience,
   created_at_epoch_millis,
   updated_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?);
-
-updateBrandProfile:
-UPDATE brand_profiles
-SET display_name = ?,
-    voice = ?,
-    audience = ?,
-    created_at_epoch_millis = ?,
-    updated_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  display_name = excluded.display_name,
+  voice = excluded.voice,
+  audience = excluded.audience,
+  created_at_epoch_millis = excluded.created_at_epoch_millis,
+  updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
 selectBrandProfileById:
 SELECT * FROM brand_profiles WHERE id = ?;
@@ -223,8 +217,8 @@ JOIN media_assets ON media_assets.id = brand_image_assets.media_asset_id
 WHERE brand_image_assets.profile_id = ?
 ORDER BY brand_image_assets.asset_order ASC;
 
-insertPostDraft:
-INSERT OR IGNORE INTO post_drafts(
+upsertPostDraft:
+INSERT INTO post_drafts(
   id,
   format,
   status,
@@ -232,17 +226,14 @@ INSERT OR IGNORE INTO post_drafts(
   brand_profile_id,
   created_at_epoch_millis,
   updated_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updatePostDraft:
-UPDATE post_drafts
-SET format = ?,
-    status = ?,
-    caption_text = ?,
-    brand_profile_id = ?,
-    created_at_epoch_millis = ?,
-    updated_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  format = excluded.format,
+  status = excluded.status,
+  caption_text = excluded.caption_text,
+  brand_profile_id = excluded.brand_profile_id,
+  created_at_epoch_millis = excluded.created_at_epoch_millis,
+  updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
 selectPostDraftById:
 SELECT * FROM post_drafts WHERE id = ?;
@@ -285,24 +276,21 @@ SELECT hashtag FROM post_draft_caption_hashtags
 WHERE draft_id = ?
 ORDER BY hashtag_order ASC;
 
-insertVisionDescription:
-INSERT OR IGNORE INTO vision_descriptions(
+upsertVisionDescription:
+INSERT INTO vision_descriptions(
   id,
   draft_id,
   media_asset_id,
   description,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?);
-
-updateVisionDescription:
-UPDATE vision_descriptions
-SET draft_id = ?,
-    media_asset_id = ?,
-    description = ?,
-    model_name = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  media_asset_id = excluded.media_asset_id,
+  description = excluded.description,
+  model_name = excluded.model_name,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deleteVisionDescriptionsByDraftId:
 DELETE FROM vision_descriptions WHERE draft_id = ?;
@@ -312,8 +300,8 @@ SELECT * FROM vision_descriptions
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
-insertCaptionRequest:
-INSERT OR IGNORE INTO caption_requests(
+upsertCaptionRequest:
+INSERT INTO caption_requests(
   id,
   draft_id,
   target_platform,
@@ -321,17 +309,14 @@ INSERT OR IGNORE INTO caption_requests(
   tone,
   brand_profile_id,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updateCaptionRequest:
-UPDATE caption_requests
-SET draft_id = ?,
-    target_platform = ?,
-    prompt = ?,
-    tone = ?,
-    brand_profile_id = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  target_platform = excluded.target_platform,
+  prompt = excluded.prompt,
+  tone = excluded.tone,
+  brand_profile_id = excluded.brand_profile_id,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deleteCaptionRequestsByDraftId:
 DELETE FROM caption_requests WHERE draft_id = ?;
@@ -341,8 +326,8 @@ SELECT * FROM caption_requests
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
-insertCaptionResult:
-INSERT OR IGNORE INTO caption_results(
+upsertCaptionResult:
+INSERT INTO caption_results(
   id,
   request_id,
   draft_id,
@@ -350,17 +335,14 @@ INSERT OR IGNORE INTO caption_results(
   caption,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updateCaptionResult:
-UPDATE caption_results
-SET request_id = ?,
-    draft_id = ?,
-    target_platform = ?,
-    caption = ?,
-    model_name = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  request_id = excluded.request_id,
+  draft_id = excluded.draft_id,
+  target_platform = excluded.target_platform,
+  caption = excluded.caption,
+  model_name = excluded.model_name,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deleteCaptionResultsByDraftId:
 DELETE FROM caption_results WHERE draft_id = ?;
@@ -388,24 +370,21 @@ SELECT hashtag FROM caption_result_hashtags
 WHERE result_id = ?
 ORDER BY hashtag_order ASC;
 
-insertAltTextResult:
-INSERT OR IGNORE INTO alt_text_results(
+upsertAltTextResult:
+INSERT INTO alt_text_results(
   id,
   draft_id,
   media_asset_id,
   alt_text,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?);
-
-updateAltTextResult:
-UPDATE alt_text_results
-SET draft_id = ?,
-    media_asset_id = ?,
-    alt_text = ?,
-    model_name = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  media_asset_id = excluded.media_asset_id,
+  alt_text = excluded.alt_text,
+  model_name = excluded.model_name,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deleteAltTextResultsByDraftId:
 DELETE FROM alt_text_results WHERE draft_id = ?;
@@ -415,8 +394,8 @@ SELECT * FROM alt_text_results
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
-insertPhotoEditRequest:
-INSERT OR IGNORE INTO photo_edit_requests(
+upsertPhotoEditRequest:
+INSERT INTO photo_edit_requests(
   id,
   draft_id,
   source_media_asset_id,
@@ -425,18 +404,15 @@ INSERT OR IGNORE INTO photo_edit_requests(
   quality_tier,
   prompt,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-updatePhotoEditRequest:
-UPDATE photo_edit_requests
-SET draft_id = ?,
-    source_media_asset_id = ?,
-    intent = ?,
-    realism_level = ?,
-    quality_tier = ?,
-    prompt = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  source_media_asset_id = excluded.source_media_asset_id,
+  intent = excluded.intent,
+  realism_level = excluded.realism_level,
+  quality_tier = excluded.quality_tier,
+  prompt = excluded.prompt,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deletePhotoEditRequestsByDraftId:
 DELETE FROM photo_edit_requests WHERE draft_id = ?;
@@ -446,8 +422,8 @@ SELECT * FROM photo_edit_requests
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
-insertPhotoEditResult:
-INSERT OR IGNORE INTO photo_edit_results(
+upsertPhotoEditResult:
+INSERT INTO photo_edit_results(
   id,
   request_id,
   draft_id,
@@ -455,17 +431,14 @@ INSERT OR IGNORE INTO photo_edit_results(
   summary,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updatePhotoEditResult:
-UPDATE photo_edit_results
-SET request_id = ?,
-    draft_id = ?,
-    edited_media_asset_id = ?,
-    summary = ?,
-    model_name = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  request_id = excluded.request_id,
+  draft_id = excluded.draft_id,
+  edited_media_asset_id = excluded.edited_media_asset_id,
+  summary = excluded.summary,
+  model_name = excluded.model_name,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deletePhotoEditResultsByDraftId:
 DELETE FROM photo_edit_results WHERE draft_id = ?;
@@ -478,8 +451,8 @@ JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
 WHERE photo_edit_results.draft_id = ?
 ORDER BY photo_edit_results.created_at_epoch_millis ASC;
 
-insertPromptHistoryEntry:
-INSERT OR IGNORE INTO prompt_history_entries(
+upsertPromptHistoryEntry:
+INSERT INTO prompt_history_entries(
   id,
   draft_id,
   operation_type,
@@ -487,17 +460,14 @@ INSERT OR IGNORE INTO prompt_history_entries(
   response_summary,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?);
-
-updatePromptHistoryEntry:
-UPDATE prompt_history_entries
-SET draft_id = ?,
-    operation_type = ?,
-    prompt = ?,
-    response_summary = ?,
-    model_name = ?,
-    created_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  operation_type = excluded.operation_type,
+  prompt = excluded.prompt,
+  response_summary = excluded.response_summary,
+  model_name = excluded.model_name,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deletePromptHistoryEntriesByDraftId:
 DELETE FROM prompt_history_entries WHERE draft_id = ?;
@@ -507,8 +477,8 @@ SELECT * FROM prompt_history_entries
 WHERE draft_id = ?
 ORDER BY created_at_epoch_millis ASC;
 
-insertExportRecord:
-INSERT OR IGNORE INTO export_records(
+upsertExportRecord:
+INSERT INTO export_records(
   id,
   draft_id,
   target_platform,
@@ -517,18 +487,15 @@ INSERT OR IGNORE INTO export_records(
   error_message,
   created_at_epoch_millis,
   completed_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-updateExportRecord:
-UPDATE export_records
-SET draft_id = ?,
-    target_platform = ?,
-    status = ?,
-    destination_uri = ?,
-    error_message = ?,
-    created_at_epoch_millis = ?,
-    completed_at_epoch_millis = ?
-WHERE id = ?;
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  target_platform = excluded.target_platform,
+  status = excluded.status,
+  destination_uri = excluded.destination_uri,
+  error_message = excluded.error_message,
+  created_at_epoch_millis = excluded.created_at_epoch_millis,
+  completed_at_epoch_millis = excluded.completed_at_epoch_millis;
 
 deleteExportRecordsByDraftId:
 DELETE FROM export_records WHERE draft_id = ?;

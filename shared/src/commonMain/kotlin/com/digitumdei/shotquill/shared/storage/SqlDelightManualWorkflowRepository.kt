@@ -45,25 +45,14 @@ class SqlDelightManualWorkflowRepository(
     private val queries = database.shotQuillQueries
 
     override fun save(mediaAsset: MediaAsset) {
-        val widthPx = mediaAsset.widthPx?.toLong()
-        val heightPx = mediaAsset.heightPx?.toLong()
-        queries.insertMediaAsset(
+        queries.upsertMediaAsset(
             id = mediaAsset.id.value,
             type = mediaAsset.type.wireValue,
             uri = mediaAsset.uri,
             mime_type = mediaAsset.mimeType,
-            width_px = widthPx,
-            height_px = heightPx,
+            width_px = mediaAsset.widthPx?.toLong(),
+            height_px = mediaAsset.heightPx?.toLong(),
             created_at_epoch_millis = mediaAsset.createdAtEpochMillis,
-        )
-        queries.updateMediaAsset(
-            type = mediaAsset.type.wireValue,
-            uri = mediaAsset.uri,
-            mime_type = mediaAsset.mimeType,
-            width_px = widthPx,
-            height_px = heightPx,
-            created_at_epoch_millis = mediaAsset.createdAtEpochMillis,
-            id = mediaAsset.id.value,
         )
     }
 
@@ -72,21 +61,13 @@ class SqlDelightManualWorkflowRepository(
     override fun save(brandProfile: BrandProfile) {
         queries.transaction {
             brandProfile.imageAssets.forEach { save(it.mediaAsset) }
-            queries.insertBrandProfile(
+            queries.upsertBrandProfile(
                 id = brandProfile.id.value,
                 display_name = brandProfile.displayName,
                 voice = brandProfile.voice,
                 audience = brandProfile.audience,
                 created_at_epoch_millis = brandProfile.createdAtEpochMillis,
                 updated_at_epoch_millis = brandProfile.updatedAtEpochMillis,
-            )
-            queries.updateBrandProfile(
-                display_name = brandProfile.displayName,
-                voice = brandProfile.voice,
-                audience = brandProfile.audience,
-                created_at_epoch_millis = brandProfile.createdAtEpochMillis,
-                updated_at_epoch_millis = brandProfile.updatedAtEpochMillis,
-                id = brandProfile.id.value,
             )
             queries.deleteBrandProfileDefaultHashtags(brandProfile.id.value)
             brandProfile.defaultHashtags.forEachIndexed { index, hashtag ->
@@ -116,7 +97,7 @@ class SqlDelightManualWorkflowRepository(
             postDraft.brandProfile?.let { save(it) }
             postDraft.mediaItems.forEach { save(it.mediaAsset) }
             postDraft.photoEditResults.forEach { save(it.editedMediaAsset) }
-            queries.insertPostDraft(
+            queries.upsertPostDraft(
                 id = postDraft.id.value,
                 format = postDraft.format.name,
                 status = postDraft.status.wireValue,
@@ -124,15 +105,6 @@ class SqlDelightManualWorkflowRepository(
                 brand_profile_id = postDraft.brandProfile?.id?.value,
                 created_at_epoch_millis = postDraft.createdAt.toEpochMilliseconds(),
                 updated_at_epoch_millis = postDraft.updatedAt.toEpochMilliseconds(),
-            )
-            queries.updatePostDraft(
-                format = postDraft.format.name,
-                status = postDraft.status.wireValue,
-                caption_text = postDraft.caption?.text,
-                brand_profile_id = postDraft.brandProfile?.id?.value,
-                created_at_epoch_millis = postDraft.createdAt.toEpochMilliseconds(),
-                updated_at_epoch_millis = postDraft.updatedAt.toEpochMilliseconds(),
-                id = postDraft.id.value,
             )
             queries.deletePostDraftTargetPlatforms(postDraft.id.value)
             postDraft.targetPlatforms.forEach {
@@ -221,26 +193,18 @@ class SqlDelightManualWorkflowRepository(
     }
 
     override fun saveVisionDescription(visionDescription: VisionDescription) {
-        queries.insertVisionDescription(
+        queries.upsertVisionDescription(
             id = visionDescription.id.value,
             draft_id = visionDescription.draftId.value,
             media_asset_id = visionDescription.mediaAssetId.value,
             description = visionDescription.description,
             model_name = visionDescription.modelName,
             created_at_epoch_millis = visionDescription.createdAtEpochMillis,
-        )
-        queries.updateVisionDescription(
-            draft_id = visionDescription.draftId.value,
-            media_asset_id = visionDescription.mediaAssetId.value,
-            description = visionDescription.description,
-            model_name = visionDescription.modelName,
-            created_at_epoch_millis = visionDescription.createdAtEpochMillis,
-            id = visionDescription.id.value,
         )
     }
 
     override fun saveCaptionRequest(captionRequest: CaptionRequest) {
-        queries.insertCaptionRequest(
+        queries.upsertCaptionRequest(
             id = captionRequest.id.value,
             draft_id = captionRequest.draftId.value,
             target_platform = captionRequest.targetPlatform.wireValue,
@@ -248,21 +212,12 @@ class SqlDelightManualWorkflowRepository(
             tone = captionRequest.tone,
             brand_profile_id = captionRequest.brandProfileId?.value,
             created_at_epoch_millis = captionRequest.createdAtEpochMillis,
-        )
-        queries.updateCaptionRequest(
-            draft_id = captionRequest.draftId.value,
-            target_platform = captionRequest.targetPlatform.wireValue,
-            prompt = captionRequest.prompt,
-            tone = captionRequest.tone,
-            brand_profile_id = captionRequest.brandProfileId?.value,
-            created_at_epoch_millis = captionRequest.createdAtEpochMillis,
-            id = captionRequest.id.value,
         )
     }
 
     override fun saveCaptionResult(captionResult: CaptionResult) {
         queries.transaction {
-            queries.insertCaptionResult(
+            queries.upsertCaptionResult(
                 id = captionResult.id.value,
                 request_id = captionResult.requestId.value,
                 draft_id = captionResult.draftId.value,
@@ -270,15 +225,6 @@ class SqlDelightManualWorkflowRepository(
                 caption = captionResult.caption,
                 model_name = captionResult.modelName,
                 created_at_epoch_millis = captionResult.createdAtEpochMillis,
-            )
-            queries.updateCaptionResult(
-                request_id = captionResult.requestId.value,
-                draft_id = captionResult.draftId.value,
-                target_platform = captionResult.targetPlatform.wireValue,
-                caption = captionResult.caption,
-                model_name = captionResult.modelName,
-                created_at_epoch_millis = captionResult.createdAtEpochMillis,
-                id = captionResult.id.value,
             )
             queries.deleteCaptionResultHashtags(captionResult.id.value)
             captionResult.hashtags.forEachIndexed { index, hashtag ->
@@ -292,26 +238,18 @@ class SqlDelightManualWorkflowRepository(
     }
 
     override fun saveAltTextResult(altTextResult: AltTextResult) {
-        queries.insertAltTextResult(
+        queries.upsertAltTextResult(
             id = altTextResult.id.value,
             draft_id = altTextResult.draftId.value,
             media_asset_id = altTextResult.mediaAssetId.value,
             alt_text = altTextResult.altText,
             model_name = altTextResult.modelName,
             created_at_epoch_millis = altTextResult.createdAtEpochMillis,
-        )
-        queries.updateAltTextResult(
-            draft_id = altTextResult.draftId.value,
-            media_asset_id = altTextResult.mediaAssetId.value,
-            alt_text = altTextResult.altText,
-            model_name = altTextResult.modelName,
-            created_at_epoch_millis = altTextResult.createdAtEpochMillis,
-            id = altTextResult.id.value,
         )
     }
 
     override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {
-        queries.insertPhotoEditRequest(
+        queries.upsertPhotoEditRequest(
             id = photoEditRequest.id.value,
             draft_id = photoEditRequest.draftId.value,
             source_media_asset_id = photoEditRequest.sourceMediaAssetId.value,
@@ -320,23 +258,13 @@ class SqlDelightManualWorkflowRepository(
             quality_tier = photoEditRequest.qualityTier.wireValue,
             prompt = photoEditRequest.prompt,
             created_at_epoch_millis = photoEditRequest.createdAtEpochMillis,
-        )
-        queries.updatePhotoEditRequest(
-            draft_id = photoEditRequest.draftId.value,
-            source_media_asset_id = photoEditRequest.sourceMediaAssetId.value,
-            intent = photoEditRequest.intent.wireValue,
-            realism_level = photoEditRequest.realismLevel.wireValue,
-            quality_tier = photoEditRequest.qualityTier.wireValue,
-            prompt = photoEditRequest.prompt,
-            created_at_epoch_millis = photoEditRequest.createdAtEpochMillis,
-            id = photoEditRequest.id.value,
         )
     }
 
     override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
         queries.transaction {
             save(photoEditResult.editedMediaAsset)
-            queries.insertPhotoEditResult(
+            queries.upsertPhotoEditResult(
                 id = photoEditResult.id.value,
                 request_id = photoEditResult.requestId.value,
                 draft_id = photoEditResult.draftId.value,
@@ -344,21 +272,12 @@ class SqlDelightManualWorkflowRepository(
                 summary = photoEditResult.summary,
                 model_name = photoEditResult.modelName,
                 created_at_epoch_millis = photoEditResult.createdAtEpochMillis,
-            )
-            queries.updatePhotoEditResult(
-                request_id = photoEditResult.requestId.value,
-                draft_id = photoEditResult.draftId.value,
-                edited_media_asset_id = photoEditResult.editedMediaAsset.id.value,
-                summary = photoEditResult.summary,
-                model_name = photoEditResult.modelName,
-                created_at_epoch_millis = photoEditResult.createdAtEpochMillis,
-                id = photoEditResult.id.value,
             )
         }
     }
 
     override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
-        queries.insertPromptHistoryEntry(
+        queries.upsertPromptHistoryEntry(
             id = promptHistoryEntry.id.value,
             draft_id = promptHistoryEntry.draftId.value,
             operation_type = promptHistoryEntry.operationType.wireValue,
@@ -366,20 +285,11 @@ class SqlDelightManualWorkflowRepository(
             response_summary = promptHistoryEntry.responseSummary,
             model_name = promptHistoryEntry.modelName,
             created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
-        )
-        queries.updatePromptHistoryEntry(
-            draft_id = promptHistoryEntry.draftId.value,
-            operation_type = promptHistoryEntry.operationType.wireValue,
-            prompt = promptHistoryEntry.prompt,
-            response_summary = promptHistoryEntry.responseSummary,
-            model_name = promptHistoryEntry.modelName,
-            created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
-            id = promptHistoryEntry.id.value,
         )
     }
 
     override fun saveExportRecord(exportRecord: ExportRecord) {
-        queries.insertExportRecord(
+        queries.upsertExportRecord(
             id = exportRecord.id.value,
             draft_id = exportRecord.draftId.value,
             target_platform = exportRecord.targetPlatform.wireValue,
@@ -388,16 +298,6 @@ class SqlDelightManualWorkflowRepository(
             error_message = exportRecord.errorMessage,
             created_at_epoch_millis = exportRecord.createdAtEpochMillis,
             completed_at_epoch_millis = exportRecord.completedAtEpochMillis,
-        )
-        queries.updateExportRecord(
-            draft_id = exportRecord.draftId.value,
-            target_platform = exportRecord.targetPlatform.wireValue,
-            status = exportRecord.status.wireValue,
-            destination_uri = exportRecord.destinationUri,
-            error_message = exportRecord.errorMessage,
-            created_at_epoch_millis = exportRecord.createdAtEpochMillis,
-            completed_at_epoch_millis = exportRecord.completedAtEpochMillis,
-            id = exportRecord.id.value,
         )
     }
 

@@ -8,5 +8,15 @@ class AndroidDatabaseDriverFactory(
     private val context: Context,
 ) {
     fun create(name: String = "shotquill.db"): AndroidSqliteDriver =
-        AndroidSqliteDriver(ShotQuillDatabase.Schema, context, name)
+        AndroidSqliteDriver(
+            schema = ShotQuillDatabase.Schema,
+            context = context.applicationContext,
+            name = name,
+            callback = object : AndroidSqliteDriver.Callback(ShotQuillDatabase.Schema) {
+                override fun onConfigure(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onConfigure(db)
+                    db.setForeignKeyConstraintsEnabled(true)
+                }
+            },
+        )
 }

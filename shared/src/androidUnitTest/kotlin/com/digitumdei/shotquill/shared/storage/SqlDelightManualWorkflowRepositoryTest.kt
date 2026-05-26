@@ -137,6 +137,105 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun updatesDraftOwnedRecordsWithIndividualSaves() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        repository.saveVisionDescription(
+            VisionDescription(
+                id = VisionDescriptionId("vision-1"),
+                draftId = PostDraftId("draft-1"),
+                mediaAssetId = MediaAssetId("media-1"),
+                description = "Updated desk scene.",
+                modelName = "vision-model-v2",
+                createdAtEpochMillis = updatedAt,
+            ),
+        )
+        repository.saveCaptionRequest(
+            sampleCaptionRequest().copy(
+                prompt = "Write a sharper caption.",
+                tone = "Direct",
+            ),
+        )
+        repository.saveCaptionResult(
+            sampleCaptionResult().copy(
+                caption = "Brewed focus for the morning.",
+                hashtags = listOf("#focus"),
+                modelName = "caption-model-v2",
+            ),
+        )
+        repository.saveAltTextResult(
+            AltTextResult(
+                id = AltTextResultId("alt-text-1"),
+                draftId = PostDraftId("draft-1"),
+                mediaAssetId = MediaAssetId("media-1"),
+                altText = "Updated alt text.",
+                modelName = "alt-text-model-v2",
+                createdAtEpochMillis = updatedAt,
+            ),
+        )
+        repository.savePhotoEditRequest(
+            samplePhotoEditRequest().copy(
+                prompt = "Warm the image.",
+                qualityTier = QualityTier.Standard,
+            ),
+        )
+        repository.savePhotoEditResult(
+            PhotoEditResult(
+                id = PhotoEditResultId("photo-edit-result-1"),
+                requestId = PhotoEditRequestId("photo-edit-request-1"),
+                draftId = PostDraftId("draft-1"),
+                editedMediaAsset = sampleMediaAsset().copy(
+                    id = MediaAssetId("media-edited-1"),
+                    type = MediaType.EditedPhoto,
+                    uri = "file://photo-edited-v2.jpg",
+                ),
+                summary = "Warmer edit.",
+                modelName = "edit-model-v2",
+                createdAtEpochMillis = updatedAt,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-1"),
+                draftId = PostDraftId("draft-1"),
+                operationType = AiOperationType.PhotoEdit,
+                prompt = "Warm the photo.",
+                responseSummary = "Updated edit prompt.",
+                modelName = "edit-model-v2",
+                createdAtEpochMillis = updatedAt,
+            ),
+        )
+        repository.saveExportRecord(
+            ExportRecord(
+                id = ExportRecordId("export-1"),
+                draftId = PostDraftId("draft-1"),
+                targetPlatform = TargetPlatform.LinkedIn,
+                status = ExportStatus.Failed,
+                destinationUri = null,
+                errorMessage = "Share target unavailable.",
+                createdAtEpochMillis = createdAt,
+                completedAtEpochMillis = updatedAt,
+            ),
+        )
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        assertEquals("Updated desk scene.", stored.visionDescription?.description)
+        assertEquals("Write a sharper caption.", stored.captionRequests.single().prompt)
+        assertEquals("Brewed focus for the morning.", stored.captionResults.single().caption)
+        assertEquals(listOf("#focus"), stored.captionResults.single().hashtags)
+        assertEquals("Updated alt text.", stored.altTextResults.single().altText)
+        assertEquals(QualityTier.Standard, stored.photoEditRequests.single().qualityTier)
+        assertEquals("Warmer edit.", stored.photoEditResults.single().summary)
+        assertEquals("file://photo-edited-v2.jpg", stored.photoEditResults.single().editedMediaAsset.uri)
+        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.single().operationType)
+        assertEquals(ExportStatus.Failed, stored.exportRecords.single().status)
+        driver.close()
+    }
+
+    @Test
     fun hasMigrationScaffoldForVersionOne() {
         assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
     }
