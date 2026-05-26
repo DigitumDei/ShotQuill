@@ -33,13 +33,12 @@ enum class DraftStatus(val wireValue: String) {
 }
 
 enum class TargetPlatform(val wireValue: String) {
-    Instagram("instagram"),
-    Facebook("facebook"),
-    LinkedIn("linkedin"),
-    X("x"),
-    TikTok("tiktok"),
-    Threads("threads"),
-    Pinterest("pinterest");
+    InstagramFeedSquare("instagram_feed_square"),
+    InstagramPortrait("instagram_portrait"),
+    InstagramStoryReel("instagram_story_reel"),
+    FacebookPost("facebook_post"),
+    BlueskyPost("bluesky_post"),
+    Original("original");
 
     companion object {
         fun fromWireValue(value: String): TargetPlatform? = entries.firstOrNull { it.wireValue == value }
@@ -69,20 +68,48 @@ enum class EditIntent(val wireValue: String) {
     }
 }
 
-enum class RealismLevel(val wireValue: String) {
-    Natural("natural"),
-    Polished("polished"),
-    Stylized("stylized");
+enum class RealismLevel(
+    val wireValue: String,
+    val promptIntent: String,
+) {
+    Photoreal(
+        wireValue = "photoreal",
+        promptIntent = "Preserve natural camera realism and avoid visibly generated or illustrated details.",
+    ),
+    Polished(
+        wireValue = "polished",
+        promptIntent = "Keep the image believable while improving composition, lighting, and presentation.",
+    ),
+    Stylized(
+        wireValue = "stylized",
+        promptIntent = "Allow a clearly art-directed look while retaining the user's subject and brand cues.",
+    );
 
     companion object {
         fun fromWireValue(value: String): RealismLevel? = entries.firstOrNull { it.wireValue == value }
     }
 }
 
-enum class QualityTier(val wireValue: String) {
-    Draft("draft"),
-    Standard("standard"),
-    High("high");
+enum class QualityTier(
+    val wireValue: String,
+    val modelMappingNote: String,
+    val costNote: String,
+) {
+    Draft(
+        wireValue = "draft",
+        modelMappingNote = "Mapped by the AI provider to the lowest-cost viable model and image size.",
+        costNote = "Lowest per-call cost; intended for quick iteration.",
+    ),
+    Standard(
+        wireValue = "standard",
+        modelMappingNote = "Mapped by the AI provider to the default production model and image size.",
+        costNote = "Balanced per-call cost and output quality.",
+    ),
+    High(
+        wireValue = "high",
+        modelMappingNote = "Mapped by the AI provider to the highest-quality configured model and image size.",
+        costNote = "Highest per-call cost; intended for final assets.",
+    );
 
     companion object {
         fun fromWireValue(value: String): QualityTier? = entries.firstOrNull { it.wireValue == value }

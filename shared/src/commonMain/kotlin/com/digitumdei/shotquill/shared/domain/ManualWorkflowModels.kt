@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.shared.domain
 
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.datetime.Instant
 
 data class PostDraft(
@@ -147,7 +148,16 @@ data class PromptHistoryEntry(
     val responseSummary: String?,
     val modelName: String?,
     val createdAtEpochMillis: Long,
-)
+) {
+    init {
+        require(!SecretRedactor.containsOpenAiApiKey(prompt)) {
+            "Prompt history entry prompt must not contain API keys"
+        }
+        require(responseSummary == null || !SecretRedactor.containsOpenAiApiKey(responseSummary)) {
+            "Prompt history entry response summary must not contain API keys"
+        }
+    }
+}
 
 data class ExportRecord(
     val id: ExportRecordId,
@@ -162,6 +172,9 @@ data class ExportRecord(
     init {
         require(completedAtEpochMillis == null || completedAtEpochMillis >= createdAtEpochMillis) {
             "completedAtEpochMillis must be after or equal to createdAtEpochMillis"
+        }
+        require(errorMessage == null || !SecretRedactor.containsOpenAiApiKey(errorMessage)) {
+            "Export record error message must not contain API keys"
         }
     }
 }

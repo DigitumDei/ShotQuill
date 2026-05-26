@@ -110,7 +110,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val stored = repository.get(PostDraftId("draft-1"))
         assertEquals(DraftStatus.ReadyToShare, stored?.status)
         assertEquals(Instant.fromEpochMilliseconds(updatedAt), stored?.updatedAt)
-        assertEquals(setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn), stored?.targetPlatforms)
+        assertEquals(setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost), stored?.targetPlatforms)
         driver.close()
     }
 
@@ -233,7 +233,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val mappedCaptionRequest = ManualWorkflowStorageMapper.captionRequest(
             requestId = "caption-request-1",
             draftId = "draft-1",
-            targetPlatform = "instagram",
+            targetPlatform = "instagram_feed_square",
             prompt = "Write a caption.",
             tone = "Warm",
             brandProfileId = "brand-1",
@@ -251,7 +251,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             resultId = "caption-result-1",
             requestId = "caption-request-1",
             draftId = "draft-1",
-            targetPlatform = "instagram",
+            targetPlatform = "instagram_feed_square",
             caption = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
             modelName = "caption-model",
@@ -270,7 +270,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             draftId = "draft-1",
             sourceMediaAssetId = "media-1",
             intent = "color_correct",
-            realismLevel = "natural",
+            realismLevel = "photoreal",
             qualityTier = "high",
             prompt = "Make the image brighter while keeping it realistic.",
             createdAt = createdAt,
@@ -302,7 +302,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val mappedExport = ManualWorkflowStorageMapper.exportRecord(
             recordId = "export-1",
             draftId = "draft-1",
-            targetPlatform = "linkedin",
+            targetPlatform = "bluesky_post",
             status = "exported",
             destinationUri = "content://export",
             errorMessage = null,
@@ -312,7 +312,7 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         assertEquals(sampleMediaAsset(), mappedMedia)
         assertEquals(CaptionRequestId("caption-request-1"), mappedCaptionRequest.id)
-        assertEquals(TargetPlatform.Instagram, mappedCaptionRequest.targetPlatform)
+        assertEquals(TargetPlatform.InstagramFeedSquare, mappedCaptionRequest.targetPlatform)
         assertEquals(VisionDescriptionId("vision-1"), mappedVision.id)
         assertEquals(sampleCaptionResult(), mappedCaptionResult)
         assertEquals(AltTextResultId("alt-text-1"), mappedAltText.id)
@@ -322,7 +322,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(PromptHistoryEntryId("prompt-1"), mappedPrompt.id)
         assertEquals(AiOperationType.CaptionGeneration, mappedPrompt.operationType)
         assertEquals(ExportStatus.Exported, mappedExport.status)
-        assertEquals(TargetPlatform.LinkedIn, mappedExport.targetPlatform)
+        assertEquals(TargetPlatform.BlueskyPost, mappedExport.targetPlatform)
     }
 
     @Test
@@ -400,7 +400,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             ExportRecord(
                 id = ExportRecordId("export-1"),
                 draftId = PostDraftId("draft-1"),
-                targetPlatform = TargetPlatform.LinkedIn,
+                targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Failed,
                 destinationUri = null,
                 errorMessage = "Share target unavailable.",
@@ -443,7 +443,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             text = "Morning focus, freshly brewed.",
             hashtags = listOf("#coffee", "#work"),
         ),
-        targetPlatforms = setOf(TargetPlatform.Instagram, TargetPlatform.LinkedIn),
+        targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
         visionDescription = VisionDescription(
             id = VisionDescriptionId("vision-1"),
@@ -496,7 +496,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             ExportRecord(
                 id = ExportRecordId("export-1"),
                 draftId = PostDraftId("draft-1"),
-                targetPlatform = TargetPlatform.LinkedIn,
+                targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Exported,
                 destinationUri = "content://share/export-1",
                 errorMessage = null,
@@ -538,7 +538,7 @@ class SqlDelightManualWorkflowRepositoryTest {
     private fun sampleCaptionRequest(): CaptionRequest = CaptionRequest(
         id = CaptionRequestId("caption-request-1"),
         draftId = PostDraftId("draft-1"),
-        targetPlatform = TargetPlatform.Instagram,
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
         prompt = "Write a caption for this image.",
         tone = "Friendly",
         brandProfileId = BrandProfileId("brand-1"),
@@ -549,7 +549,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         id = CaptionResultId("caption-result-1"),
         requestId = CaptionRequestId("caption-request-1"),
         draftId = PostDraftId("draft-1"),
-        targetPlatform = TargetPlatform.Instagram,
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
         caption = "Morning focus, freshly brewed.",
         hashtags = listOf("#coffee", "#work"),
         modelName = "caption-model",
@@ -561,7 +561,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         draftId = PostDraftId("draft-1"),
         sourceMediaAssetId = MediaAssetId("media-1"),
         intent = EditIntent.ColorCorrect,
-        realismLevel = RealismLevel.Natural,
+        realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",
         createdAtEpochMillis = createdAt,
