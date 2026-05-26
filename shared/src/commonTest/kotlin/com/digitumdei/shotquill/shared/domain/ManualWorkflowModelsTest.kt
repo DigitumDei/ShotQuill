@@ -32,6 +32,9 @@ class ManualWorkflowModelsTest {
         assertEquals(brandProfileId, profile.id)
         assertEquals("ShotQuill", profile.displayName)
         assertEquals(listOf("#photo", "#launch"), profile.defaultHashtags)
+        assertEquals(listOf("https://shotquill.example"), profile.websiteOrSocialLinks)
+        assertEquals("Bright, realistic product photography.", profile.visualStyleNotes)
+        assertEquals("Keep beer and product names unchanged.", profile.productNamingNotes)
         assertEquals("Primary logo", profile.imageAssets.single().title)
         assertEquals(mediaAssetId, profile.imageAssets.single().mediaAsset.id)
     }
@@ -482,6 +485,9 @@ class ManualWorkflowModelsTest {
         voice = "Warm and concise",
         audience = "Independent creators",
         defaultHashtags = listOf("#photo", "#launch"),
+        websiteOrSocialLinks = listOf("https://shotquill.example"),
+        visualStyleNotes = "Bright, realistic product photography.",
+        productNamingNotes = "Keep beer and product names unchanged.",
         imageAssets = listOf(
             BrandImageAsset(
                 mediaAsset = sampleMediaAsset(),

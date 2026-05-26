@@ -13,6 +13,8 @@ CREATE TABLE brand_profiles (
   display_name TEXT NOT NULL,
   voice TEXT NOT NULL,
   audience TEXT,
+  visual_style_notes TEXT,
+  product_naming_notes TEXT,
   created_at_epoch_millis INTEGER NOT NULL,
   updated_at_epoch_millis INTEGER NOT NULL
 );
@@ -22,6 +24,13 @@ CREATE TABLE brand_profile_default_hashtags (
   hashtag TEXT NOT NULL,
   hashtag_order INTEGER NOT NULL,
   PRIMARY KEY (profile_id, hashtag_order)
+);
+
+CREATE TABLE brand_profile_links (
+  profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE,
+  link TEXT NOT NULL,
+  link_order INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, link_order)
 );
 
 CREATE TABLE brand_image_assets (
@@ -178,13 +187,17 @@ INSERT INTO brand_profiles(
   display_name,
   voice,
   audience,
+  visual_style_notes,
+  product_naming_notes,
   created_at_epoch_millis,
   updated_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   display_name = excluded.display_name,
   voice = excluded.voice,
   audience = excluded.audience,
+  visual_style_notes = excluded.visual_style_notes,
+  product_naming_notes = excluded.product_naming_notes,
   created_at_epoch_millis = excluded.created_at_epoch_millis,
   updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
@@ -202,6 +215,18 @@ selectBrandProfileDefaultHashtags:
 SELECT hashtag FROM brand_profile_default_hashtags
 WHERE profile_id = ?
 ORDER BY hashtag_order ASC;
+
+deleteBrandProfileLinks:
+DELETE FROM brand_profile_links WHERE profile_id = ?;
+
+insertBrandProfileLink:
+INSERT INTO brand_profile_links(profile_id, link, link_order)
+VALUES (?, ?, ?);
+
+selectBrandProfileLinks:
+SELECT link FROM brand_profile_links
+WHERE profile_id = ?
+ORDER BY link_order ASC;
 
 deleteBrandImageAssets:
 DELETE FROM brand_image_assets WHERE profile_id = ?;
@@ -582,6 +607,9 @@ DELETE FROM brand_image_assets;
 
 deleteAllBrandProfileDefaultHashtags:
 DELETE FROM brand_profile_default_hashtags;
+
+deleteAllBrandProfileLinks:
+DELETE FROM brand_profile_links;
 
 deleteAllBrandProfiles:
 DELETE FROM brand_profiles;

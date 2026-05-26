@@ -173,6 +173,9 @@ data class BrandProfile(
     val audience: String?,
     val defaultHashtags: List<String>,
     val imageAssets: List<BrandImageAsset>,
+    val websiteOrSocialLinks: List<String>,
+    val visualStyleNotes: String?,
+    val productNamingNotes: String?,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
 ) {
