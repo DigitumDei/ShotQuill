@@ -20,7 +20,7 @@ kover {
                     "*.BuildConfig",
                     "*ComposableSingletons*",
                     "*_PreviewKt*",
-                    "com.digitumdei.shotquill.AppKt",
+                    "com.digitumdei.shotquill.AppKt*",
                     "*MainActivity*",
                     "*AndroidBrandProfileRepositoryFactory*",
                     "*EpochClock*",
