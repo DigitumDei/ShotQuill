@@ -25,9 +25,6 @@ jobs:
           echo "${JAVA_HOME_17_X64}/bin" >> "$GITHUB_PATH"
           "${JAVA_HOME_17_X64}/bin/java" -version
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
       - name: Build
         run: ./gradlew --no-daemon --stacktrace build
 
