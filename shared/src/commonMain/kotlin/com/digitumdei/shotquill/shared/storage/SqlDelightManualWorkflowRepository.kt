@@ -170,14 +170,14 @@ class SqlDelightManualWorkflowRepository(
         return PostDraft(
             id = PostDraftId(draft.id),
             format = PostFormat.valueOf(draft.format),
-            status = enumFromWire(draft.status, DraftStatus::fromWireValue),
+            status = ManualWorkflowStorageMapper.enumFromWire(draft.status, DraftStatus::fromWireValue),
             mediaItems = mediaItems,
             caption = draft.captionText?.let {
                 CaptionDraft(it, queries.selectPostDraftCaptionHashtags(id.value).executeAsList())
             },
             targetPlatforms = queries.selectPostDraftTargetPlatforms(id.value)
                 .executeAsList()
-                .mapTo(linkedSetOf()) { enumFromWire(it, TargetPlatform::fromWireValue) },
+                .mapTo(linkedSetOf()) { ManualWorkflowStorageMapper.enumFromWire(it, TargetPlatform::fromWireValue) },
             brandProfile = draft.brandProfileId?.let { selectBrandProfile(BrandProfileId(it)) },
             visionDescription = selectVisionDescriptions(id).firstOrNull(),
             captionRequests = selectCaptionRequests(id),
@@ -192,6 +192,45 @@ class SqlDelightManualWorkflowRepository(
         )
     }
 
+    override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
+        val current = get(id) ?: return false
+        current.transitionTo(status, updatedAt)
+        queries.updatePostDraftStatus(
+            status = status.wireValue,
+            updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+            id = id.value,
+        )
+        return true
+    }
+
+    override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean {
+        if (mediaItems.isEmpty() || queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) {
+            return false
+        }
+        if (mediaItems.size != mediaItems.distinct().size) {
+            return false
+        }
+        if (mediaItems.any { selectMediaAsset(it) == null }) {
+            return false
+        }
+
+        queries.transaction {
+            queries.deletePostDraftMediaItems(id.value)
+            mediaItems.forEachIndexed { index, mediaAssetId ->
+                queries.insertPostDraftMediaItem(
+                    draft_id = id.value,
+                    media_asset_id = mediaAssetId.value,
+                    media_order = index.toLong(),
+                )
+            }
+        }
+        return true
+    }
+
+    override fun save(visionDescription: VisionDescription) {
+        saveVisionDescription(visionDescription)
+    }
+
     override fun saveVisionDescription(visionDescription: VisionDescription) {
         queries.upsertVisionDescription(
             id = visionDescription.id.value,
@@ -201,6 +240,15 @@ class SqlDelightManualWorkflowRepository(
             model_name = visionDescription.modelName,
             created_at_epoch_millis = visionDescription.createdAtEpochMillis,
         )
+    }
+
+    override fun get(id: VisionDescriptionId): VisionDescription? =
+        queries.selectVisionDescriptionById(id.value, ManualWorkflowStorageMapper::visionDescription).executeAsOneOrNull()
+
+    override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> = selectVisionDescriptions(id)
+
+    override fun save(captionRequest: CaptionRequest) {
+        saveCaptionRequest(captionRequest)
     }
 
     override fun saveCaptionRequest(captionRequest: CaptionRequest) {
@@ -213,6 +261,15 @@ class SqlDelightManualWorkflowRepository(
             brand_profile_id = captionRequest.brandProfileId?.value,
             created_at_epoch_millis = captionRequest.createdAtEpochMillis,
         )
+    }
+
+    override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? =
+        queries.selectCaptionRequestById(id.value, ManualWorkflowStorageMapper::captionRequest).executeAsOneOrNull()
+
+    override fun listCaptionRequestsForDraft(id: PostDraftId): List<CaptionRequest> = selectCaptionRequests(id)
+
+    override fun save(captionResult: CaptionResult) {
+        saveCaptionResult(captionResult)
     }
 
     override fun saveCaptionResult(captionResult: CaptionResult) {
@@ -237,6 +294,18 @@ class SqlDelightManualWorkflowRepository(
         }
     }
 
+    override fun getCaptionResult(id: CaptionResultId): CaptionResult? {
+        val result = queries.selectCaptionResultById(id.value, ::captionResultWithoutHashtags).executeAsOneOrNull()
+            ?: return null
+        return result.withCaptionResultHashtags()
+    }
+
+    override fun listCaptionResultsForDraft(id: PostDraftId): List<CaptionResult> = selectCaptionResults(id)
+
+    override fun save(altTextResult: AltTextResult) {
+        saveAltTextResult(altTextResult)
+    }
+
     override fun saveAltTextResult(altTextResult: AltTextResult) {
         queries.upsertAltTextResult(
             id = altTextResult.id.value,
@@ -246,6 +315,15 @@ class SqlDelightManualWorkflowRepository(
             model_name = altTextResult.modelName,
             created_at_epoch_millis = altTextResult.createdAtEpochMillis,
         )
+    }
+
+    override fun get(id: AltTextResultId): AltTextResult? =
+        queries.selectAltTextResultById(id.value, ManualWorkflowStorageMapper::altTextResult).executeAsOneOrNull()
+
+    override fun listAltTextResultsForDraft(id: PostDraftId): List<AltTextResult> = selectAltTextResults(id)
+
+    override fun save(photoEditRequest: PhotoEditRequest) {
+        savePhotoEditRequest(photoEditRequest)
     }
 
     override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {
@@ -259,6 +337,15 @@ class SqlDelightManualWorkflowRepository(
             prompt = photoEditRequest.prompt,
             created_at_epoch_millis = photoEditRequest.createdAtEpochMillis,
         )
+    }
+
+    override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? =
+        queries.selectPhotoEditRequestById(id.value, ManualWorkflowStorageMapper::photoEditRequest).executeAsOneOrNull()
+
+    override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> = selectPhotoEditRequests(id)
+
+    override fun save(photoEditResult: PhotoEditResult) {
+        savePhotoEditResult(photoEditResult)
     }
 
     override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
@@ -276,6 +363,15 @@ class SqlDelightManualWorkflowRepository(
         }
     }
 
+    override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? =
+        queries.selectPhotoEditResultById(id.value, ManualWorkflowStorageMapper::photoEditResult).executeAsOneOrNull()
+
+    override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> = selectPhotoEditResults(id)
+
+    override fun save(promptHistoryEntry: PromptHistoryEntry) {
+        savePromptHistoryEntry(promptHistoryEntry)
+    }
+
     override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
         queries.upsertPromptHistoryEntry(
             id = promptHistoryEntry.id.value,
@@ -286,6 +382,15 @@ class SqlDelightManualWorkflowRepository(
             model_name = promptHistoryEntry.modelName,
             created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
         )
+    }
+
+    override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? =
+        queries.selectPromptHistoryEntryById(id.value, ManualWorkflowStorageMapper::promptHistoryEntry).executeAsOneOrNull()
+
+    override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> = selectPromptHistoryEntries(id)
+
+    override fun save(exportRecord: ExportRecord) {
+        saveExportRecord(exportRecord)
     }
 
     override fun saveExportRecord(exportRecord: ExportRecord) {
@@ -300,6 +405,11 @@ class SqlDelightManualWorkflowRepository(
             completed_at_epoch_millis = exportRecord.completedAtEpochMillis,
         )
     }
+
+    override fun get(id: ExportRecordId): ExportRecord? =
+        queries.selectExportRecordById(id.value, ManualWorkflowStorageMapper::exportRecord).executeAsOneOrNull()
+
+    override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
     override fun clearAll() {
         queries.transaction {
@@ -390,14 +500,7 @@ class SqlDelightManualWorkflowRepository(
                 modelName,
                 createdAt,
             ->
-            VisionDescription(
-                id = VisionDescriptionId(visionId),
-                draftId = PostDraftId(draftId),
-                mediaAssetId = MediaAssetId(mediaAssetId),
-                description = description,
-                modelName = modelName,
-                createdAtEpochMillis = createdAt,
-            )
+            ManualWorkflowStorageMapper.visionDescription(visionId, draftId, mediaAssetId, description, modelName, createdAt)
         }.executeAsList()
 
     private fun selectCaptionRequests(id: PostDraftId): List<CaptionRequest> =
@@ -410,38 +513,35 @@ class SqlDelightManualWorkflowRepository(
                 brandProfileId,
                 createdAt,
             ->
-            CaptionRequest(
-                id = CaptionRequestId(requestId),
-                draftId = PostDraftId(draftId),
-                targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
-                prompt = prompt,
-                tone = tone,
-                brandProfileId = brandProfileId?.let(::BrandProfileId),
-                createdAtEpochMillis = createdAt,
-            )
+            ManualWorkflowStorageMapper.captionRequest(requestId, draftId, targetPlatform, prompt, tone, brandProfileId, createdAt)
         }.executeAsList()
 
     private fun selectCaptionResults(id: PostDraftId): List<CaptionResult> =
-        queries.selectCaptionResultsByDraftId(id.value) {
-                resultId,
-                requestId,
-                draftId,
-                targetPlatform,
-                caption,
-                modelName,
-                createdAt,
-            ->
-            CaptionResult(
-                id = CaptionResultId(resultId),
-                requestId = CaptionRequestId(requestId),
-                draftId = PostDraftId(draftId),
-                targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
-                caption = caption,
-                hashtags = queries.selectCaptionResultHashtags(resultId).executeAsList(),
-                modelName = modelName,
-                createdAtEpochMillis = createdAt,
-            )
-        }.executeAsList()
+        queries.selectCaptionResultsByDraftId(id.value, ::captionResultWithoutHashtags)
+            .executeAsList()
+            .map { it.withCaptionResultHashtags() }
+
+    private fun captionResultWithoutHashtags(
+        resultId: String,
+        requestId: String,
+        draftId: String,
+        targetPlatform: String,
+        caption: String,
+        modelName: String?,
+        createdAt: Long,
+    ): CaptionResult = ManualWorkflowStorageMapper.captionResult(
+        resultId = resultId,
+        requestId = requestId,
+        draftId = draftId,
+        targetPlatform = targetPlatform,
+        caption = caption,
+        hashtags = emptyList(),
+        modelName = modelName,
+        createdAt = createdAt,
+    )
+
+    private fun CaptionResult.withCaptionResultHashtags(): CaptionResult =
+        copy(hashtags = queries.selectCaptionResultHashtags(id.value).executeAsList())
 
     private fun selectAltTextResults(id: PostDraftId): List<AltTextResult> =
         queries.selectAltTextResultsByDraftId(id.value) {
@@ -452,14 +552,7 @@ class SqlDelightManualWorkflowRepository(
                 modelName,
                 createdAt,
             ->
-            AltTextResult(
-                id = AltTextResultId(resultId),
-                draftId = PostDraftId(draftId),
-                mediaAssetId = MediaAssetId(mediaAssetId),
-                altText = altText,
-                modelName = modelName,
-                createdAtEpochMillis = createdAt,
-            )
+            ManualWorkflowStorageMapper.altTextResult(resultId, draftId, mediaAssetId, altText, modelName, createdAt)
         }.executeAsList()
 
     private fun selectPhotoEditRequests(id: PostDraftId): List<PhotoEditRequest> =
@@ -473,16 +566,7 @@ class SqlDelightManualWorkflowRepository(
                 prompt,
                 createdAt,
             ->
-            PhotoEditRequest(
-                id = PhotoEditRequestId(requestId),
-                draftId = PostDraftId(draftId),
-                sourceMediaAssetId = MediaAssetId(sourceMediaAssetId),
-                intent = enumFromWire(intent, EditIntent::fromWireValue),
-                realismLevel = enumFromWire(realismLevel, RealismLevel::fromWireValue),
-                qualityTier = enumFromWire(qualityTier, QualityTier::fromWireValue),
-                prompt = prompt,
-                createdAtEpochMillis = createdAt,
-            )
+            ManualWorkflowStorageMapper.photoEditRequest(requestId, draftId, sourceMediaAssetId, intent, realismLevel, qualityTier, prompt, createdAt)
         }.executeAsList()
 
     private fun selectPhotoEditResults(id: PostDraftId): List<PhotoEditResult> =
@@ -501,14 +585,20 @@ class SqlDelightManualWorkflowRepository(
                 heightPx,
                 mediaCreatedAt,
             ->
-            PhotoEditResult(
-                id = PhotoEditResultId(resultId),
-                requestId = PhotoEditRequestId(requestId),
-                draftId = PostDraftId(draftId),
-                editedMediaAsset = mediaAsset(editedMediaAssetId, type, uri, mimeType, widthPx, heightPx, mediaCreatedAt),
+            ManualWorkflowStorageMapper.photoEditResult(
+                resultId = resultId,
+                requestId = requestId,
+                draftId = draftId,
+                editedMediaAssetId = editedMediaAssetId,
                 summary = summary,
                 modelName = modelName,
-                createdAtEpochMillis = createdAt,
+                createdAt = createdAt,
+                type = type,
+                uri = uri,
+                mimeType = mimeType,
+                widthPx = widthPx,
+                heightPx = heightPx,
+                mediaCreatedAt = mediaCreatedAt,
             )
         }.executeAsList()
 
@@ -522,15 +612,7 @@ class SqlDelightManualWorkflowRepository(
                 modelName,
                 createdAt,
             ->
-            PromptHistoryEntry(
-                id = PromptHistoryEntryId(entryId),
-                draftId = PostDraftId(draftId),
-                operationType = enumFromWire(operationType, AiOperationType::fromWireValue),
-                prompt = prompt,
-                responseSummary = responseSummary,
-                modelName = modelName,
-                createdAtEpochMillis = createdAt,
-            )
+            ManualWorkflowStorageMapper.promptHistoryEntry(entryId, draftId, operationType, prompt, responseSummary, modelName, createdAt)
         }.executeAsList()
 
     private fun selectExportRecords(id: PostDraftId): List<ExportRecord> =
@@ -544,16 +626,7 @@ class SqlDelightManualWorkflowRepository(
                 createdAt,
                 completedAt,
             ->
-            ExportRecord(
-                id = ExportRecordId(recordId),
-                draftId = PostDraftId(draftId),
-                targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
-                status = enumFromWire(status, ExportStatus::fromWireValue),
-                destinationUri = destinationUri,
-                errorMessage = errorMessage,
-                createdAtEpochMillis = createdAt,
-                completedAtEpochMillis = completedAt,
-            )
+            ManualWorkflowStorageMapper.exportRecord(recordId, draftId, targetPlatform, status, destinationUri, errorMessage, createdAt, completedAt)
         }.executeAsList()
 
     private fun mediaAsset(
@@ -564,18 +637,15 @@ class SqlDelightManualWorkflowRepository(
         widthPx: Long?,
         heightPx: Long?,
         createdAt: Long,
-    ): MediaAsset = MediaAsset(
+    ): MediaAsset = ManualWorkflowStorageMapper.mediaAsset(
         id = MediaAssetId(id),
-        type = enumFromWire(type, MediaType::fromWireValue),
+        type = ManualWorkflowStorageMapper.enumFromWire(type, MediaType::fromWireValue),
         uri = uri,
         mimeType = mimeType,
         widthPx = widthPx?.toInt(),
         heightPx = heightPx?.toInt(),
         createdAtEpochMillis = createdAt,
     )
-
-    private fun <T> enumFromWire(value: String, parser: (String) -> T?): T =
-        parser(value) ?: error("Unknown persisted wire value: $value")
 }
 
 private data class DraftRow(
@@ -596,3 +666,196 @@ private data class BrandProfileRow(
     val createdAt: Long,
     val updatedAt: Long,
 )
+
+internal object ManualWorkflowStorageMapper {
+    fun mediaAsset(
+        id: MediaAssetId,
+        type: MediaType,
+        uri: String,
+        mimeType: String?,
+        widthPx: Int?,
+        heightPx: Int?,
+        createdAtEpochMillis: Long,
+    ): MediaAsset = MediaAsset(
+        id = id,
+        type = type,
+        uri = uri,
+        mimeType = mimeType,
+        widthPx = widthPx,
+        heightPx = heightPx,
+        createdAtEpochMillis = createdAtEpochMillis,
+    )
+
+    fun mediaAsset(
+        id: String,
+        type: String,
+        uri: String,
+        mimeType: String?,
+        widthPx: Long?,
+        heightPx: Long?,
+        createdAt: Long,
+    ): MediaAsset = mediaAsset(
+        id = MediaAssetId(id),
+        type = enumFromWire(type, MediaType::fromWireValue),
+        uri = uri,
+        mimeType = mimeType,
+        widthPx = widthPx?.toInt(),
+        heightPx = heightPx?.toInt(),
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun visionDescription(
+        visionId: String,
+        draftId: String,
+        mediaAssetId: String,
+        description: String,
+        modelName: String?,
+        createdAt: Long,
+    ): VisionDescription = VisionDescription(
+        id = VisionDescriptionId(visionId),
+        draftId = PostDraftId(draftId),
+        mediaAssetId = MediaAssetId(mediaAssetId),
+        description = description,
+        modelName = modelName,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun captionRequest(
+        requestId: String,
+        draftId: String,
+        targetPlatform: String,
+        prompt: String,
+        tone: String?,
+        brandProfileId: String?,
+        createdAt: Long,
+    ): CaptionRequest = CaptionRequest(
+        id = CaptionRequestId(requestId),
+        draftId = PostDraftId(draftId),
+        targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
+        prompt = prompt,
+        tone = tone,
+        brandProfileId = brandProfileId?.let(::BrandProfileId),
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun captionResult(
+        resultId: String,
+        requestId: String,
+        draftId: String,
+        targetPlatform: String,
+        caption: String,
+        hashtags: List<String>,
+        modelName: String?,
+        createdAt: Long,
+    ): CaptionResult = CaptionResult(
+        id = CaptionResultId(resultId),
+        requestId = CaptionRequestId(requestId),
+        draftId = PostDraftId(draftId),
+        targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
+        caption = caption,
+        hashtags = hashtags,
+        modelName = modelName,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun altTextResult(
+        resultId: String,
+        draftId: String,
+        mediaAssetId: String,
+        altText: String,
+        modelName: String?,
+        createdAt: Long,
+    ): AltTextResult = AltTextResult(
+        id = AltTextResultId(resultId),
+        draftId = PostDraftId(draftId),
+        mediaAssetId = MediaAssetId(mediaAssetId),
+        altText = altText,
+        modelName = modelName,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun photoEditRequest(
+        requestId: String,
+        draftId: String,
+        sourceMediaAssetId: String,
+        intent: String,
+        realismLevel: String,
+        qualityTier: String,
+        prompt: String,
+        createdAt: Long,
+    ): PhotoEditRequest = PhotoEditRequest(
+        id = PhotoEditRequestId(requestId),
+        draftId = PostDraftId(draftId),
+        sourceMediaAssetId = MediaAssetId(sourceMediaAssetId),
+        intent = enumFromWire(intent, EditIntent::fromWireValue),
+        realismLevel = enumFromWire(realismLevel, RealismLevel::fromWireValue),
+        qualityTier = enumFromWire(qualityTier, QualityTier::fromWireValue),
+        prompt = prompt,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun photoEditResult(
+        resultId: String,
+        requestId: String,
+        draftId: String,
+        editedMediaAssetId: String,
+        summary: String?,
+        modelName: String?,
+        createdAt: Long,
+        type: String,
+        uri: String,
+        mimeType: String?,
+        widthPx: Long?,
+        heightPx: Long?,
+        mediaCreatedAt: Long,
+    ): PhotoEditResult = PhotoEditResult(
+        id = PhotoEditResultId(resultId),
+        requestId = PhotoEditRequestId(requestId),
+        draftId = PostDraftId(draftId),
+        editedMediaAsset = mediaAsset(editedMediaAssetId, type, uri, mimeType, widthPx, heightPx, mediaCreatedAt),
+        summary = summary,
+        modelName = modelName,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun promptHistoryEntry(
+        entryId: String,
+        draftId: String,
+        operationType: String,
+        prompt: String,
+        responseSummary: String?,
+        modelName: String?,
+        createdAt: Long,
+    ): PromptHistoryEntry = PromptHistoryEntry(
+        id = PromptHistoryEntryId(entryId),
+        draftId = PostDraftId(draftId),
+        operationType = enumFromWire(operationType, AiOperationType::fromWireValue),
+        prompt = prompt,
+        responseSummary = responseSummary,
+        modelName = modelName,
+        createdAtEpochMillis = createdAt,
+    )
+
+    fun exportRecord(
+        recordId: String,
+        draftId: String,
+        targetPlatform: String,
+        status: String,
+        destinationUri: String?,
+        errorMessage: String?,
+        createdAt: Long,
+        completedAt: Long?,
+    ): ExportRecord = ExportRecord(
+        id = ExportRecordId(recordId),
+        draftId = PostDraftId(draftId),
+        targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
+        status = enumFromWire(status, ExportStatus::fromWireValue),
+        destinationUri = destinationUri,
+        errorMessage = errorMessage,
+        createdAtEpochMillis = createdAt,
+        completedAtEpochMillis = completedAt,
+    )
+
+    fun <T> enumFromWire(value: String, parser: (String) -> T?): T =
+        parser(value) ?: error("Unknown persisted wire value: $value")
+}
