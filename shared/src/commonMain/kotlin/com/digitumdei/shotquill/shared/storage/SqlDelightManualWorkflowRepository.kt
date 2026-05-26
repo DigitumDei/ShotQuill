@@ -67,6 +67,8 @@ class SqlDelightManualWorkflowRepository(
                 display_name = brandProfile.displayName,
                 voice = brandProfile.voice,
                 audience = brandProfile.audience,
+                visual_style_notes = brandProfile.visualStyleNotes,
+                product_naming_notes = brandProfile.productNamingNotes,
                 created_at_epoch_millis = brandProfile.createdAtEpochMillis,
                 updated_at_epoch_millis = brandProfile.updatedAtEpochMillis,
             )
@@ -76,6 +78,14 @@ class SqlDelightManualWorkflowRepository(
                     profile_id = brandProfile.id.value,
                     hashtag = hashtag,
                     hashtag_order = index.toLong(),
+                )
+            }
+            queries.deleteBrandProfileLinks(brandProfile.id.value)
+            brandProfile.websiteOrSocialLinks.forEachIndexed { index, link ->
+                queries.insertBrandProfileLink(
+                    profile_id = brandProfile.id.value,
+                    link = link,
+                    link_order = index.toLong(),
                 )
             }
             queries.deleteBrandImageAssets(brandProfile.id.value)
@@ -429,6 +439,7 @@ class SqlDelightManualWorkflowRepository(
             queries.deleteAllPostDrafts()
             queries.deleteAllBrandImageAssets()
             queries.deleteAllBrandProfileDefaultHashtags()
+            queries.deleteAllBrandProfileLinks()
             queries.deleteAllBrandProfiles()
             queries.deleteAllMediaAssets()
         }
@@ -455,13 +466,16 @@ class SqlDelightManualWorkflowRepository(
                 displayName,
                 voice,
                 audience,
+                visualStyleNotes,
+                productNamingNotes,
                 createdAt,
                 updatedAt,
             ->
-            BrandProfileRow(profileId, displayName, voice, audience, createdAt, updatedAt)
+            BrandProfileRow(profileId, displayName, voice, audience, visualStyleNotes, productNamingNotes, createdAt, updatedAt)
         }.executeAsOneOrNull() ?: return null
 
         val defaultHashtags = queries.selectBrandProfileDefaultHashtags(id.value).executeAsList()
+        val websiteOrSocialLinks = queries.selectBrandProfileLinks(id.value).executeAsList()
         val imageAssets = queries.selectBrandImageAssets(id.value) {
                 mediaId,
                 type,
@@ -486,6 +500,9 @@ class SqlDelightManualWorkflowRepository(
             voice = profile.voice,
             audience = profile.audience,
             defaultHashtags = defaultHashtags,
+            websiteOrSocialLinks = websiteOrSocialLinks,
+            visualStyleNotes = profile.visualStyleNotes,
+            productNamingNotes = profile.productNamingNotes,
             imageAssets = imageAssets,
             createdAtEpochMillis = profile.createdAt,
             updatedAtEpochMillis = profile.updatedAt,
@@ -664,6 +681,8 @@ private data class BrandProfileRow(
     val displayName: String,
     val voice: String,
     val audience: String?,
+    val visualStyleNotes: String?,
+    val productNamingNotes: String?,
     val createdAt: Long,
     val updatedAt: Long,
 )

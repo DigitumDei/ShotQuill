@@ -27,38 +27,56 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
-import kotlinx.coroutines.delay
+import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
+import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 
 @Composable
-fun App(settingsRepository: LocalSettingsRepository? = null) {
+fun App(
+    settingsRepository: LocalSettingsRepository? = null,
+    brandProfileRepository: BrandProfileRepository? = null,
+) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
+    val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            SettingsScreen(repository = repository)
+            SettingsScreen(repository = repository, brandProfileRepository = profileRepository)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(repository: LocalSettingsRepository) {
+private fun SettingsScreen(
+    repository: LocalSettingsRepository,
+    brandProfileRepository: BrandProfileRepository,
+) {
     var settings by remember(repository) { mutableStateOf(repository.readSettings()) }
-    val latestSettings by rememberUpdatedState(settings)
+    val activeBrandProfileStore = remember(repository, brandProfileRepository) {
+        ActiveBrandProfileStore(repository, brandProfileRepository)
+    }
+    var activeBrandProfile by remember(repository, brandProfileRepository) {
+        mutableStateOf<BrandProfile?>(null)
+    }
+    LaunchedEffect(activeBrandProfileStore) {
+        activeBrandProfile = activeBrandProfileStore.readActiveBrandProfile()
+    }
     var apiKeyInput by remember(repository) { mutableStateOf("") }
     var hasApiKey by remember(repository) { mutableStateOf(repository.hasOpenAiApiKey()) }
     var status by remember(repository) {
@@ -151,25 +169,20 @@ private fun SettingsScreen(repository: LocalSettingsRepository) {
             },
         )
 
-        var brandProfileIdInput by remember(settings.activeBrandProfileId) {
-            mutableStateOf(settings.activeBrandProfileId?.value.orEmpty())
-        }
-        LaunchedEffect(repository, brandProfileIdInput) {
-            delay(500)
-            val activeBrandProfileId = brandProfileIdInput.trim()
-                .takeIf { it.isNotEmpty() }
-                ?.let(::BrandProfileId)
-            if (activeBrandProfileId != latestSettings.activeBrandProfileId) {
-                settings = latestSettings.copy(activeBrandProfileId = activeBrandProfileId)
-                    .also(repository::saveSettings)
-            }
-        }
-        OutlinedTextField(
-            value = brandProfileIdInput,
-            onValueChange = { value -> brandProfileIdInput = value },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Active brand profile ID") },
-            singleLine = true,
+        BrandProfileEditor(
+            activeBrandProfile = activeBrandProfile,
+            onSave = { profile ->
+                activeBrandProfileStore.saveActiveBrandProfile(profile)
+                activeBrandProfile = profile
+                settings = repository.readSettings()
+                status = "Active brand profile saved"
+            },
+            onClear = {
+                activeBrandProfileStore.clearActiveBrandProfile()
+                activeBrandProfile = null
+                settings = repository.readSettings()
+                status = "No active brand profile"
+            },
         )
 
         Row(
@@ -184,6 +197,125 @@ private fun SettingsScreen(repository: LocalSettingsRepository) {
                     settings = settings.copy(promptHistoryEnabled = enabled).also(repository::saveSettings)
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun BrandProfileEditor(
+    activeBrandProfile: BrandProfile?,
+    onSave: (BrandProfile) -> Unit,
+    onClear: () -> Unit,
+) {
+    var brandName by remember(activeBrandProfile) { mutableStateOf(activeBrandProfile?.displayName.orEmpty()) }
+    var shortDescription by remember(activeBrandProfile) { mutableStateOf(activeBrandProfile?.audience.orEmpty()) }
+    var defaultTone by remember(activeBrandProfile) { mutableStateOf(activeBrandProfile?.voice.orEmpty()) }
+    var defaultHashtags by remember(activeBrandProfile) {
+        mutableStateOf(activeBrandProfile?.defaultHashtags.orEmpty().joinToString(" "))
+    }
+    var websiteOrSocialLinks by remember(activeBrandProfile) {
+        mutableStateOf(activeBrandProfile?.websiteOrSocialLinks.orEmpty().joinToString("\n"))
+    }
+    var visualStyleNotes by remember(activeBrandProfile) { mutableStateOf(activeBrandProfile?.visualStyleNotes.orEmpty()) }
+    var productNamingNotes by remember(activeBrandProfile) { mutableStateOf(activeBrandProfile?.productNamingNotes.orEmpty()) }
+    var validationMessage by remember(activeBrandProfile) {
+        mutableStateOf(
+            if (activeBrandProfile == null) {
+                "No active brand profile configured"
+            } else {
+                "Active brand profile: ${activeBrandProfile.displayName}"
+            },
+        )
+    }
+
+    Text(text = "Brand Profile", style = MaterialTheme.typography.titleMedium)
+    Text(text = validationMessage, style = MaterialTheme.typography.bodyMedium)
+    OutlinedTextField(
+        value = brandName,
+        onValueChange = { brandName = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Brand name") },
+        singleLine = true,
+    )
+    OutlinedTextField(
+        value = shortDescription,
+        onValueChange = { shortDescription = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Short description") },
+        minLines = 2,
+    )
+    OutlinedTextField(
+        value = defaultTone,
+        onValueChange = { defaultTone = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Default tone") },
+        singleLine = true,
+    )
+    OutlinedTextField(
+        value = defaultHashtags,
+        onValueChange = { defaultHashtags = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Default hashtags") },
+        singleLine = true,
+    )
+    OutlinedTextField(
+        value = websiteOrSocialLinks,
+        onValueChange = { websiteOrSocialLinks = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Website/social links") },
+        minLines = 2,
+    )
+    OutlinedTextField(
+        value = visualStyleNotes,
+        onValueChange = { visualStyleNotes = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Visual style notes") },
+        minLines = 2,
+    )
+    OutlinedTextField(
+        value = productNamingNotes,
+        onValueChange = { productNamingNotes = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Product or beer naming notes") },
+        minLines = 2,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = {
+                val now = EpochClock.nowMillis()
+                runCatching {
+                    BrandProfile(
+                        id = activeBrandProfile?.id ?: BrandProfileId("active-brand-profile"),
+                        displayName = brandName.trim(),
+                        voice = defaultTone.trim(),
+                        audience = shortDescription.trim().takeIf { it.isNotEmpty() },
+                        defaultHashtags = defaultHashtags.splitProfileTokens(),
+                        websiteOrSocialLinks = websiteOrSocialLinks.splitProfileLines(),
+                        visualStyleNotes = visualStyleNotes.trim().takeIf { it.isNotEmpty() },
+                        productNamingNotes = productNamingNotes.trim().takeIf { it.isNotEmpty() },
+                        imageAssets = activeBrandProfile?.imageAssets.orEmpty(),
+                        createdAtEpochMillis = activeBrandProfile?.createdAtEpochMillis ?: now,
+                        updatedAtEpochMillis = now,
+                    )
+                }.onSuccess { profile ->
+                    onSave(profile)
+                    validationMessage = "Active brand profile: ${profile.displayName}"
+                }.onFailure {
+                    validationMessage = it.message ?: "Unable to save brand profile"
+                }
+            },
+            enabled = brandName.isNotBlank() && defaultTone.isNotBlank(),
+        ) {
+            Text("Save profile")
+        }
+        OutlinedButton(
+            onClick = {
+                onClear()
+                validationMessage = "No active brand profile configured"
+            },
+            enabled = activeBrandProfile != null,
+        ) {
+            Text("Clear active")
         }
     }
 }
@@ -230,3 +362,13 @@ private fun <T> EnumDropdown(
         }
     }
 }
+
+private fun String.splitProfileTokens(): List<String> =
+    split(",", " ", "\n")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
+private fun String.splitProfileLines(): List<String> =
+    lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }

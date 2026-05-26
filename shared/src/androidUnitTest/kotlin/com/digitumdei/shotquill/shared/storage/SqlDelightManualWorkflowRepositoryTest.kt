@@ -84,6 +84,9 @@ class SqlDelightManualWorkflowRepositoryTest {
             sampleBrandProfile().copy(
                 displayName = "ShotQuill Studio",
                 defaultHashtags = listOf("#studio"),
+                websiteOrSocialLinks = listOf("https://shotquill.example"),
+                visualStyleNotes = "Use clean product-forward compositions.",
+                productNamingNotes = "Preserve product names exactly.",
                 imageAssets = listOf(sampleBrandImageAsset().copy(title = "Updated logo")),
             ),
         )
@@ -91,6 +94,9 @@ class SqlDelightManualWorkflowRepositoryTest {
         val stored = repository.get(BrandProfileId("brand-1"))
         assertEquals("ShotQuill Studio", stored?.displayName)
         assertEquals(listOf("#studio"), stored?.defaultHashtags)
+        assertEquals(listOf("https://shotquill.example"), stored?.websiteOrSocialLinks)
+        assertEquals("Use clean product-forward compositions.", stored?.visualStyleNotes)
+        assertEquals("Preserve product names exactly.", stored?.productNamingNotes)
         assertEquals("Updated logo", stored?.imageAssets?.single()?.title)
         driver.close()
     }
@@ -467,6 +473,27 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun clearsAllSavedWorkflowRecords() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        repository.clearAll()
+
+        assertNull(repository.get(MediaAssetId("media-1")))
+        assertNull(repository.get(BrandProfileId("brand-1")))
+        assertNull(repository.get(PostDraftId("draft-1")))
+        assertNull(repository.getCaptionRequest(CaptionRequestId("caption-request-1")))
+        assertNull(repository.getCaptionResult(CaptionResultId("caption-result-1")))
+        assertNull(repository.get(AltTextResultId("alt-text-1")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-1")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-1")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-1")))
+        assertNull(repository.get(ExportRecordId("export-1")))
+        driver.close()
+    }
+
+    @Test
     fun hasMigrationScaffoldForVersionOne() {
         assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
     }
@@ -566,6 +593,9 @@ class SqlDelightManualWorkflowRepositoryTest {
         voice = "Warm and concise",
         audience = "Independent creators",
         defaultHashtags = listOf("#photo", "#launch"),
+        websiteOrSocialLinks = listOf("https://shotquill.example"),
+        visualStyleNotes = "Bright, realistic product photography.",
+        productNamingNotes = "Keep beer and product names unchanged.",
         imageAssets = listOf(sampleBrandImageAsset()),
         createdAtEpochMillis = createdAt,
         updatedAtEpochMillis = updatedAt,
