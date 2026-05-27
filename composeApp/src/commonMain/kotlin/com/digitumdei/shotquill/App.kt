@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreen
 import com.digitumdei.shotquill.screen.NewPostScreen
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
@@ -60,6 +61,7 @@ import kotlin.random.Random
 
 private enum class AppScreen {
     NewPost,
+    DraftWorkspace,
     Settings,
 }
 
@@ -79,6 +81,7 @@ fun App(
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
     var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
+    var currentDraftId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val newPostCreator = remember(manualWorkflowRepository) {
         manualWorkflowRepository?.let { NewPostCreator(it) }
@@ -115,6 +118,8 @@ fun App(
                     )
                 }
                 draftCreatedMessage = "Draft ${draft.id.value} created"
+                currentDraftId = draft.id.value
+                currentScreen = AppScreen.DraftWorkspace
                 lastProcessedUri = captureResultValue.uri
             } catch (e: CancellationException) {
                 throw e
@@ -153,6 +158,36 @@ fun App(
                             lastProcessedUri = null
                         },
                     )
+                }
+
+                AppScreen.DraftWorkspace -> {
+                    val draftId = currentDraftId
+                    if (manualWorkflowRepository != null && draftId != null) {
+                        ManualPostDraftWorkspaceScreen(
+                            draftId = PostDraftId(draftId),
+                            postDraftRepository = manualWorkflowRepository,
+                            onNavigateToNewPost = {
+                                currentScreen = AppScreen.NewPost
+                                onClearCaptureResult?.invoke()
+                                draftCreatedMessage = null
+                                saveError = null
+                                lastProcessedUri = null
+                            },
+                        )
+                    } else {
+                        NewPostScreen(
+                            onCaptureFromCamera = onCaptureFromCamera ?: {},
+                            onPickFromGallery = onPickFromGallery ?: {},
+                            onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                            captureResult = null,
+                            errorMessage = "Draft repository not available",
+                            onDismissResult = {},
+                            onDismissError = {
+                                currentScreen = AppScreen.NewPost
+                                currentDraftId = null
+                            },
+                        )
+                    }
                 }
 
                 AppScreen.Settings -> {
