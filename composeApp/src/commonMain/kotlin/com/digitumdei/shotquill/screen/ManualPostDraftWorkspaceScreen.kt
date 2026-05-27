@@ -17,30 +17,47 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ManualPostDraftWorkspaceScreen(
     draftId: PostDraftId,
     postDraftRepository: PostDraftRepository,
+    defaultTargetPlatform: TargetPlatform,
     onNavigateToNewPost: () -> Unit,
 ) {
-    val viewModel = remember(draftId, postDraftRepository) {
-        ManualPostDraftWorkspaceViewModel(draftId, postDraftRepository)
+    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform) {
+        ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = postDraftRepository,
+            defaultTargetPlatform = defaultTargetPlatform,
+        )
     }
     var state by remember(viewModel) { mutableStateOf(viewModel.state) }
+    val coroutineScope = rememberCoroutineScope()
 
     fun refresh(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
-        viewModel.block()
-        state = viewModel.state
+        coroutineScope.launch {
+            withContext(Dispatchers.IO) {
+                viewModel.block()
+            }
+            state = viewModel.state
+        }
     }
 
     LaunchedEffect(viewModel) {
-        viewModel.load()
+        withContext(Dispatchers.IO) {
+            viewModel.load()
+        }
         state = viewModel.state
     }
 

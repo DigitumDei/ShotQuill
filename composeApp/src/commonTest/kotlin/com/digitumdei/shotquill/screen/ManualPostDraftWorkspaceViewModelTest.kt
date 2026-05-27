@@ -108,6 +108,25 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun usesConfiguredDefaultPlatformWhenDraftHasNoTargetPlatform() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_100_000L),
+            defaultTargetPlatform = TargetPlatform.BlueskyPost,
+        )
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        val stored = repository.get(draftId)
+        assertEquals(TargetPlatform.BlueskyPost, viewModel.state.targetPlatform)
+        assertEquals(setOf(TargetPlatform.BlueskyPost), stored?.targetPlatforms)
+        assertEquals("Ready for bluesky_post: photo.jpg", viewModel.state.generatedCaption)
+    }
+
+    @Test
     fun updatesStoredDraftWhenEditingPhotoWithFakeAiProvider() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(

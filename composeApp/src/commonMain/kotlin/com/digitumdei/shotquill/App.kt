@@ -80,7 +80,7 @@ fun App(
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
-    var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
+    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.NewPost.name) }
     var currentDraftId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val newPostCreator = remember(manualWorkflowRepository) {
@@ -119,7 +119,7 @@ fun App(
                 }
                 draftCreatedMessage = "Draft ${draft.id.value} created"
                 currentDraftId = draft.id.value
-                currentScreen = AppScreen.DraftWorkspace
+                currentScreen = AppScreen.DraftWorkspace.name
                 lastProcessedUri = captureResultValue.uri
             } catch (e: CancellationException) {
                 throw e
@@ -133,12 +133,12 @@ fun App(
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            when (currentScreen) {
+            when (AppScreen.valueOf(currentScreen)) {
                 AppScreen.NewPost -> {
                     NewPostScreen(
                         onCaptureFromCamera = onCaptureFromCamera ?: {},
                         onPickFromGallery = onPickFromGallery ?: {},
-                        onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                        onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
                         captureResult = captureResult,
                         errorMessage = captureError ?: saveError,
                         draftCreatedMessage = draftCreatedMessage,
@@ -166,8 +166,9 @@ fun App(
                         ManualPostDraftWorkspaceScreen(
                             draftId = PostDraftId(draftId),
                             postDraftRepository = manualWorkflowRepository,
+                            defaultTargetPlatform = repository.readSettings().defaultTargetPlatform,
                             onNavigateToNewPost = {
-                                currentScreen = AppScreen.NewPost
+                                currentScreen = AppScreen.NewPost.name
                                 onClearCaptureResult?.invoke()
                                 draftCreatedMessage = null
                                 saveError = null
@@ -178,12 +179,12 @@ fun App(
                         NewPostScreen(
                             onCaptureFromCamera = onCaptureFromCamera ?: {},
                             onPickFromGallery = onPickFromGallery ?: {},
-                            onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                            onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
                             captureResult = null,
                             errorMessage = "Draft repository not available",
                             onDismissResult = {},
                             onDismissError = {
-                                currentScreen = AppScreen.NewPost
+                                currentScreen = AppScreen.NewPost.name
                                 currentDraftId = null
                             },
                         )
@@ -194,7 +195,7 @@ fun App(
                     SettingsScreen(
                         repository = repository,
                         brandProfileRepository = profileRepository,
-                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost },
+                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost.name },
                     )
                 }
             }

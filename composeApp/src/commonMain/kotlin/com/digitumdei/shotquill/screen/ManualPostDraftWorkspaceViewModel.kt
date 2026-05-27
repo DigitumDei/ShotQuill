@@ -153,8 +153,13 @@ class ManualPostDraftWorkspaceViewModel(
             modelName = generated.modelName,
             createdAtEpochMillis = now,
         )
-        val updated = draft.copy(
-            status = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated,
+        val nextStatus = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated
+        val transitioned = if (draft.status == nextStatus) {
+            draft.copy(updatedAt = Instant.fromEpochMilliseconds(now))
+        } else {
+            draft.transitionTo(nextStatus, Instant.fromEpochMilliseconds(now))
+        }
+        val updated = transitioned.copy(
             caption = CaptionDraft(generated.caption, generated.hashtags),
             targetPlatforms = draft.targetPlatforms + platform,
             captionRequests = draft.captionRequests + captionRequest,
@@ -180,7 +185,6 @@ class ManualPostDraftWorkspaceViewModel(
                     createdAtEpochMillis = now,
                 ),
             ),
-            updatedAt = Instant.fromEpochMilliseconds(now),
         )
         postDraftRepository.save(updated)
         state = updated.toState("Generated caption and alt text", state.isPromptHistoryVisible)
@@ -222,8 +226,12 @@ class ManualPostDraftWorkspaceViewModel(
             modelName = generated.modelName,
             createdAtEpochMillis = now,
         )
-        val updated = draft.copy(
-            status = DraftStatus.PhotoEdited,
+        val transitioned = if (draft.status == DraftStatus.PhotoEdited) {
+            draft.copy(updatedAt = Instant.fromEpochMilliseconds(now))
+        } else {
+            draft.transitionTo(DraftStatus.PhotoEdited, Instant.fromEpochMilliseconds(now))
+        }
+        val updated = transitioned.copy(
             photoEditRequests = draft.photoEditRequests + request,
             photoEditResults = draft.photoEditResults + result,
             promptHistory = draft.promptHistory + PromptHistoryEntry(
@@ -235,7 +243,6 @@ class ManualPostDraftWorkspaceViewModel(
                 modelName = generated.modelName,
                 createdAtEpochMillis = now,
             ),
-            updatedAt = Instant.fromEpochMilliseconds(now),
         )
         postDraftRepository.save(updated)
         state = updated.toState("Edited photo preview created", state.isPromptHistoryVisible)
@@ -268,8 +275,8 @@ class ManualPostDraftWorkspaceViewModel(
         isPromptHistoryVisible: Boolean,
     ): ManualPostDraftWorkspaceState {
         val originalPhoto = mediaItems
-            .map { it.mediaAsset }
-            .firstOrNull { it.type == MediaType.Photo }
+            .firstOrNull { it.mediaAsset.type == MediaType.Photo }
+            ?.mediaAsset
             ?: primaryMediaAsset()
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
