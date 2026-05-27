@@ -10,7 +10,7 @@ actual object PlatformImageUploadPreprocessor : AiImageUploadPreprocessor {
         image: AiImageInput,
         config: ImageUploadPreprocessingConfig,
     ): AiImageInput {
-        val bitmap = BitmapFactory.decodeByteArray(image.bytes, 0, image.bytes.size) ?: return image
+        val bitmap = decodeBitmapDownsampled(image.bytes, config.maxLongEdgePx) ?: return image
         val scaled = bitmap.scaledToMaxLongEdge(config.maxLongEdgePx)
         if (scaled !== bitmap) {
             bitmap.recycle()
@@ -31,6 +31,27 @@ actual object PlatformImageUploadPreprocessor : AiImageUploadPreprocessor {
     }
 }
 
+private fun decodeBitmapDownsampled(bytes: ByteArray, maxLongEdgePx: Int): Bitmap? {
+    val boundsOptions = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+    val longEdge = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+    val sampleSize = if (longEdge > maxLongEdgePx) {
+        var size = 1
+        while (longEdge / (size * 2) >= maxLongEdgePx) {
+            size *= 2
+        }
+        size
+    } else {
+        1
+    }
+    val decodeOptions = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+}
+
 private fun Bitmap.scaledToMaxLongEdge(maxLongEdgePx: Int): Bitmap {
     val longEdge = maxOf(width, height)
     if (longEdge <= maxLongEdgePx) return this
@@ -42,8 +63,9 @@ private fun Bitmap.scaledToMaxLongEdge(maxLongEdgePx: Int): Bitmap {
 }
 
 private fun String.withImageExtension(extension: String): String {
+    val lastSlash = lastIndexOf('/')
     val dotIndex = lastIndexOf('.')
-    return if (dotIndex > 0) {
+    return if (dotIndex > lastSlash) {
         substring(0, dotIndex + 1) + extension
     } else {
         "$this.$extension"

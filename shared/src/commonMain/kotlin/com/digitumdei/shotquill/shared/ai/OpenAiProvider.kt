@@ -73,7 +73,7 @@ class OpenAiProvider(
         withApiKey { apiKey ->
             val multipart = buildImageEditBody(
                 request.copy(
-                    sourceImage = imagePreprocessor.preprocess(request.sourceImage, ImageUploadPreprocessingConfig()),
+                    sourceImage = imagePreprocessor.preprocess(request.sourceImage, ImageUploadPreprocessingConfig(providerRequiresPng = true)),
                     maskImage = request.maskImage?.let {
                         imagePreprocessor.preprocess(it, ImageUploadPreprocessingConfig(providerRequiresPng = true))
                     },
