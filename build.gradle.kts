@@ -23,9 +23,10 @@ kover {
                     "com.digitumdei.shotquill.AppKt*",
                     "com.digitumdei.shotquill.AppScreen",
                     "*MainActivity*",
+                    "com.digitumdei.shotquill.media.MediaCaptureHandler*",
+                    "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
+                    "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
                     "*AndroidBrandProfileRepositoryFactory*",
-                    "*EpochClock*",
-                    "com.digitumdei.shotquill.media.*",
                     "com.digitumdei.shotquill.screen.NewPostScreenKt",
                     "com.digitumdei.shotquill.shared.db.*",
                 )

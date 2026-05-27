@@ -45,7 +45,6 @@ import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
-import kotlin.random.Random
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
@@ -53,6 +52,9 @@ import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 private enum class AppScreen {
     NewPost,
@@ -76,7 +78,7 @@ fun App(
     var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
 
     val newPostCreator = remember(manualWorkflowRepository) {
-        manualWorkflowRepository?.let { NewPostCreator(it, it) }
+        manualWorkflowRepository?.let { NewPostCreator(it) }
     }
 
     var draftCreatedMessage by remember { mutableStateOf<String?>(null) }
@@ -86,24 +88,28 @@ fun App(
         draftCreatedMessage = null
         saveError = null
         if (captureResultValue != null && newPostCreator != null) {
-            val suffix = Random.nextInt()
+            val suffix = Random.nextInt(0, Int.MAX_VALUE)
             val draftId = PostDraftId("draft-${captureResultValue.createdAtEpochMillis}-${suffix}")
             val mediaAssetId = MediaAssetId("media-${captureResultValue.createdAtEpochMillis}-${suffix}")
-            runCatching {
-                newPostCreator.createDraftFromMedia(
-                    draftId = draftId,
-                    mediaAssetId = mediaAssetId,
-                    format = PostFormat.SingleImage,
-                    uri = captureResultValue.uri,
-                    mimeType = captureResultValue.mimeType,
-                    widthPx = captureResultValue.widthPx,
-                    heightPx = captureResultValue.heightPx,
-                )
-            }.onSuccess { draft ->
+            try {
+                val draft = withContext(Dispatchers.IO) {
+                    newPostCreator.createDraftFromMedia(
+                        draftId = draftId,
+                        mediaAssetId = mediaAssetId,
+                        format = PostFormat.SingleImage,
+                        uri = captureResultValue.uri,
+                        mimeType = captureResultValue.mimeType,
+                        widthPx = captureResultValue.widthPx,
+                        heightPx = captureResultValue.heightPx,
+                        createdAtEpochMillis = captureResultValue.createdAtEpochMillis,
+                    )
+                }
                 draftCreatedMessage = "Draft ${draft.id.value} created"
-            }.onFailure { e ->
+            } catch (e: Exception) {
                 saveError = "Failed to create draft: ${e.message}"
             }
+        } else if (captureResultValue != null) {
+            saveError = "Draft repository not available"
         }
     }
 
@@ -124,6 +130,7 @@ fun App(
                             saveError = null
                         },
                         onDismissError = {
+                            onClearCaptureResult?.invoke()
                             onClearCaptureError?.invoke()
                             saveError = null
                         },
@@ -374,7 +381,7 @@ private fun BrandProfileEditor(
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = {
-                val now = EpochClock.nowMillis()
+                val now = EpochClock.Default.nowMillis()
                 runCatching {
                     BrandProfile(
                         id = activeBrandProfile?.id ?: BrandProfileId("active-brand-profile"),

@@ -1,13 +1,13 @@
 package com.digitumdei.shotquill.shared.workflow
 
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
-import com.digitumdei.shotquill.shared.storage.MediaAssetRepository
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,16 +18,13 @@ class NewPostCreatorTest {
     private val savedMediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
     private val savedDrafts = mutableMapOf<PostDraftId, PostDraft>()
 
-    private val mediaAssetRepository = object : MediaAssetRepository {
-        override fun save(mediaAsset: MediaAsset) {
-            savedMediaAssets[mediaAsset.id] = mediaAsset
-        }
-
-        override fun get(id: MediaAssetId): MediaAsset? = savedMediaAssets[id]
+    private fun saveMediaAsset(mediaAsset: MediaAsset) {
+        savedMediaAssets[mediaAsset.id] = mediaAsset
     }
 
     private val postDraftRepository = object : PostDraftRepository {
         override fun save(postDraft: PostDraft) {
+            postDraft.mediaItems.forEach { saveMediaAsset(it.mediaAsset) }
             savedDrafts[postDraft.id] = postDraft
         }
 
@@ -40,10 +37,11 @@ class NewPostCreatorTest {
             false
     }
 
-    private val creator = NewPostCreator(mediaAssetRepository, postDraftRepository)
+    private fun getMediaAsset(id: MediaAssetId): MediaAsset? = savedMediaAssets[id]
 
     @Test
     fun createsDraftFromMediaWithAllMetadata() {
+        val creator = NewPostCreator(postDraftRepository)
         val draftId = PostDraftId("draft-test-1")
         val mediaAssetId = MediaAssetId("media-test-1")
 
@@ -69,6 +67,7 @@ class NewPostCreatorTest {
 
     @Test
     fun createsDraftFromMediaWithoutDimensions() {
+        val creator = NewPostCreator(postDraftRepository)
         val draftId = PostDraftId("draft-test-2")
         val mediaAssetId = MediaAssetId("media-test-2")
 
@@ -89,6 +88,7 @@ class NewPostCreatorTest {
 
     @Test
     fun savesMediaAssetToRepository() {
+        val creator = NewPostCreator(postDraftRepository)
         val draftId = PostDraftId("draft-test-3")
         val mediaAssetId = MediaAssetId("media-test-3")
 
@@ -102,7 +102,7 @@ class NewPostCreatorTest {
             heightPx = 300,
         )
 
-        val saved = mediaAssetRepository.get(mediaAssetId)
+        val saved = getMediaAsset(mediaAssetId)
         assertNotNull(saved)
         assertEquals(MediaType.Photo, saved.type)
         assertEquals("file://test/photo.webp", saved.uri)
@@ -113,6 +113,7 @@ class NewPostCreatorTest {
 
     @Test
     fun savesPostDraftToRepository() {
+        val creator = NewPostCreator(postDraftRepository)
         val draftId = PostDraftId("draft-test-4")
         val mediaAssetId = MediaAssetId("media-test-4")
 
@@ -136,6 +137,7 @@ class NewPostCreatorTest {
 
     @Test
     fun createsCarouselPostDraftIfRequested() {
+        val creator = NewPostCreator(postDraftRepository)
         val draftId = PostDraftId("draft-test-5")
         val mediaAssetId = MediaAssetId("media-test-5")
 
@@ -151,5 +153,33 @@ class NewPostCreatorTest {
 
         assertEquals(PostFormat.Carousel, draft.format)
         assertEquals(1, draft.mediaItems.size)
+    }
+
+    @Test
+    fun usesInjectedClockForTimestamps() {
+        val knownEpochMillis = 1_700_000_000_000L
+        val clock = object : EpochClock {
+            override fun nowMillis(): Long = knownEpochMillis
+        }
+        val creator = NewPostCreator(postDraftRepository, clock)
+        val draftId = PostDraftId("draft-clock-1")
+        val mediaAssetId = MediaAssetId("media-clock-1")
+
+        val draft = creator.createDraftFromMedia(
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            format = PostFormat.SingleImage,
+            uri = "file://test/clock-photo.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 800,
+            heightPx = 600,
+        )
+
+        assertEquals(knownEpochMillis, draft.createdAt.toEpochMilliseconds())
+        assertEquals(knownEpochMillis, draft.updatedAt.toEpochMilliseconds())
+        assertEquals(knownEpochMillis, draft.mediaItems[0].mediaAsset.createdAtEpochMillis)
+
+        val savedMedia = getMediaAsset(mediaAssetId)
+        assertEquals(knownEpochMillis, savedMedia?.createdAtEpochMillis)
     }
 }

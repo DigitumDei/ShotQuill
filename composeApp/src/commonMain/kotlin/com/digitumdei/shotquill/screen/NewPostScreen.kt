@@ -32,6 +32,17 @@ enum class NewPostStep {
     Error,
 }
 
+fun deriveNewPostStep(
+    captureResult: MediaCaptureResult?,
+    draftCreatedMessage: String?,
+    errorMessage: String?,
+): NewPostStep = when {
+    draftCreatedMessage != null -> NewPostStep.Complete
+    errorMessage != null -> NewPostStep.Error
+    captureResult != null -> NewPostStep.Processing
+    else -> NewPostStep.ChooseSource
+}
+
 @Composable
 fun NewPostScreen(
     onCaptureFromCamera: () -> Unit,
@@ -43,15 +54,8 @@ fun NewPostScreen(
     onDismissResult: () -> Unit,
     onDismissError: () -> Unit,
 ) {
-    var step by remember(captureResult, draftCreatedMessage, errorMessage) {
-        mutableStateOf(
-            when {
-                draftCreatedMessage != null -> NewPostStep.Complete
-                errorMessage != null -> NewPostStep.Error
-                captureResult != null -> NewPostStep.Processing
-                else -> NewPostStep.ChooseSource
-            },
-        )
+    val step by remember(captureResult, draftCreatedMessage, errorMessage) {
+        mutableStateOf(deriveNewPostStep(captureResult, draftCreatedMessage, errorMessage))
     }
 
     Column(
@@ -109,21 +113,27 @@ fun NewPostScreen(
             }
 
             NewPostStep.Complete -> {
-                val result = captureResult ?: return@Column
-                Text(
-                    text = draftCreatedMessage ?: "Draft created!",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = buildString {
-                        appendLine("Image saved to: ${result.uri.takeLast(40)}")
-                        result.mimeType?.let { appendLine("Type: $it") }
-                        if (result.widthPx != null && result.heightPx != null) {
-                            appendLine("Dimensions: ${result.widthPx} x ${result.heightPx}")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (captureResult != null) {
+                    Text(
+                        text = draftCreatedMessage ?: "Draft created!",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = buildString {
+                            appendLine("Image saved to: ${captureResult.uri.takeLast(40)}")
+                            captureResult.mimeType?.let { appendLine("Type: $it") }
+                            if (captureResult.widthPx != null && captureResult.heightPx != null) {
+                                appendLine("Dimensions: ${captureResult.widthPx} x ${captureResult.heightPx}")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    Text(
+                        text = draftCreatedMessage ?: "Draft created!",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = onDismissResult) {
@@ -142,10 +152,7 @@ fun NewPostScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = {
-                        onDismissError()
-                        step = NewPostStep.ChooseSource
-                    }) {
+                    Button(onClick = onDismissError) {
                         Text("Try Again")
                     }
                     OutlinedButton(onClick = onNavigateToSettings) {

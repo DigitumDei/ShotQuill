@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.media
 
 import android.Manifest
 import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,10 +14,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
+import com.digitumdei.shotquill.BuildConfig
 import com.digitumdei.shotquill.model.MediaCaptureResult
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 class MediaCaptureHandler(
@@ -28,6 +29,7 @@ class MediaCaptureHandler(
 fun rememberMediaCaptureHandler(
     context: Context,
     mediaFileManager: MediaFileManager,
+    onImportGallery: (suspend (Uri) -> MediaCaptureResult)? = null,
     onResult: (MediaCaptureResult) -> Unit,
     onError: (String) -> Unit,
 ): MediaCaptureHandler {
@@ -39,15 +41,15 @@ fun rememberMediaCaptureHandler(
     ) { success ->
         if (success) {
             val path = cameraFilePath
+            cameraFilePath = null
             if (path != null) {
                 scope.launch {
                     runCatching {
-                        withContext(Dispatchers.IO) {
-                            mediaFileManager.handleCameraCapture(File(path))
-                        }
+                        mediaFileManager.handleCameraCapture(File(path))
                     }.onSuccess { result ->
                         onResult(result)
                     }.onFailure { e ->
+                        if (e is CancellationException) throw e
                         onError("Failed to process camera capture: ${e.message}")
                     }
                 }
@@ -70,7 +72,7 @@ fun rememberMediaCaptureHandler(
             val file = mediaFileManager.createCameraCaptureFile()
             val uri = FileProvider.getUriForFile(
                 context,
-                "${context.packageName}.fileprovider",
+                "${BuildConfig.APPLICATION_ID}.fileprovider",
                 file,
             )
             cameraFilePath = file.absolutePath
@@ -86,19 +88,22 @@ fun rememberMediaCaptureHandler(
         if (uri != null) {
             scope.launch {
                 runCatching {
-                    withContext(Dispatchers.IO) {
-                        mediaFileManager.importFromContentUri(uri)
+                    if (onImportGallery != null) {
+                        onImportGallery(uri)
+                    } else {
+                        error("Gallery import not available")
                     }
                 }.onSuccess { result ->
                     onResult(result)
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     onError("Failed to import image: ${e.message}")
                 }
             }
         }
     }
 
-    return remember(context, mediaFileManager, onResult, onError) {
+    return remember(context, mediaFileManager) {
         MediaCaptureHandler(
             launchCamera = {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)

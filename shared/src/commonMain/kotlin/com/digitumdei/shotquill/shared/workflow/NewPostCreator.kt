@@ -9,14 +9,12 @@ import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.PostMediaItem
-import com.digitumdei.shotquill.shared.storage.MediaAssetRepository
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.datetime.Instant
 
 class NewPostCreator(
-    private val mediaAssetRepository: MediaAssetRepository,
     private val postDraftRepository: PostDraftRepository,
-    private val clock: EpochClock = EpochClock,
+    private val clock: EpochClock = EpochClock.Default,
 ) {
     fun createDraftFromMedia(
         draftId: PostDraftId,
@@ -26,9 +24,9 @@ class NewPostCreator(
         mimeType: String?,
         widthPx: Int?,
         heightPx: Int?,
+        createdAtEpochMillis: Long = clock.nowMillis(),
     ): PostDraft {
-        val nowEpochMillis = clock.nowMillis()
-        val nowInstant = Instant.fromEpochMilliseconds(nowEpochMillis)
+        val nowInstant = Instant.fromEpochMilliseconds(clock.nowMillis())
 
         val mediaAsset = MediaAsset(
             id = mediaAssetId,
@@ -37,9 +35,8 @@ class NewPostCreator(
             mimeType = mimeType,
             widthPx = widthPx,
             heightPx = heightPx,
-            createdAtEpochMillis = nowEpochMillis,
+            createdAtEpochMillis = createdAtEpochMillis,
         )
-        mediaAssetRepository.save(mediaAsset)
 
         val postDraft = PostDraft(
             id = draftId,
