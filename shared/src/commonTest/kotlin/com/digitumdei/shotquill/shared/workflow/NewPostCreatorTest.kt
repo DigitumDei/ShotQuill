@@ -11,6 +11,7 @@ import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -181,5 +182,40 @@ class NewPostCreatorTest {
 
         val savedMedia = getMediaAsset(mediaAssetId)
         assertEquals(knownEpochMillis, savedMedia?.createdAtEpochMillis)
+    }
+
+    @Test
+    fun propagatesRepositorySaveException() {
+        val failingRepo = object : PostDraftRepository {
+            override fun save(postDraft: PostDraft) {
+                throw RuntimeException("SQLite disk full")
+            }
+
+            override fun get(id: PostDraftId): PostDraft? = null
+
+            override fun updateStatus(
+                id: PostDraftId,
+                status: DraftStatus,
+                updatedAt: kotlinx.datetime.Instant,
+            ): Boolean = false
+
+            override fun replaceMediaItems(
+                id: PostDraftId,
+                mediaItems: List<MediaAssetId>,
+            ): Boolean = false
+        }
+        val creator = NewPostCreator(failingRepo)
+
+        assertFailsWith<RuntimeException> {
+            creator.createDraftFromMedia(
+                draftId = PostDraftId("draft-test-fail"),
+                mediaAssetId = MediaAssetId("media-test-fail"),
+                format = PostFormat.SingleImage,
+                uri = "file://test/photo.jpg",
+                mimeType = "image/jpeg",
+                widthPx = 1920,
+                heightPx = 1080,
+            )
+        }
     }
 }

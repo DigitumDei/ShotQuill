@@ -1,11 +1,18 @@
 package com.digitumdei.shotquill
 
+import androidx.compose.runtime.saveable.SaverScope
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.model.MediaCaptureResultSaver
 import com.digitumdei.shotquill.screen.NewPostStep
 import com.digitumdei.shotquill.screen.deriveNewPostStep
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+
+private val testSaverScope = object : SaverScope {
+    override fun canBeSaved(value: Any): Boolean = true
+}
 
 class MediaCaptureResultTest {
     @Test
@@ -58,6 +65,109 @@ class MediaCaptureResultTest {
         assertEquals(original.widthPx, copied.widthPx)
         assertEquals(original.heightPx, copied.heightPx)
         assertEquals(original.createdAtEpochMillis, copied.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRoundtripRestoresAllFields() {
+        val original = MediaCaptureResult(
+            uri = "file:///data/media/originals/photo.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1920,
+            heightPx = 1080,
+            createdAtEpochMillis = 1_700_000_000_000L,
+        )
+        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(original) }
+        val restored = MediaCaptureResultSaver.restore(saved)
+
+        assertNotNull(restored)
+        assertEquals(original.uri, restored.uri)
+        assertEquals(original.mimeType, restored.mimeType)
+        assertEquals(original.widthPx, restored.widthPx)
+        assertEquals(original.heightPx, restored.heightPx)
+        assertEquals(original.createdAtEpochMillis, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRoundtripWithNullMetadataPreservesNulls() {
+        val original = MediaCaptureResult(
+            uri = "file:///data/media/originals/unknown.bin",
+            mimeType = null,
+            widthPx = null,
+            heightPx = null,
+            createdAtEpochMillis = 1_700_000_000_000L,
+        )
+        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(original) }
+        val restored = MediaCaptureResultSaver.restore(saved)
+
+        assertNotNull(restored)
+        assertEquals(original.uri, restored.uri)
+        assertNull(restored.mimeType)
+        assertNull(restored.widthPx)
+        assertNull(restored.heightPx)
+        assertEquals(original.createdAtEpochMillis, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverSaveNullReturnsEmptyString() {
+        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(null) }
+        assertEquals("", saved)
+    }
+
+    @Test
+    fun saverRestoreReturnsNullForEmptyString() {
+        assertNull(MediaCaptureResultSaver.restore(""))
+    }
+
+    @Test
+    fun saverRestoreHandlesTruncatedInputGracefully() {
+        val restored = MediaCaptureResultSaver.restore("file:///only/uri.jpg")
+        assertNotNull(restored)
+        assertEquals("file:///only/uri.jpg", restored.uri)
+        assertNull(restored.mimeType)
+        assertNull(restored.widthPx)
+        assertNull(restored.heightPx)
+        assertEquals(0L, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRestoreHandlesNonNumericTimestampGracefully() {
+        val restored = MediaCaptureResultSaver.restore("file:///photo.jpg|image/jpeg|1920|1080|not-a-number")
+        assertNotNull(restored)
+        assertEquals("file:///photo.jpg", restored.uri)
+        assertEquals("image/jpeg", restored.mimeType)
+        assertEquals(1920, restored.widthPx)
+        assertEquals(1080, restored.heightPx)
+        assertEquals(0L, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRestoreHandlesNonNumericWidthAndHeightGracefully() {
+        val restored = MediaCaptureResultSaver.restore("file:///photo.jpg|image/jpeg|abc|def|1700000000000")
+        assertNotNull(restored)
+        assertEquals("file:///photo.jpg", restored.uri)
+        assertEquals("image/jpeg", restored.mimeType)
+        assertNull(restored.widthPx)
+        assertNull(restored.heightPx)
+        assertEquals(1_700_000_000_000L, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRestoreHandlesNegativeWidthAndHeightAsNull() {
+        val restored = MediaCaptureResultSaver.restore("file:///photo.jpg|image/jpeg|-1|-1|1700000000000")
+        assertNotNull(restored)
+        assertEquals("file:///photo.jpg", restored.uri)
+        assertEquals("image/jpeg", restored.mimeType)
+        assertNull(restored.widthPx)
+        assertNull(restored.heightPx)
+        assertEquals(1_700_000_000_000L, restored.createdAtEpochMillis)
+    }
+
+    @Test
+    fun saverRestoreHandlesPipeInUriField() {
+        val restored = MediaCaptureResultSaver.restore(
+            "file:///img|with|pipe.jpg||-1|-1|1700000000000",
+        )
+        assertNotNull(restored)
     }
 }
 
