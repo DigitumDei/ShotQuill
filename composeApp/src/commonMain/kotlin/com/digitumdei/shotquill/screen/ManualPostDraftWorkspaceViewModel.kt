@@ -11,6 +11,9 @@ import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.ExportRecord
+import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -110,6 +113,7 @@ class ManualPostDraftWorkspaceViewModel(
 ) {
     var state: ManualPostDraftWorkspaceState = unloadedState()
         private set
+    private var operationSequence = 0
 
     fun load() {
         state = postDraftRepository.get(draftId)?.toState(
@@ -124,10 +128,20 @@ class ManualPostDraftWorkspaceViewModel(
             return
         }
         val now = clock.nowMillis()
-        val platform = draft.targetPlatforms.firstOrNull() ?: defaultTargetPlatform
+        val nextStatus = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        if (!draft.canUpdateOrTransitionTo(nextStatus)) {
+            state = draft.toState(
+                statusMessage = "Cannot generate text while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
+        val idSuffix = nextIdSuffix(now)
         val generated = aiProvider.generatePostText(draft, platform, now)
         val captionRequest = CaptionRequest(
-            id = CaptionRequestId("caption-request-$now"),
+            id = CaptionRequestId("caption-request-$idSuffix"),
             draftId = draft.id,
             targetPlatform = platform,
             prompt = generated.captionPrompt,
@@ -136,7 +150,7 @@ class ManualPostDraftWorkspaceViewModel(
             createdAtEpochMillis = now,
         )
         val captionResult = CaptionResult(
-            id = CaptionResultId("caption-result-$now"),
+            id = CaptionResultId("caption-result-$idSuffix"),
             requestId = captionRequest.id,
             draftId = draft.id,
             targetPlatform = platform,
@@ -146,18 +160,17 @@ class ManualPostDraftWorkspaceViewModel(
             createdAtEpochMillis = now,
         )
         val altText = AltTextResult(
-            id = AltTextResultId("alt-text-$now"),
+            id = AltTextResultId("alt-text-$idSuffix"),
             draftId = draft.id,
             mediaAssetId = draft.primaryMediaAsset().id,
             altText = generated.altText,
             modelName = generated.modelName,
             createdAtEpochMillis = now,
         )
-        val nextStatus = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated
         val transitioned = if (draft.status == nextStatus) {
-            draft.copy(updatedAt = Instant.fromEpochMilliseconds(now))
+            draft.copy(updatedAt = operationUpdatedAt)
         } else {
-            draft.transitionTo(nextStatus, Instant.fromEpochMilliseconds(now))
+            draft.transitionTo(nextStatus, operationUpdatedAt)
         }
         val updated = transitioned.copy(
             caption = CaptionDraft(generated.caption, generated.hashtags),
@@ -167,7 +180,7 @@ class ManualPostDraftWorkspaceViewModel(
             altTextResults = draft.altTextResults + altText,
             promptHistory = draft.promptHistory + listOf(
                 PromptHistoryEntry(
-                    id = PromptHistoryEntryId("prompt-caption-$now"),
+                    id = PromptHistoryEntryId("prompt-caption-$idSuffix"),
                     draftId = draft.id,
                     operationType = AiOperationType.CaptionGeneration,
                     prompt = generated.captionPrompt,
@@ -176,7 +189,7 @@ class ManualPostDraftWorkspaceViewModel(
                     createdAtEpochMillis = now,
                 ),
                 PromptHistoryEntry(
-                    id = PromptHistoryEntryId("prompt-alt-text-$now"),
+                    id = PromptHistoryEntryId("prompt-alt-text-$idSuffix"),
                     draftId = draft.id,
                     operationType = AiOperationType.AltTextGeneration,
                     prompt = generated.altTextPrompt,
@@ -196,10 +209,19 @@ class ManualPostDraftWorkspaceViewModel(
             return
         }
         val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        if (!draft.canUpdateOrTransitionTo(DraftStatus.PhotoEdited)) {
+            state = draft.toState(
+                statusMessage = "Cannot edit photo while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        val idSuffix = nextIdSuffix(now)
         val generated = aiProvider.editPhoto(draft, now)
         val original = draft.primaryMediaAsset()
         val request = PhotoEditRequest(
-            id = PhotoEditRequestId("photo-edit-request-$now"),
+            id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
             draftId = draft.id,
             sourceMediaAssetId = original.id,
             intent = EditIntent.Enhance,
@@ -209,7 +231,7 @@ class ManualPostDraftWorkspaceViewModel(
             createdAtEpochMillis = now,
         )
         val editedMedia = MediaAsset(
-            id = MediaAssetId("edited-media-$now"),
+            id = MediaAssetId("edited-media-$idSuffix"),
             type = MediaType.EditedPhoto,
             uri = generated.editedMediaUri,
             mimeType = original.mimeType,
@@ -218,7 +240,7 @@ class ManualPostDraftWorkspaceViewModel(
             createdAtEpochMillis = now,
         )
         val result = PhotoEditResult(
-            id = PhotoEditResultId("photo-edit-result-$now"),
+            id = PhotoEditResultId("photo-edit-result-$idSuffix"),
             requestId = request.id,
             draftId = draft.id,
             editedMediaAsset = editedMedia,
@@ -227,15 +249,15 @@ class ManualPostDraftWorkspaceViewModel(
             createdAtEpochMillis = now,
         )
         val transitioned = if (draft.status == DraftStatus.PhotoEdited) {
-            draft.copy(updatedAt = Instant.fromEpochMilliseconds(now))
+            draft.copy(updatedAt = operationUpdatedAt)
         } else {
-            draft.transitionTo(DraftStatus.PhotoEdited, Instant.fromEpochMilliseconds(now))
+            draft.transitionTo(DraftStatus.PhotoEdited, operationUpdatedAt)
         }
         val updated = transitioned.copy(
             photoEditRequests = draft.photoEditRequests + request,
             photoEditResults = draft.photoEditResults + result,
             promptHistory = draft.promptHistory + PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-photo-edit-$now"),
+                id = PromptHistoryEntryId("prompt-photo-edit-$idSuffix"),
                 draftId = draft.id,
                 operationType = AiOperationType.PhotoEdit,
                 prompt = generated.prompt,
@@ -261,9 +283,42 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun markShareOrExportStarted() {
-        if (state.actions.canShareOrExport) {
-            state = state.copy(statusMessage = "Share/export ready")
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
         }
+        if (!state.actions.canShareOrExport || !draft.canUpdateOrTransitionTo(DraftStatus.ReadyToShare)) {
+            state = draft.toState(
+                statusMessage = "Cannot share/export while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
+        val idSuffix = nextIdSuffix(now)
+        val exportRecord = ExportRecord(
+            id = ExportRecordId("export-$idSuffix"),
+            draftId = draft.id,
+            targetPlatform = platform,
+            status = ExportStatus.Pending,
+            destinationUri = null,
+            errorMessage = null,
+            createdAtEpochMillis = now,
+            completedAtEpochMillis = null,
+        )
+        val transitioned = if (draft.status == DraftStatus.ReadyToShare) {
+            draft.copy(updatedAt = operationUpdatedAt)
+        } else {
+            draft.transitionTo(DraftStatus.ReadyToShare, operationUpdatedAt)
+        }
+        val updated = transitioned.copy(
+            targetPlatforms = draft.targetPlatforms + platform,
+            exportRecords = draft.exportRecords + exportRecord,
+        )
+        postDraftRepository.save(updated)
+        state = updated.toState("Share/export ready", state.isPromptHistoryVisible)
     }
 
     fun togglePromptHistory() {
@@ -277,18 +332,17 @@ class ManualPostDraftWorkspaceViewModel(
         val originalPhoto = mediaItems
             .firstOrNull { it.mediaAsset.type == MediaType.Photo }
             ?.mediaAsset
-            ?: primaryMediaAsset()
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
         val altText = altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
-        val canMutateDraft = status != DraftStatus.Archived && status != DraftStatus.Shared
+        val canMutateDraft = status in mutableDraftStatuses
         return ManualPostDraftWorkspaceState(
             draftId = id,
-            originalPhotoUri = originalPhoto.uri,
+            originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
             generatedCaption = captionText,
             generatedAltText = altText,
-            targetPlatform = targetPlatforms.firstOrNull() ?: captionResults.lastOrNull()?.targetPlatform,
+            targetPlatform = preferredTargetPlatform() ?: captionResults.lastOrNull()?.targetPlatform,
             draftStatus = status,
             promptHistory = promptHistory,
             actions = ManualPostDraftWorkspaceActions(
@@ -325,4 +379,27 @@ class ManualPostDraftWorkspaceViewModel(
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,
         )
+
+    private fun PostDraft.preferredTargetPlatform(): TargetPlatform? =
+        targetPlatforms.sortedBy { it.wireValue }.firstOrNull()
+
+    private fun PostDraft.canUpdateOrTransitionTo(nextStatus: DraftStatus): Boolean =
+        status == nextStatus || status.canTransitionTo(nextStatus)
+
+    private fun operationUpdatedAt(draft: PostDraft, nowEpochMillis: Long): Instant {
+        val now = Instant.fromEpochMilliseconds(nowEpochMillis)
+        return if (now >= draft.updatedAt) now else draft.updatedAt
+    }
+
+    private fun nextIdSuffix(nowEpochMillis: Long): String =
+        "$nowEpochMillis-${operationSequence++}"
+
+    private companion object {
+        val mutableDraftStatuses = setOf(
+            DraftStatus.PhotoAdded,
+            DraftStatus.TextGenerated,
+            DraftStatus.PhotoEdited,
+            DraftStatus.ReadyToShare,
+        )
+    }
 }

@@ -42,7 +42,7 @@ class NewPostCreator(
         val postDraft = PostDraft(
             id = draftId,
             format = format,
-            status = DraftStatus.Draft,
+            status = DraftStatus.PhotoAdded,
             mediaItems = listOf(PostMediaItem(mediaAsset = mediaAsset, order = 0)),
             caption = null,
             targetPlatforms = emptySet(),

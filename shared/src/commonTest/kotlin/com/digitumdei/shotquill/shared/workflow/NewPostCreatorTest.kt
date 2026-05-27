@@ -58,7 +58,7 @@ class NewPostCreatorTest {
 
         assertEquals(draftId, draft.id)
         assertEquals(PostFormat.SingleImage, draft.format)
-        assertEquals(DraftStatus.Draft, draft.status)
+        assertEquals(DraftStatus.PhotoAdded, draft.status)
         assertEquals(1, draft.mediaItems.size)
         assertEquals(mediaAssetId, draft.mediaItems[0].mediaAsset.id)
         assertEquals(0, draft.mediaItems[0].order)
@@ -130,7 +130,7 @@ class NewPostCreatorTest {
 
         val saved = postDraftRepository.get(draftId)
         assertNotNull(saved)
-        assertEquals(DraftStatus.Draft, saved.status)
+        assertEquals(DraftStatus.PhotoAdded, saved.status)
         assertEquals(PostFormat.SingleImage, saved.format)
         assertEquals(emptySet(), saved.targetPlatforms)
         assertEquals(null, saved.caption)

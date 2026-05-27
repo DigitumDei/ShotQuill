@@ -26,6 +26,8 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -44,21 +46,26 @@ fun ManualPostDraftWorkspaceScreen(
     }
     var state by remember(viewModel) { mutableStateOf(viewModel.state) }
     val coroutineScope = rememberCoroutineScope()
+    val operationMutex = remember(viewModel) { Mutex() }
 
     fun refresh(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
         coroutineScope.launch {
-            withContext(Dispatchers.IO) {
-                viewModel.block()
+            operationMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    viewModel.block()
+                }
+                state = viewModel.state
             }
-            state = viewModel.state
         }
     }
 
     LaunchedEffect(viewModel) {
-        withContext(Dispatchers.IO) {
-            viewModel.load()
+        operationMutex.withLock {
+            withContext(Dispatchers.IO) {
+                viewModel.load()
+            }
+            state = viewModel.state
         }
-        state = viewModel.state
     }
 
     ManualPostDraftWorkspaceContent(

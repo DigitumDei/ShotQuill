@@ -59,11 +59,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
-private enum class AppScreen {
+internal enum class AppScreen {
     NewPost,
     DraftWorkspace,
     Settings,
 }
+
+internal fun appScreenFromSaveable(value: String): AppScreen =
+    AppScreen.entries.firstOrNull { it.name == value } ?: AppScreen.NewPost
 
 @Composable
 fun App(
@@ -133,7 +136,7 @@ fun App(
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            when (AppScreen.valueOf(currentScreen)) {
+            when (appScreenFromSaveable(currentScreen)) {
                 AppScreen.NewPost -> {
                     NewPostScreen(
                         onCaptureFromCamera = onCaptureFromCamera ?: {},
@@ -163,12 +166,16 @@ fun App(
                 AppScreen.DraftWorkspace -> {
                     val draftId = currentDraftId
                     if (manualWorkflowRepository != null && draftId != null) {
+                        val defaultTargetPlatform = remember(repository, draftId) {
+                            repository.readSettings().defaultTargetPlatform
+                        }
                         ManualPostDraftWorkspaceScreen(
                             draftId = PostDraftId(draftId),
                             postDraftRepository = manualWorkflowRepository,
-                            defaultTargetPlatform = repository.readSettings().defaultTargetPlatform,
+                            defaultTargetPlatform = defaultTargetPlatform,
                             onNavigateToNewPost = {
                                 currentScreen = AppScreen.NewPost.name
+                                currentDraftId = null
                                 onClearCaptureResult?.invoke()
                                 draftCreatedMessage = null
                                 saveError = null

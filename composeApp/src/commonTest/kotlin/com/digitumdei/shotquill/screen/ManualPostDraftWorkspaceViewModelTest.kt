@@ -8,6 +8,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -24,6 +25,7 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ManualPostDraftWorkspaceViewModelTest {
@@ -88,6 +90,22 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun reportsDraftNotFoundWhenLoadingMissingDraft() {
+        val repository = FakePostDraftRepository()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.load()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertNull(viewModel.state.originalPhotoUri)
+        assertFalse(viewModel.state.actions.canGeneratePostText)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+        assertFalse(viewModel.state.actions.canCopyCaption)
+        assertFalse(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canShareOrExport)
+    }
+
+    @Test
     fun updatesStoredDraftWhenGeneratingTextWithFakeAiProvider() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -104,6 +122,14 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
         assertEquals("Photo prepared for instagram_feed_square.", viewModel.state.generatedAltText)
         assertEquals(2, viewModel.state.promptHistory.size)
+        assertEquals(
+            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
+            viewModel.state.promptHistory[0].prompt,
+        )
+        assertEquals(
+            "Generate accessible alt text for file://photo.jpg.",
+            viewModel.state.promptHistory[1].prompt,
+        )
         assertTrue(viewModel.state.actions.canShareOrExport)
     }
 
@@ -127,6 +153,62 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun keepsPhotoEditedStatusWhenGeneratingTextAfterPhotoEdit() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_400_000L),
+        )
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        val stored = repository.get(draftId)
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
+        assertEquals("Generated caption and alt text", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun supportsGenerateThenEditWorkflow() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = IncrementingClock(1_700_000_500_000L),
+        )
+        viewModel.load()
+
+        viewModel.generatePostText()
+        viewModel.editPhotoWithAi()
+
+        val stored = repository.get(draftId)
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
+        assertEquals("file://photo.jpg#edited-1700000500001", viewModel.state.editedPhotoUri)
+        assertEquals(3, viewModel.state.promptHistory.size)
+    }
+
+    @Test
+    fun rejectsLegacyDraftStatusWithoutThrowing() {
+        val repository = FakePostDraftRepository(sampleDraft().copy(status = DraftStatus.Draft))
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertFalse(viewModel.state.actions.canGeneratePostText)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+
+        viewModel.generatePostText()
+        assertEquals("Cannot generate text while status is draft", viewModel.state.statusMessage)
+        assertEquals(DraftStatus.Draft, repository.get(draftId)?.status)
+
+        viewModel.editPhotoWithAi()
+        assertEquals("Cannot edit photo while status is draft", viewModel.state.statusMessage)
+        assertEquals(DraftStatus.Draft, repository.get(draftId)?.status)
+    }
+
+    @Test
     fun updatesStoredDraftWhenEditingPhotoWithFakeAiProvider() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -143,6 +225,116 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("file://photo.jpg#edited-1700000200000", viewModel.state.editedPhotoUri)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertTrue(viewModel.state.actions.canViewPromptHistory)
+    }
+
+    @Test
+    fun rejectsTerminalDraftMutationsWithoutThrowing() {
+        listOf(DraftStatus.Archived, DraftStatus.Shared).forEach { terminalStatus ->
+            val repository = FakePostDraftRepository(sampleDraftWithGeneratedText().copy(status = terminalStatus))
+            val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+            viewModel.load()
+
+            viewModel.generatePostText()
+            assertEquals("Cannot generate text while status is ${terminalStatus.wireValue}", viewModel.state.statusMessage)
+            assertEquals(terminalStatus, repository.get(draftId)?.status)
+
+            viewModel.editPhotoWithAi()
+            assertEquals("Cannot edit photo while status is ${terminalStatus.wireValue}", viewModel.state.statusMessage)
+            assertEquals(terminalStatus, repository.get(draftId)?.status)
+        }
+    }
+
+    @Test
+    fun handlesDraftDisappearingBeforeActions() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+        repository.delete(draftId)
+
+        viewModel.generatePostText()
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+
+        viewModel.editPhotoWithAi()
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun persistsPendingExportAndMovesDraftReadyToShare() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_600_000L),
+        )
+        viewModel.load()
+
+        viewModel.markShareOrExportStarted()
+
+        val stored = repository.get(draftId)
+        assertEquals(DraftStatus.ReadyToShare, stored?.status)
+        assertEquals(1, stored?.exportRecords?.size)
+        assertEquals(ExportStatus.Pending, stored?.exportRecords?.single()?.status)
+        assertEquals(TargetPlatform.InstagramFeedSquare, stored?.exportRecords?.single()?.targetPlatform)
+        assertEquals("Share/export ready", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun updatesStatusMessagesForCopyActions() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.markCaptionCopied()
+        assertEquals("Caption copied", viewModel.state.statusMessage)
+
+        viewModel.markAltTextCopied()
+        assertEquals("Alt text copied", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun togglesPromptHistoryVisibility() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertFalse(viewModel.state.isPromptHistoryVisible)
+        viewModel.togglePromptHistory()
+        assertTrue(viewModel.state.isPromptHistoryVisible)
+        viewModel.togglePromptHistory()
+        assertFalse(viewModel.state.isPromptHistoryVisible)
+    }
+
+    @Test
+    fun usesDeterministicTargetPlatformWhenMultipleTargetsExist() {
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.load()
+
+        assertEquals(TargetPlatform.BlueskyPost, viewModel.state.targetPlatform)
+    }
+
+    @Test
+    fun doesNotFallbackToNonPhotoForOriginalPhoto() {
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                mediaItems = listOf(
+                    PostMediaItem(
+                        mediaAsset = sampleMediaAsset().copy(type = MediaType.EditedPhoto),
+                        order = 0,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.load()
+
+        assertNull(viewModel.state.originalPhotoUri)
     }
 
     @Test
@@ -243,14 +435,19 @@ class ManualPostDraftWorkspaceViewModelTest {
             createdAtEpochMillis = 1_700_000_000_000L,
         )
 
-    private class FakePostDraftRepository(initialDraft: PostDraft) : PostDraftRepository {
-        private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+    private class FakePostDraftRepository(initialDraft: PostDraft? = null) : PostDraftRepository {
+        private val drafts: MutableMap<PostDraftId, PostDraft> =
+            initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
 
         override fun save(postDraft: PostDraft) {
             drafts[postDraft.id] = postDraft
         }
 
         override fun get(id: PostDraftId): PostDraft? = drafts[id]
+
+        fun delete(id: PostDraftId) {
+            drafts.remove(id)
+        }
 
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
             val current = drafts[id] ?: return false
@@ -263,5 +460,9 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     private class FixedClock(private val now: Long) : EpochClock {
         override fun nowMillis(): Long = now
+    }
+
+    private class IncrementingClock(private var now: Long) : EpochClock {
+        override fun nowMillis(): Long = now++
     }
 }
