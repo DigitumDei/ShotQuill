@@ -27,6 +27,7 @@ kover {
                     "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
                     "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
                     "*AndroidBrandProfileRepositoryFactory*",
+                    "com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreenKt",
                     "com.digitumdei.shotquill.screen.NewPostScreenKt",
                     "com.digitumdei.shotquill.shared.db.*",
                 )

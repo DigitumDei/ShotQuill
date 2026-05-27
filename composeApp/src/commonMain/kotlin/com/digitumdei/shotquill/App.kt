@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreen
 import com.digitumdei.shotquill.screen.NewPostScreen
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
@@ -58,10 +59,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
-private enum class AppScreen {
+internal enum class AppScreen {
     NewPost,
+    DraftWorkspace,
     Settings,
 }
+
+internal fun appScreenFromSaveable(value: String): AppScreen =
+    AppScreen.entries.firstOrNull { it.name == value } ?: AppScreen.NewPost
 
 @Composable
 fun App(
@@ -78,7 +83,8 @@ fun App(
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
-    var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
+    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.NewPost.name) }
+    var currentDraftId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val newPostCreator = remember(manualWorkflowRepository) {
         manualWorkflowRepository?.let { NewPostCreator(it) }
@@ -115,6 +121,8 @@ fun App(
                     )
                 }
                 draftCreatedMessage = "Draft ${draft.id.value} created"
+                currentDraftId = draft.id.value
+                currentScreen = AppScreen.DraftWorkspace.name
                 lastProcessedUri = captureResultValue.uri
             } catch (e: CancellationException) {
                 throw e
@@ -128,12 +136,12 @@ fun App(
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            when (currentScreen) {
+            when (appScreenFromSaveable(currentScreen)) {
                 AppScreen.NewPost -> {
                     NewPostScreen(
                         onCaptureFromCamera = onCaptureFromCamera ?: {},
                         onPickFromGallery = onPickFromGallery ?: {},
-                        onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                        onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
                         captureResult = captureResult,
                         errorMessage = captureError ?: saveError,
                         draftCreatedMessage = draftCreatedMessage,
@@ -155,11 +163,46 @@ fun App(
                     )
                 }
 
+                AppScreen.DraftWorkspace -> {
+                    val draftId = currentDraftId
+                    if (manualWorkflowRepository != null && draftId != null) {
+                        val defaultTargetPlatform = remember(repository, draftId) {
+                            repository.readSettings().defaultTargetPlatform
+                        }
+                        ManualPostDraftWorkspaceScreen(
+                            draftId = PostDraftId(draftId),
+                            postDraftRepository = manualWorkflowRepository,
+                            defaultTargetPlatform = defaultTargetPlatform,
+                            onNavigateToNewPost = {
+                                currentScreen = AppScreen.NewPost.name
+                                currentDraftId = null
+                                onClearCaptureResult?.invoke()
+                                draftCreatedMessage = null
+                                saveError = null
+                                lastProcessedUri = null
+                            },
+                        )
+                    } else {
+                        NewPostScreen(
+                            onCaptureFromCamera = onCaptureFromCamera ?: {},
+                            onPickFromGallery = onPickFromGallery ?: {},
+                            onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
+                            captureResult = null,
+                            errorMessage = "Draft repository not available",
+                            onDismissResult = {},
+                            onDismissError = {
+                                currentScreen = AppScreen.NewPost.name
+                                currentDraftId = null
+                            },
+                        )
+                    }
+                }
+
                 AppScreen.Settings -> {
                     SettingsScreen(
                         repository = repository,
                         brandProfileRepository = profileRepository,
-                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost },
+                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost.name },
                     )
                 }
             }
