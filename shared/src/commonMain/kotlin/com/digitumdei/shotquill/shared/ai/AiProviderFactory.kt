@@ -11,11 +11,13 @@ object AiProviderFactory {
         transport: OpenAiHttpTransport,
         config: OpenAiProviderConfig = OpenAiProviderConfig(),
         logger: AiRequestLogger = NoopAiRequestLogger,
+        imagePreprocessor: AiImageUploadPreprocessor = PlatformImageUploadPreprocessor,
     ): AiProvider =
         OpenAiProvider(
             settingsRepository = settingsRepository,
             transport = transport,
             config = config,
             logger = logger,
+            imagePreprocessor = imagePreprocessor,
         )
 }

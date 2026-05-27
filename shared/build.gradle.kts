@@ -31,6 +31,7 @@ kotlin {
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)
+            implementation(libs.robolectric)
             implementation(libs.sqldelight.sqlite.driver)
         }
     }

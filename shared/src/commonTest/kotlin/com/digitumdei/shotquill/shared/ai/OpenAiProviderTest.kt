@@ -26,11 +26,15 @@ class OpenAiProviderTest {
     @Test
     fun buildsVisionChatRequestWithImageAndNoApiKeyInBody() {
         val transport = SuccessfulOpenAiTransport()
-        val provider = configuredProvider(transport)
+        val preprocessor = RecordingImageUploadPreprocessor()
+        val provider = configuredProvider(transport, imagePreprocessor = preprocessor)
 
         val result = provider.describeVision(sampleVisionRequest())
 
         assertIs<AiProviderResult.Success<VisionDescriptionOutput>>(result)
+        assertEquals(1, preprocessor.requests.size)
+        assertEquals(1568, preprocessor.requests.single().maxLongEdgePx)
+        assertEquals(85, preprocessor.requests.single().jpegQuality)
         val request = transport.requests.single()
         assertEquals("POST", request.method)
         assertTrue(request.url.endsWith("/chat/completions"))
@@ -154,10 +158,29 @@ class OpenAiProviderTest {
     private fun configuredProvider(
         transport: OpenAiHttpTransport,
         logger: AiRequestLogger = NoopAiRequestLogger,
+        imagePreprocessor: AiImageUploadPreprocessor = PassthroughImageUploadPreprocessor,
     ): OpenAiProvider {
         val settingsRepository = InMemoryLocalSettingsRepository()
         settingsRepository.saveOpenAiApiKey(apiKey)
-        return OpenAiProvider(settingsRepository, transport, logger = logger)
+        return OpenAiProvider(
+            settingsRepository = settingsRepository,
+            transport = transport,
+            logger = logger,
+            imagePreprocessor = imagePreprocessor,
+        )
+    }
+}
+
+private object PassthroughImageUploadPreprocessor : AiImageUploadPreprocessor {
+    override fun preprocess(image: AiImageInput, config: ImageUploadPreprocessingConfig): AiImageInput = image
+}
+
+private class RecordingImageUploadPreprocessor : AiImageUploadPreprocessor {
+    val requests = mutableListOf<ImageUploadPreprocessingConfig>()
+
+    override fun preprocess(image: AiImageInput, config: ImageUploadPreprocessingConfig): AiImageInput {
+        requests += config
+        return image.copy(mimeType = "image/jpeg", fileName = "photo.jpg")
     }
 }
 

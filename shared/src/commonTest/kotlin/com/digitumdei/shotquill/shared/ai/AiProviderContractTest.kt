@@ -32,7 +32,11 @@ class AiProviderContractTest {
         val settingsRepository = InMemoryLocalSettingsRepository()
         settingsRepository.saveOpenAiApiKey("sk-test_contract_1234567890")
         val transport = SuccessfulOpenAiTransport()
-        val provider = OpenAiProvider(settingsRepository, transport)
+        val provider = OpenAiProvider(
+            settingsRepository = settingsRepository,
+            transport = transport,
+            imagePreprocessor = TestImageUploadPreprocessor,
+        )
 
         assertProviderContract(provider)
 
@@ -132,4 +136,8 @@ internal class SuccessfulOpenAiTransport : OpenAiHttpTransport {
             )
         }
     }
+}
+
+private object TestImageUploadPreprocessor : AiImageUploadPreprocessor {
+    override fun preprocess(image: AiImageInput, config: ImageUploadPreprocessingConfig): AiImageInput = image
 }

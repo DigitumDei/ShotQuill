@@ -190,7 +190,7 @@ class SqlDelightManualWorkflowRepository(
                 .executeAsList()
                 .mapTo(linkedSetOf()) { ManualWorkflowStorageMapper.enumFromWire(it, TargetPlatform::fromWireValue) },
             brandProfile = draft.brandProfileId?.let { selectBrandProfile(BrandProfileId(it)) },
-            visionDescription = selectVisionDescriptions(id).firstOrNull(),
+            visionDescription = selectVisionDescriptions(id).lastOrNull(),
             captionRequests = selectCaptionRequests(id),
             captionResults = selectCaptionResults(id),
             altTextResults = selectAltTextResults(id),

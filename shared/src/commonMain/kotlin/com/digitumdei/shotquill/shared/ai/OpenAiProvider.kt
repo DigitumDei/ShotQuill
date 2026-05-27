@@ -10,9 +10,11 @@ class OpenAiProvider(
     private val transport: OpenAiHttpTransport,
     private val config: OpenAiProviderConfig = OpenAiProviderConfig(),
     private val logger: AiRequestLogger = NoopAiRequestLogger,
+    private val imagePreprocessor: AiImageUploadPreprocessor = PlatformImageUploadPreprocessor,
 ) : AiProvider {
     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
         withApiKey { apiKey ->
+            val image = imagePreprocessor.preprocess(request.image, ImageUploadPreprocessingConfig())
             val httpRequest = OpenAiHttpRequest(
                 method = "POST",
                 url = "${config.baseUrl}/chat/completions",
@@ -20,7 +22,7 @@ class OpenAiProvider(
                 bodyBytes = buildChatBody(
                     model = config.visionModel,
                     prompt = request.prompt,
-                    image = request.image,
+                    image = image,
                     responseInstruction = "Return one concise image description as plain text.",
                 ).encodeToByteArray(),
                 redactedBody = "chat vision request with redacted image payload",
@@ -69,7 +71,14 @@ class OpenAiProvider(
 
     override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
         withApiKey { apiKey ->
-            val multipart = buildImageEditBody(request)
+            val multipart = buildImageEditBody(
+                request.copy(
+                    sourceImage = imagePreprocessor.preprocess(request.sourceImage, ImageUploadPreprocessingConfig(providerRequiresPng = true)),
+                    maskImage = request.maskImage?.let {
+                        imagePreprocessor.preprocess(it, ImageUploadPreprocessingConfig(providerRequiresPng = true))
+                    },
+                ),
+            )
             val httpRequest = OpenAiHttpRequest(
                 method = "POST",
                 url = "${config.baseUrl}/images/edits",

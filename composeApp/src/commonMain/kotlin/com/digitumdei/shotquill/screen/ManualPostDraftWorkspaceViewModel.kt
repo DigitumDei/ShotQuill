@@ -28,6 +28,9 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.domain.VisionDescription
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.datetime.Instant
@@ -36,6 +39,7 @@ data class ManualPostDraftWorkspaceState(
     val draftId: PostDraftId,
     val originalPhotoUri: String?,
     val editedPhotoUri: String?,
+    val visionDescription: String?,
     val generatedCaption: String?,
     val generatedAltText: String?,
     val targetPlatform: TargetPlatform?,
@@ -47,6 +51,7 @@ data class ManualPostDraftWorkspaceState(
 )
 
 data class ManualPostDraftWorkspaceActions(
+    val canAnalyzeVision: Boolean,
     val canGeneratePostText: Boolean,
     val canEditPhotoWithAi: Boolean,
     val canCopyCaption: Boolean,
@@ -56,9 +61,16 @@ data class ManualPostDraftWorkspaceActions(
 )
 
 interface ManualDraftAiProvider {
+    fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription
     fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText
     fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit
 }
+
+data class GeneratedVisionDescription(
+    val description: String,
+    val prompt: String,
+    val modelName: String,
+)
 
 data class GeneratedPostText(
     val caption: String,
@@ -77,6 +89,15 @@ data class GeneratedPhotoEdit(
 )
 
 class FakeManualDraftAiProvider : ManualDraftAiProvider {
+    override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription {
+        val original = draft.primaryMediaAsset()
+        return GeneratedVisionDescription(
+            description = "Photo shows ${original.uri.substringAfterLast('/')} prepared for social content.",
+            prompt = VisionDescriptionPromptFactory.buildPrompt(original),
+            modelName = "fake-manual-draft-ai",
+        )
+    }
+
     override fun generatePostText(
         draft: PostDraft,
         targetPlatform: TargetPlatform,
@@ -120,6 +141,52 @@ class ManualPostDraftWorkspaceViewModel(
             statusMessage = null,
             isPromptHistoryVisible = state.isPromptHistoryVisible,
         ) ?: unloadedState(statusMessage = "Draft not found")
+    }
+
+    fun analyzeVisionDescription() {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        draft.visionDescription?.let {
+            state = draft.toState("Reused cached vision description", state.isPromptHistoryVisible)
+            return
+        }
+        val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        if (draft.status !in mutableDraftStatuses) {
+            state = draft.toState(
+                statusMessage = "Cannot analyze vision while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        val idSuffix = nextIdSuffix(now)
+        val generated = aiProvider.analyzeVision(draft, now)
+        val original = draft.primaryMediaAsset()
+        val visionDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-$idSuffix"),
+            draftId = draft.id,
+            mediaAssetId = original.id,
+            description = generated.description,
+            modelName = generated.modelName,
+            createdAtEpochMillis = now,
+        )
+        val updated = draft.copy(
+            visionDescription = visionDescription,
+            promptHistory = draft.promptHistory + PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-vision-description-$idSuffix"),
+                draftId = draft.id,
+                operationType = AiOperationType.VisionDescription,
+                prompt = generated.prompt,
+                responseSummary = generated.description,
+                modelName = generated.modelName,
+                createdAtEpochMillis = now,
+            ),
+            updatedAt = operationUpdatedAt,
+        )
+        postDraftRepository.save(updated)
+        state = updated.toState("Analyzed photo", state.isPromptHistoryVisible)
     }
 
     fun generatePostText() {
@@ -340,12 +407,14 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = id,
             originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
+            visionDescription = visionDescription?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
             targetPlatform = preferredTargetPlatform() ?: captionResults.lastOrNull()?.targetPlatform,
             draftStatus = status,
             promptHistory = promptHistory,
             actions = ManualPostDraftWorkspaceActions(
+                canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
                 canEditPhotoWithAi = canMutateDraft,
                 canCopyCaption = !captionText.isNullOrBlank(),
@@ -363,12 +432,14 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             originalPhotoUri = null,
             editedPhotoUri = null,
+            visionDescription = null,
             generatedCaption = null,
             generatedAltText = null,
             targetPlatform = null,
             draftStatus = null,
             promptHistory = emptyList(),
             actions = ManualPostDraftWorkspaceActions(
+                canAnalyzeVision = false,
                 canGeneratePostText = false,
                 canEditPhotoWithAi = false,
                 canCopyCaption = false,
