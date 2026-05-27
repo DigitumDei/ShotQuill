@@ -14,7 +14,7 @@ data class ImageUploadPreprocessingConfig(
 fun interface AiImageUploadPreprocessor {
     fun preprocess(
         image: AiImageInput,
-        config: ImageUploadPreprocessingConfig = ImageUploadPreprocessingConfig(),
+        config: ImageUploadPreprocessingConfig,
     ): AiImageInput
 }
 
