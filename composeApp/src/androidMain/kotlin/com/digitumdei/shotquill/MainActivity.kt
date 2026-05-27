@@ -5,8 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.digitumdei.shotquill.media.ContentResolverMediaImporter
 import com.digitumdei.shotquill.media.MediaFileManager
 import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
         val contentResolverMediaImporter = ContentResolverMediaImporter(contentResolver, filesDir)
 
         setContent {
+            val cleanupScope = rememberCoroutineScope()
             var captureResult by rememberSaveable(stateSaver = MediaCaptureResultSaver) {
                 mutableStateOf<MediaCaptureResult?>(null)
             }
@@ -60,8 +65,12 @@ class MainActivity : ComponentActivity() {
                 onClearCaptureResult = { captureResult = null },
                 onClearCaptureError = { captureError = null },
                 onCleanupCapture = { result ->
-                    val path = result.uri.removePrefix("file://")
-                    File(path).delete()
+                    cleanupScope.launch {
+                        withContext(Dispatchers.IO) {
+                            val path = result.uri.removePrefix("file://")
+                            File(path).delete()
+                        }
+                    }
                 },
             )
         }

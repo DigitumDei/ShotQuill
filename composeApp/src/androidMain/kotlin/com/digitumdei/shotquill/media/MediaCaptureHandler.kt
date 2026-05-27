@@ -46,12 +46,13 @@ fun rememberMediaCaptureHandler(
             cameraFilePath = null
             if (path != null) {
                 scope.launch {
-                    runCatching {
-                        mediaFileManager.handleCameraCapture(File(path))
-                    }.onSuccess { result ->
+                    try {
+                        val result = mediaFileManager.handleCameraCapture(File(path))
                         onResult(result)
-                    }.onFailure { e ->
-                        if (e is CancellationException) throw e
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.IO) { File(path).delete() }
                         onError("Failed to process camera capture: ${e.message}")
                     }
                 }
@@ -62,7 +63,9 @@ fun rememberMediaCaptureHandler(
             val path = cameraFilePath
             cameraFilePath = null
             if (path != null) {
-                runCatching { File(path).delete() }
+                scope.launch {
+                    withContext(Dispatchers.IO) { File(path).delete() }
+                }
             }
         }
     }
