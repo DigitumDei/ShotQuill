@@ -148,7 +148,7 @@ class ManualPostDraftWorkspaceViewModel(
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
-        draft.visionDescription?.let { cached ->
+        draft.visionDescription?.let {
             state = draft.toState("Reused cached vision description", state.isPromptHistoryVisible)
             return
         }
