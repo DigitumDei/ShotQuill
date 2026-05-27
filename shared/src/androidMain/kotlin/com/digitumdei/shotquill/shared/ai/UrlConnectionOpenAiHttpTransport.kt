@@ -25,7 +25,6 @@ class UrlConnectionOpenAiHttpTransport(
             val statusCode = connection.responseCode
             val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            connection.disconnect()
             OpenAiHttpResult.Success(statusCode = statusCode, body = body)
         } catch (failure: Exception) {
             OpenAiHttpResult.NetworkFailure(message = failure.message)

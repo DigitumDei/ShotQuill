@@ -57,6 +57,30 @@ class OpenAiProviderTest {
     }
 
     @Test
+    fun parsesOpenAiJsonWithoutMatchingNestedContentText() {
+        val body = """
+            {
+              "model": "gpt-4o-mini",
+              "choices": [
+                {
+                  "message": {
+                    "content": "{\"caption\":\"caf\\u00e9 [launch]\",\"shortCaption\":\"caf\\u00e9\",\"hashtags\":[\"#launch]day\",\"#caf\\u00e9\"]}"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val content = OpenAiJson.extractChatContent(body)
+        val output = OpenAiJson.parseCaptionOutput(content ?: "")
+
+        assertEquals("gpt-4o-mini", OpenAiJson.extractModel(body))
+        assertEquals("caf\u00e9 [launch]", output.caption)
+        assertEquals("caf\u00e9", output.shortCaption)
+        assertEquals(listOf("#launch]day", "#caf\u00e9"), output.hashtags)
+    }
+
+    @Test
     fun buildsMultipartImageEditRequestAndReadsReturnedImageBytes() {
         val transport = SuccessfulOpenAiTransport()
         val provider = configuredProvider(transport)
@@ -72,6 +96,23 @@ class OpenAiProviderTest {
         assertTrue(request.bodyText.contains("Improve lighting while preserving the subject."))
         assertTrue(request.bodyText.contains("name=\"image\"; filename=\"photo.png\""))
         assertFalse(request.bodyText.contains(apiKey))
+    }
+
+    @Test
+    fun mapsMalformedImageBase64ToProviderFailure() {
+        val provider = configuredProvider(
+            FailingOpenAiTransport(
+                OpenAiHttpResult.Success(
+                    statusCode = 200,
+                    body = """{"model":"gpt-image-1","data":[{"b64_json":"not valid base64!"}]}""",
+                ),
+            ),
+        )
+
+        val result = provider.editPhoto(sampleEditGenerationRequest())
+
+        val failure = assertIs<AiProviderResult.Failure>(result)
+        assertIs<AiError.ProviderFailure>(failure.error)
     }
 
     @Test

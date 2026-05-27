@@ -126,13 +126,14 @@ class OpenAiProvider(
                         AiErrorMapper.fromHttpStatus(response.statusCode, response.body, listOf(apiKey)),
                     )
                 }
-                val imageBytes = OpenAiJson.extractFirstImageBase64(response.body)?.decodeBase64Bytes()
+                val imageBytes = OpenAiJson.extractFirstImageBase64(response.body)
+                    ?.let { encodedImage -> runCatching { encodedImage.decodeBase64Bytes() }.getOrNull() }
                     ?: return AiProviderResult.Failure(AiError.ProviderFailure(statusCode = response.statusCode))
                 AiProviderResult.Success(
                     PhotoEditOutput(
                         imageBytes = imageBytes,
                         mimeType = "image/png",
-                        summary = OpenAiJson.extractString(response.body, "revised_prompt"),
+                        summary = OpenAiJson.extractFirstImageRevisedPrompt(response.body),
                         modelName = OpenAiJson.extractModel(response.body) ?: config.imageEditModel,
                     ),
                 )
