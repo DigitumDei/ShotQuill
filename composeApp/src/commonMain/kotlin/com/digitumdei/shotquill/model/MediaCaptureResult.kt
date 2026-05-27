@@ -13,14 +13,14 @@ data class MediaCaptureResult(
 val MediaCaptureResultSaver = Saver<MediaCaptureResult?, String>(
     save = { result ->
         result?.let {
-            "${it.uri}|${it.mimeType ?: ""}|${it.widthPx ?: -1}|${it.heightPx ?: -1}|${it.createdAtEpochMillis}"
+            "${it.uri.replace("|", "%7C")}|${it.mimeType ?: ""}|${it.widthPx ?: -1}|${it.heightPx ?: -1}|${it.createdAtEpochMillis}"
         } ?: ""
     },
     restore = { value ->
         if (value.isNotEmpty()) {
             val parts = value.split("|", limit = 5)
             MediaCaptureResult(
-                uri = parts[0],
+                uri = parts[0].replace("%7C", "|"),
                 mimeType = parts.getOrNull(1)?.ifEmpty { null },
                 widthPx = parts.getOrNull(2)?.toIntOrNull()?.takeIf { it >= 0 },
                 heightPx = parts.getOrNull(3)?.toIntOrNull()?.takeIf { it >= 0 },

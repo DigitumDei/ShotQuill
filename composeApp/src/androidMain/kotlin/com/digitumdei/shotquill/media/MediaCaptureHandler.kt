@@ -75,20 +75,26 @@ fun rememberMediaCaptureHandler(
     ) { granted ->
         if (granted) {
             scope.launch {
-                val file = withContext(Dispatchers.IO) {
-                    mediaFileManager.createCameraCaptureFile()
+                try {
+                    val file = withContext(Dispatchers.IO) {
+                        mediaFileManager.createCameraCaptureFile()
+                    }
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${BuildConfig.APPLICATION_ID}.fileprovider",
+                        file,
+                    )
+                    val previousPath = cameraFilePath
+                    if (previousPath != null) {
+                        withContext(Dispatchers.IO) { File(previousPath).delete() }
+                    }
+                    cameraFilePath = file.absolutePath
+                    cameraLauncher.launch(uri)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    onError("Failed to prepare camera capture: ${e.message}")
                 }
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${BuildConfig.APPLICATION_ID}.fileprovider",
-                    file,
-                )
-                val previousPath = cameraFilePath
-                if (previousPath != null) {
-                    withContext(Dispatchers.IO) { File(previousPath).delete() }
-                }
-                cameraFilePath = file.absolutePath
-                cameraLauncher.launch(uri)
             }
         } else {
             onError("Camera permission denied")

@@ -11,7 +11,7 @@ import kotlin.test.assertNull
 
 private fun encodeMediaCaptureResult(result: MediaCaptureResult?): String {
     return result?.let {
-        "${it.uri}|${it.mimeType ?: ""}|${it.widthPx ?: -1}|${it.heightPx ?: -1}|${it.createdAtEpochMillis}"
+        "${it.uri.replace("|", "%7C")}|${it.mimeType ?: ""}|${it.widthPx ?: -1}|${it.heightPx ?: -1}|${it.createdAtEpochMillis}"
     } ?: ""
 }
 
@@ -165,10 +165,22 @@ class MediaCaptureResultTest {
 
     @Test
     fun saverRestoreHandlesPipeInUriField() {
-        val restored = MediaCaptureResultSaver.restore(
-            "file:///img|with|pipe.jpg||-1|-1|1700000000000",
+        val original = MediaCaptureResult(
+            uri = "file:///img|with|pipe.jpg",
+            mimeType = null,
+            widthPx = null,
+            heightPx = null,
+            createdAtEpochMillis = 1_700_000_000_000L,
         )
+        val saved = encodeMediaCaptureResult(original)
+        val restored = MediaCaptureResultSaver.restore(saved)
+
         assertNotNull(restored)
+        assertEquals(original.uri, restored.uri)
+        assertNull(restored.mimeType)
+        assertNull(restored.widthPx)
+        assertNull(restored.heightPx)
+        assertEquals(original.createdAtEpochMillis, restored.createdAtEpochMillis)
     }
 }
 

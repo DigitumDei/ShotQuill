@@ -55,6 +55,12 @@ class MediaFileManagerTest {
     }
 
     @Test
+    fun mimeTypeToExtensionCaseInsensitive() {
+        assertEquals(".png", MediaFileManager.mimeTypeToExtension("IMAGE/PNG"))
+        assertEquals(".webp", MediaFileManager.mimeTypeToExtension("Image/Webp"))
+    }
+
+    @Test
     fun mimeTypeToExtensionPng() {
         assertEquals(".png", MediaFileManager.mimeTypeToExtension("image/png"))
     }
@@ -99,6 +105,7 @@ class MediaFileManagerTest {
     fun createCameraCaptureFileGeneratesUniqueNames() {
         val names = (1..10).map { mgr.createCameraCaptureFile().name }.toSet()
         assertTrue(names.size > 1)
+        assertEquals(10, names.size)
     }
 
     @Test
