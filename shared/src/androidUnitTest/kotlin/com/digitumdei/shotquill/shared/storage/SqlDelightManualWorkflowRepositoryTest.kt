@@ -200,6 +200,61 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun createsPostDraftWithFreshMediaAsset() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val now = 1_700_100_000_000L
+
+        val mediaAsset = MediaAsset(
+            id = MediaAssetId("captured-media-1"),
+            type = MediaType.Photo,
+            uri = "file://captured/photo.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 4032,
+            heightPx = 3024,
+            createdAtEpochMillis = now,
+        )
+        repository.save(mediaAsset)
+
+        val postDraft = PostDraft(
+            id = PostDraftId("captured-draft-1"),
+            format = PostFormat.SingleImage,
+            status = DraftStatus.Draft,
+            mediaItems = listOf(PostMediaItem(mediaAsset = mediaAsset, order = 0)),
+            caption = null,
+            targetPlatforms = emptySet(),
+            brandProfile = null,
+            visionDescription = null,
+            captionRequests = emptyList(),
+            captionResults = emptyList(),
+            altTextResults = emptyList(),
+            photoEditRequests = emptyList(),
+            photoEditResults = emptyList(),
+            promptHistory = emptyList(),
+            exportRecords = emptyList(),
+            createdAt = Instant.fromEpochMilliseconds(now),
+            updatedAt = Instant.fromEpochMilliseconds(now),
+        )
+        repository.save(postDraft)
+
+        val stored = repository.get(PostDraftId("captured-draft-1"))
+        assertNotNull(stored)
+        assertEquals(DraftStatus.Draft, stored.status)
+        assertEquals(PostFormat.SingleImage, stored.format)
+        assertEquals(1, stored.mediaItems.size)
+        assertEquals(MediaAssetId("captured-media-1"), stored.mediaItems[0].mediaAsset.id)
+        assertEquals(0, stored.mediaItems[0].order)
+        assertEquals("file://captured/photo.jpg", stored.mediaItems[0].mediaAsset.uri)
+        assertEquals(MediaType.Photo, stored.mediaItems[0].mediaAsset.type)
+        assertEquals("image/jpeg", stored.mediaItems[0].mediaAsset.mimeType)
+        assertEquals(4032, stored.mediaItems[0].mediaAsset.widthPx)
+        assertEquals(3024, stored.mediaItems[0].mediaAsset.heightPx)
+        assertEquals(emptySet(), stored.targetPlatforms)
+        assertEquals(null, stored.caption)
+        driver.close()
+    }
+
+    @Test
     fun updatesDraftStatusAndLinkedMediaIds() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)

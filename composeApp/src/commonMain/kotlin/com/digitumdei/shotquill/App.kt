@@ -27,15 +27,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.screen.NewPostScreen
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
@@ -45,18 +51,118 @@ import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
+import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.random.Random
+
+private enum class AppScreen {
+    NewPost,
+    Settings,
+}
 
 @Composable
 fun App(
     settingsRepository: LocalSettingsRepository? = null,
     brandProfileRepository: BrandProfileRepository? = null,
+    manualWorkflowRepository: ManualWorkflowRepository? = null,
+    onCaptureFromCamera: (() -> Unit)? = null,
+    onPickFromGallery: (() -> Unit)? = null,
+    captureResult: MediaCaptureResult? = null,
+    captureError: String? = null,
+    onClearCaptureResult: (() -> Unit)? = null,
+    onClearCaptureError: (() -> Unit)? = null,
+    onCleanupCapture: ((MediaCaptureResult) -> Unit)? = null,
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
+    var currentScreen by remember { mutableStateOf(AppScreen.NewPost) }
+
+    val newPostCreator = remember(manualWorkflowRepository) {
+        manualWorkflowRepository?.let { NewPostCreator(it) }
+    }
+
+    var draftCreatedMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var saveError by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastProcessedUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val captureResultValue = captureResult
+    LaunchedEffect(captureResultValue) {
+        if (captureResultValue == null) {
+            draftCreatedMessage = null
+            saveError = null
+            return@LaunchedEffect
+        }
+        if (captureResultValue.uri == lastProcessedUri) return@LaunchedEffect
+        draftCreatedMessage = null
+        saveError = null
+        if (newPostCreator != null) {
+            val suffix = Random.nextInt(0, Int.MAX_VALUE)
+            val draftId = PostDraftId("draft-${captureResultValue.createdAtEpochMillis}-${suffix}")
+            val mediaAssetId = MediaAssetId("media-${captureResultValue.createdAtEpochMillis}-${suffix}")
+            try {
+                val draft = withContext(Dispatchers.IO) {
+                    newPostCreator.createDraftFromMedia(
+                        draftId = draftId,
+                        mediaAssetId = mediaAssetId,
+                        format = PostFormat.SingleImage,
+                        uri = captureResultValue.uri,
+                        mimeType = captureResultValue.mimeType,
+                        widthPx = captureResultValue.widthPx,
+                        heightPx = captureResultValue.heightPx,
+                        createdAtEpochMillis = captureResultValue.createdAtEpochMillis,
+                    )
+                }
+                draftCreatedMessage = "Draft ${draft.id.value} created"
+                lastProcessedUri = captureResultValue.uri
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                saveError = "Failed to create draft: ${e.message}"
+            }
+        } else {
+            saveError = "Draft repository not available"
+        }
+    }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            SettingsScreen(repository = repository, brandProfileRepository = profileRepository)
+            when (currentScreen) {
+                AppScreen.NewPost -> {
+                    NewPostScreen(
+                        onCaptureFromCamera = onCaptureFromCamera ?: {},
+                        onPickFromGallery = onPickFromGallery ?: {},
+                        onNavigateToSettings = { currentScreen = AppScreen.Settings },
+                        captureResult = captureResult,
+                        errorMessage = captureError ?: saveError,
+                        draftCreatedMessage = draftCreatedMessage,
+                        onDismissResult = {
+                            onClearCaptureResult?.invoke()
+                            draftCreatedMessage = null
+                            saveError = null
+                            lastProcessedUri = null
+                        },
+                        onDismissError = {
+                            if (captureResult != null) {
+                                onCleanupCapture?.invoke(captureResult)
+                            }
+                            onClearCaptureResult?.invoke()
+                            onClearCaptureError?.invoke()
+                            saveError = null
+                            lastProcessedUri = null
+                        },
+                    )
+                }
+
+                AppScreen.Settings -> {
+                    SettingsScreen(
+                        repository = repository,
+                        brandProfileRepository = profileRepository,
+                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost },
+                    )
+                }
+            }
         }
     }
 }
@@ -66,6 +172,7 @@ fun App(
 private fun SettingsScreen(
     repository: LocalSettingsRepository,
     brandProfileRepository: BrandProfileRepository,
+    onNavigateToNewPost: () -> Unit,
 ) {
     var settings by remember(repository) { mutableStateOf(repository.readSettings()) }
     val activeBrandProfileStore = remember(repository, brandProfileRepository) {
@@ -96,7 +203,17 @@ private fun SettingsScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text(text = "ShotQuill Settings", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = "ShotQuill Settings", style = MaterialTheme.typography.headlineSmall)
+            OutlinedButton(onClick = onNavigateToNewPost) {
+                Text("New Post")
+            }
+        }
+
         Text(text = status, style = MaterialTheme.typography.bodyMedium)
 
         OutlinedTextField(
@@ -282,7 +399,7 @@ private fun BrandProfileEditor(
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = {
-                val now = EpochClock.nowMillis()
+                val now = EpochClock.Default.nowMillis()
                 runCatching {
                     BrandProfile(
                         id = activeBrandProfile?.id ?: BrandProfileId("active-brand-profile"),

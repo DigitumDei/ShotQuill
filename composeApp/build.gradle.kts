@@ -32,6 +32,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtime.ktx)
+            implementation(libs.sqldelight.android.driver)
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)
@@ -51,6 +52,10 @@ android {
         versionName = "0.1.0"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -62,3 +67,4 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
