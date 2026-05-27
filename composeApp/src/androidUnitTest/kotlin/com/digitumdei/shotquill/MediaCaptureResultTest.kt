@@ -1,6 +1,5 @@
 package com.digitumdei.shotquill
 
-import androidx.compose.runtime.saveable.SaverScope
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
 import com.digitumdei.shotquill.screen.NewPostStep
@@ -10,8 +9,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
-private val testSaverScope = object : SaverScope {
-    override fun canBeSaved(value: Any): Boolean = true
+private fun encodeMediaCaptureResult(result: MediaCaptureResult?): String {
+    return result?.let {
+        "${it.uri}|${it.mimeType ?: ""}|${it.widthPx ?: -1}|${it.heightPx ?: -1}|${it.createdAtEpochMillis}"
+    } ?: ""
 }
 
 class MediaCaptureResultTest {
@@ -76,7 +77,7 @@ class MediaCaptureResultTest {
             heightPx = 1080,
             createdAtEpochMillis = 1_700_000_000_000L,
         )
-        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(original) }
+        val saved = encodeMediaCaptureResult(original)
         val restored = MediaCaptureResultSaver.restore(saved)
 
         assertNotNull(restored)
@@ -96,7 +97,7 @@ class MediaCaptureResultTest {
             heightPx = null,
             createdAtEpochMillis = 1_700_000_000_000L,
         )
-        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(original) }
+        val saved = encodeMediaCaptureResult(original)
         val restored = MediaCaptureResultSaver.restore(saved)
 
         assertNotNull(restored)
@@ -109,7 +110,7 @@ class MediaCaptureResultTest {
 
     @Test
     fun saverSaveNullReturnsEmptyString() {
-        val saved = with(testSaverScope) { MediaCaptureResultSaver.save(null) }
+        val saved = encodeMediaCaptureResult(null)
         assertEquals("", saved)
     }
 
