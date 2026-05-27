@@ -4,6 +4,7 @@ kotlin = "2.0.21"
 compose-multiplatform = "1.7.3"
 kover = "0.9.1"
 kotlinx-datetime = "0.6.1"
+kotlinx-serialization-json = "1.7.3"
 sqldelight = "2.1.0"
 
 android-compileSdk = "35"
@@ -24,6 +25,7 @@ androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecyc
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "androidx-security-crypto" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
 sqldelight-runtime = { group = "app.cash.sqldelight", name = "runtime", version.ref = "sqldelight" }
 sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-driver", version.ref = "sqldelight" }
