@@ -19,7 +19,7 @@ class AndroidImageUploadPreprocessorTest {
             fileName = "fixture.jpeg",
         )
 
-        val output = PlatformImageUploadPreprocessor.preprocess(input)
+        val output = PlatformImageUploadPreprocessor.preprocess(input, ImageUploadPreprocessingConfig())
 
         val decoded = BitmapFactory.decodeByteArray(output.bytes, 0, output.bytes.size)
         assertEquals("image/jpeg", output.mimeType)
