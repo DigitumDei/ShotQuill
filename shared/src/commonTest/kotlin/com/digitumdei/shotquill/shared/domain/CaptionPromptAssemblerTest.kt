@@ -178,8 +178,8 @@ class CaptionPromptAssemblerTest {
 
         assertContains(prompt, "Describe the image plainly and factually")
         assertContains(prompt, "Do not use marketing language or hashtags")
-        assertFalse(prompt.contains("caption"))
-        assertFalse(prompt.contains("hashtags"))
+        assertFalse(prompt.contains("A main caption"))
+        assertFalse(prompt.contains("shorter caption variant"))
         assertFalse(prompt.contains("Default tone:"))
         assertFalse(prompt.contains("Default hashtags:"))
         assertFalse(prompt.contains("Website/social links:"))
