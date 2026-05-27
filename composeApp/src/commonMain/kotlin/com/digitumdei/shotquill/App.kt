@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,7 @@ import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -72,6 +74,7 @@ fun App(
     captureError: String? = null,
     onClearCaptureResult: (() -> Unit)? = null,
     onClearCaptureError: (() -> Unit)? = null,
+    onCleanupCapture: ((MediaCaptureResult) -> Unit)? = null,
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
@@ -81,13 +84,20 @@ fun App(
         manualWorkflowRepository?.let { NewPostCreator(it) }
     }
 
-    var draftCreatedMessage by remember { mutableStateOf<String?>(null) }
-    var saveError by remember { mutableStateOf<String?>(null) }
+    var draftCreatedMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var saveError by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastProcessedUri by rememberSaveable { mutableStateOf<String?>(null) }
     val captureResultValue = captureResult
     LaunchedEffect(captureResultValue) {
+        if (captureResultValue == null) {
+            draftCreatedMessage = null
+            saveError = null
+            return@LaunchedEffect
+        }
+        if (captureResultValue.uri == lastProcessedUri) return@LaunchedEffect
         draftCreatedMessage = null
         saveError = null
-        if (captureResultValue != null && newPostCreator != null) {
+        if (newPostCreator != null) {
             val suffix = Random.nextInt(0, Int.MAX_VALUE)
             val draftId = PostDraftId("draft-${captureResultValue.createdAtEpochMillis}-${suffix}")
             val mediaAssetId = MediaAssetId("media-${captureResultValue.createdAtEpochMillis}-${suffix}")
@@ -105,10 +115,13 @@ fun App(
                     )
                 }
                 draftCreatedMessage = "Draft ${draft.id.value} created"
+                lastProcessedUri = captureResultValue.uri
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 saveError = "Failed to create draft: ${e.message}"
             }
-        } else if (captureResultValue != null) {
+        } else {
             saveError = "Draft repository not available"
         }
     }
@@ -128,11 +141,16 @@ fun App(
                             onClearCaptureResult?.invoke()
                             draftCreatedMessage = null
                             saveError = null
+                            lastProcessedUri = null
                         },
                         onDismissError = {
+                            if (captureResult != null) {
+                                onCleanupCapture?.invoke(captureResult)
+                            }
                             onClearCaptureResult?.invoke()
                             onClearCaptureError?.invoke()
                             saveError = null
+                            lastProcessedUri = null
                         },
                     )
                 }

@@ -17,7 +17,9 @@ import androidx.core.content.FileProvider
 import com.digitumdei.shotquill.BuildConfig
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MediaCaptureHandler(
@@ -69,14 +71,22 @@ fun rememberMediaCaptureHandler(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            val file = mediaFileManager.createCameraCaptureFile()
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${BuildConfig.APPLICATION_ID}.fileprovider",
-                file,
-            )
-            cameraFilePath = file.absolutePath
-            cameraLauncher.launch(uri)
+            scope.launch {
+                val file = withContext(Dispatchers.IO) {
+                    mediaFileManager.createCameraCaptureFile()
+                }
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.fileprovider",
+                    file,
+                )
+                val previousPath = cameraFilePath
+                if (previousPath != null) {
+                    withContext(Dispatchers.IO) { File(previousPath).delete() }
+                }
+                cameraFilePath = file.absolutePath
+                cameraLauncher.launch(uri)
+            }
         } else {
             onError("Camera permission denied")
         }

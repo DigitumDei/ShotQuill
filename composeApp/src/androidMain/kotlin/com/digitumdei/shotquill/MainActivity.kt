@@ -16,6 +16,7 @@ import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.AndroidBrandProfileRepositoryFactory
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +59,10 @@ class MainActivity : ComponentActivity() {
                 captureError = captureError,
                 onClearCaptureResult = { captureResult = null },
                 onClearCaptureError = { captureError = null },
+                onCleanupCapture = { result ->
+                    val path = result.uri.removePrefix("file://")
+                    File(path).delete()
+                },
             )
         }
     }

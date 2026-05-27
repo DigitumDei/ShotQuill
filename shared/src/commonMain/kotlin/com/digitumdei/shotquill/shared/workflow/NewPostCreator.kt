@@ -26,7 +26,8 @@ class NewPostCreator(
         heightPx: Int?,
         createdAtEpochMillis: Long = clock.nowMillis(),
     ): PostDraft {
-        val nowInstant = Instant.fromEpochMilliseconds(clock.nowMillis())
+        val nowEpoch = clock.nowMillis()
+        val nowInstant = Instant.fromEpochMilliseconds(nowEpoch)
 
         val mediaAsset = MediaAsset(
             id = mediaAssetId,

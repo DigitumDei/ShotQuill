@@ -24,7 +24,7 @@ val MediaCaptureResultSaver = Saver<MediaCaptureResult?, String>(
                 mimeType = parts[1].ifEmpty { null },
                 widthPx = parts[2].toIntOrNull()?.takeIf { it >= 0 },
                 heightPx = parts[3].toIntOrNull()?.takeIf { it >= 0 },
-                createdAtEpochMillis = parts[4].toLong(),
+                createdAtEpochMillis = parts.getOrNull(4)?.toLongOrNull() ?: 0L,
             )
         } else null
     },
