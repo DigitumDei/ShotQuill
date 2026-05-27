@@ -14,7 +14,7 @@ class OpenAiProvider(
 ) : AiProvider {
     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
         withApiKey { apiKey ->
-            val image = imagePreprocessor.preprocess(request.image)
+            val image = imagePreprocessor.preprocess(request.image, ImageUploadPreprocessingConfig())
             val httpRequest = OpenAiHttpRequest(
                 method = "POST",
                 url = "${config.baseUrl}/chat/completions",
@@ -73,7 +73,7 @@ class OpenAiProvider(
         withApiKey { apiKey ->
             val multipart = buildImageEditBody(
                 request.copy(
-                    sourceImage = imagePreprocessor.preprocess(request.sourceImage),
+                    sourceImage = imagePreprocessor.preprocess(request.sourceImage, ImageUploadPreprocessingConfig()),
                     maskImage = request.maskImage?.let {
                         imagePreprocessor.preprocess(it, ImageUploadPreprocessingConfig(providerRequiresPng = true))
                     },
