@@ -70,6 +70,7 @@ fun ManualPostDraftWorkspaceScreen(
 
     ManualPostDraftWorkspaceContent(
         state = state,
+        onAnalyzeVision = { refresh { analyzeVisionDescription() } },
         onGeneratePostText = { refresh { generatePostText() } },
         onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
         onCopyCaption = { refresh { markCaptionCopied() } },
@@ -83,6 +84,7 @@ fun ManualPostDraftWorkspaceScreen(
 @Composable
 fun ManualPostDraftWorkspaceContent(
     state: ManualPostDraftWorkspaceState,
+    onAnalyzeVision: () -> Unit,
     onGeneratePostText: () -> Unit,
     onEditPhotoWithAi: () -> Unit,
     onCopyCaption: () -> Unit,
@@ -117,11 +119,19 @@ fun ManualPostDraftWorkspaceContent(
 
         WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
         WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
+        WorkspaceSection("Vision description", state.visionDescription ?: "No vision description yet")
         WorkspaceSection("Generated caption", state.generatedCaption ?: "No caption generated yet")
         WorkspaceSection("Generated alt text", state.generatedAltText ?: "No alt text generated yet")
         WorkspaceSection("Target platform", state.targetPlatform?.wireValue ?: "No target platform selected")
         WorkspaceSection("Draft status", state.draftStatus?.wireValue ?: "Unknown")
 
+        OutlinedButton(
+            onClick = onAnalyzeVision,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.actions.canAnalyzeVision,
+        ) {
+            Text("Analyze photo")
+        }
         Button(
             onClick = onGeneratePostText,
             modifier = Modifier.fillMaxWidth(),

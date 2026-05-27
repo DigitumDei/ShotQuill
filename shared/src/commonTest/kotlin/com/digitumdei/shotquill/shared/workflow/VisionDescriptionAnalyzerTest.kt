@@ -1,0 +1,276 @@
+package com.digitumdei.shotquill.shared.workflow
+
+import com.digitumdei.shotquill.shared.ai.AiImageInput
+import com.digitumdei.shotquill.shared.ai.AiProvider
+import com.digitumdei.shotquill.shared.ai.AiProviderResult
+import com.digitumdei.shotquill.shared.ai.AltTextGenerationOutput
+import com.digitumdei.shotquill.shared.ai.AltTextGenerationRequest
+import com.digitumdei.shotquill.shared.ai.CaptionGenerationOutput
+import com.digitumdei.shotquill.shared.ai.CaptionGenerationRequest
+import com.digitumdei.shotquill.shared.ai.FakeAiProvider
+import com.digitumdei.shotquill.shared.ai.PhotoEditGenerationRequest
+import com.digitumdei.shotquill.shared.ai.PhotoEditOutput
+import com.digitumdei.shotquill.shared.ai.VisionDescriptionOutput
+import com.digitumdei.shotquill.shared.ai.VisionDescriptionRequest
+import com.digitumdei.shotquill.shared.domain.AiOperationType
+import com.digitumdei.shotquill.shared.domain.AltTextResult
+import com.digitumdei.shotquill.shared.domain.AltTextResultId
+import com.digitumdei.shotquill.shared.domain.BrandProfile
+import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionRequest
+import com.digitumdei.shotquill.shared.domain.CaptionRequestId
+import com.digitumdei.shotquill.shared.domain.CaptionResult
+import com.digitumdei.shotquill.shared.domain.CaptionResultId
+import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.ExportRecord
+import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.MediaType
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
+import com.digitumdei.shotquill.shared.domain.PhotoEditResult
+import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
+import com.digitumdei.shotquill.shared.domain.PostDraft
+import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.PostFormat
+import com.digitumdei.shotquill.shared.domain.PostMediaItem
+import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
+import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+import com.digitumdei.shotquill.shared.domain.VisionDescription
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import kotlinx.datetime.Instant
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class VisionDescriptionAnalyzerTest {
+    private val draftId = PostDraftId("draft-1")
+    private val mediaAssetId = MediaAssetId("media-1")
+
+    @Test
+    fun storesProviderVisionDescriptionAndPromptHistory() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = FakeAiProvider(modelName = "fake-vision"),
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
+        assertEquals(false, success.cacheHit)
+        assertTrue(success.visionDescription.description.startsWith("Fake vision for media-1"))
+        val stored = repository.get(draftId)
+        assertEquals(success.visionDescription, stored?.visionDescription)
+        assertEquals(1, stored?.promptHistory?.size)
+        val promptHistory = stored?.promptHistory?.single()
+        assertEquals(AiOperationType.VisionDescription, promptHistory?.operationType)
+        assertEquals(success.visionDescription.description, promptHistory?.responseSummary)
+        assertTrue(promptHistory?.prompt?.contains("Visible text or logos") == true)
+    }
+
+    @Test
+    fun reusesCachedVisionDescriptionWithoutCallingProvider() {
+        val cached = VisionDescription(
+            id = VisionDescriptionId("vision-description-cached"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Cached concise description.",
+            modelName = "cached-model",
+            createdAtEpochMillis = 1_700_000_050_000L,
+        )
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescription = cached))
+        val provider = RecordingAiProvider()
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = provider,
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
+        assertEquals(true, success.cacheHit)
+        assertEquals(cached, success.visionDescription)
+        assertEquals(0, provider.visionRequests.size)
+        assertEquals(emptyList(), repository.get(draftId)?.promptHistory)
+    }
+
+    @Test
+    fun canBypassCacheForFreshVisionDescription() {
+        val cached = VisionDescription(
+            id = VisionDescriptionId("vision-description-cached"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Cached concise description.",
+            modelName = "cached-model",
+            createdAtEpochMillis = 1_700_000_050_000L,
+        )
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescription = cached))
+        val provider = RecordingAiProvider()
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = provider,
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId, reuseCached = false)
+
+        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
+        assertEquals(false, success.cacheHit)
+        assertEquals("Recorded provider description.", success.visionDescription.description)
+        assertEquals(1, provider.visionRequests.size)
+        assertEquals(1, repository.get(draftId)?.promptHistory?.size)
+    }
+
+    private fun sampleDraft(): PostDraft =
+        PostDraft(
+            id = draftId,
+            format = PostFormat.SingleImage,
+            status = DraftStatus.PhotoAdded,
+            mediaItems = listOf(
+                PostMediaItem(
+                    mediaAsset = MediaAsset(
+                        id = mediaAssetId,
+                        type = MediaType.Photo,
+                        uri = "file://photo.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = 1080,
+                        heightPx = 1350,
+                        createdAtEpochMillis = 1_700_000_000_000L,
+                    ),
+                    order = 0,
+                ),
+            ),
+            caption = null,
+            targetPlatforms = emptySet(),
+            brandProfile = null,
+            visionDescription = null,
+            captionRequests = emptyList(),
+            captionResults = emptyList(),
+            altTextResults = emptyList(),
+            photoEditRequests = emptyList(),
+            photoEditResults = emptyList(),
+            promptHistory = emptyList(),
+            exportRecords = emptyList(),
+            createdAt = Instant.fromEpochMilliseconds(1_700_000_000_000L),
+            updatedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L),
+        )
+
+    private fun fakeImageSource(): VisionImageSource =
+        VisionImageSource {
+            AiImageInput(
+                bytes = "image-bytes".encodeToByteArray(),
+                mimeType = it.mimeType ?: "image/jpeg",
+                fileName = "${it.id.value}.jpg",
+            )
+        }
+
+    private class RecordingAiProvider : AiProvider {
+        val visionRequests = mutableListOf<VisionDescriptionRequest>()
+
+        override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> {
+            visionRequests += request
+            return AiProviderResult.Success(
+                VisionDescriptionOutput(
+                    description = "Recorded provider description.",
+                    modelName = "recording-model",
+                ),
+            )
+        }
+
+        override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+            error("Not used")
+
+        override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+            error("Not used")
+
+        override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+            error("Not used")
+    }
+
+    private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
+        private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+
+        override fun save(mediaAsset: MediaAsset) = Unit
+        override fun get(id: MediaAssetId): MediaAsset? = drafts.values
+            .flatMap { draft -> draft.mediaItems.map { it.mediaAsset } }
+            .firstOrNull { it.id == id }
+
+        override fun save(brandProfile: BrandProfile) = Unit
+        override fun get(id: BrandProfileId): BrandProfile? = null
+
+        override fun save(postDraft: PostDraft) {
+            drafts[postDraft.id] = postDraft
+        }
+
+        override fun get(id: PostDraftId): PostDraft? = drafts[id]
+        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
+        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
+
+        override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
+        override fun saveVisionDescription(visionDescription: VisionDescription) {
+            val draft = drafts.getValue(visionDescription.draftId)
+            drafts[visionDescription.draftId] = draft.copy(visionDescription = visionDescription)
+        }
+
+        override fun get(id: VisionDescriptionId): VisionDescription? =
+            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+
+        override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
+            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+
+        override fun save(captionRequest: CaptionRequest) = saveCaptionRequest(captionRequest)
+        override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? = null
+        override fun listCaptionRequestsForDraft(id: PostDraftId): List<CaptionRequest> = emptyList()
+        override fun saveCaptionRequest(captionRequest: CaptionRequest) = Unit
+        override fun save(captionResult: CaptionResult) = saveCaptionResult(captionResult)
+        override fun getCaptionResult(id: CaptionResultId): CaptionResult? = null
+        override fun listCaptionResultsForDraft(id: PostDraftId): List<CaptionResult> = emptyList()
+        override fun saveCaptionResult(captionResult: CaptionResult) = Unit
+
+        override fun save(altTextResult: AltTextResult) = saveAltTextResult(altTextResult)
+        override fun get(id: AltTextResultId): AltTextResult? = null
+        override fun listAltTextResultsForDraft(id: PostDraftId): List<AltTextResult> = emptyList()
+        override fun saveAltTextResult(altTextResult: AltTextResult) = Unit
+
+        override fun save(photoEditRequest: PhotoEditRequest) = savePhotoEditRequest(photoEditRequest)
+        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = null
+        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> = emptyList()
+        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) = Unit
+        override fun save(photoEditResult: PhotoEditResult) = savePhotoEditResult(photoEditResult)
+        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = null
+        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> = emptyList()
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = Unit
+
+        override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
+        override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? =
+            drafts.values.flatMap { it.promptHistory }.firstOrNull { it.id == id }
+
+        override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+            drafts[id]?.promptHistory.orEmpty()
+
+        override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
+            val draft = drafts.getValue(promptHistoryEntry.draftId)
+            drafts[promptHistoryEntry.draftId] = draft.copy(promptHistory = draft.promptHistory + promptHistoryEntry)
+        }
+
+        override fun save(exportRecord: ExportRecord) = saveExportRecord(exportRecord)
+        override fun get(id: ExportRecordId): ExportRecord? = null
+        override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
+        override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun clearAll() = drafts.clear()
+    }
+
+    private class FixedClock(private val now: Long) : EpochClock {
+        override fun nowMillis(): Long = now
+    }
+}

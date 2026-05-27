@@ -20,6 +20,8 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.PostMediaItem
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.domain.VisionDescription
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.datetime.Instant
 import kotlin.test.Test
@@ -41,6 +43,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
         assertEquals(DraftStatus.PhotoAdded, viewModel.state.draftStatus)
+        assertEquals(null, viewModel.state.visionDescription)
         assertEquals(null, viewModel.state.generatedCaption)
     }
 
@@ -53,7 +56,9 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
         assertEquals(null, viewModel.state.editedPhotoUri)
+        assertEquals(null, viewModel.state.visionDescription)
         assertEquals(null, viewModel.state.generatedAltText)
+        assertTrue(viewModel.state.actions.canAnalyzeVision)
         assertTrue(viewModel.state.actions.canGeneratePostText)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
@@ -98,6 +103,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertEquals("Draft not found", viewModel.state.statusMessage)
         assertNull(viewModel.state.originalPhotoUri)
+        assertFalse(viewModel.state.actions.canAnalyzeVision)
         assertFalse(viewModel.state.actions.canGeneratePostText)
         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
@@ -131,6 +137,62 @@ class ManualPostDraftWorkspaceViewModelTest {
             viewModel.state.promptHistory[1].prompt,
         )
         assertTrue(viewModel.state.actions.canShareOrExport)
+    }
+
+    @Test
+    fun updatesStoredDraftWhenAnalyzingVisionWithFakeAiProvider() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_090_000L),
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        val stored = repository.get(draftId)
+        assertEquals(
+            "Photo shows photo.jpg prepared for social content.",
+            viewModel.state.visionDescription,
+        )
+        assertEquals(viewModel.state.visionDescription, stored?.visionDescription?.description)
+        assertEquals(DraftStatus.PhotoAdded, stored?.status)
+        assertEquals(1, viewModel.state.promptHistory.size)
+        assertEquals(
+            "vision_description",
+            viewModel.state.promptHistory.single().operationType.wireValue,
+        )
+        assertTrue(viewModel.state.promptHistory.single().prompt.contains("Visible text or logos"))
+        assertEquals("Analyzed photo", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun reusesCachedVisionDescriptionInWorkspace() {
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                visionDescription = VisionDescription(
+                    id = VisionDescriptionId("vision-description-1"),
+                    draftId = draftId,
+                    mediaAssetId = mediaAssetId,
+                    description = "Cached workspace description.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_080_000L,
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_090_000L),
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Cached workspace description.", viewModel.state.visionDescription)
+        assertEquals("Reused cached vision description", viewModel.state.statusMessage)
+        assertEquals(emptyList(), viewModel.state.promptHistory)
     }
 
     @Test
@@ -198,6 +260,11 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertFalse(viewModel.state.actions.canGeneratePostText)
         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+        assertFalse(viewModel.state.actions.canAnalyzeVision)
+
+        viewModel.analyzeVisionDescription()
+        assertEquals("Cannot analyze vision while status is draft", viewModel.state.statusMessage)
+        assertEquals(DraftStatus.Draft, repository.get(draftId)?.status)
 
         viewModel.generatePostText()
         assertEquals("Cannot generate text while status is draft", viewModel.state.statusMessage)
@@ -346,6 +413,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertFalse(viewModel.state.actions.canGeneratePostText)
         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+        assertFalse(viewModel.state.actions.canAnalyzeVision)
         assertTrue(viewModel.state.actions.canCopyCaption)
         assertTrue(viewModel.state.actions.canCopyAltText)
         assertFalse(viewModel.state.actions.canShareOrExport)
