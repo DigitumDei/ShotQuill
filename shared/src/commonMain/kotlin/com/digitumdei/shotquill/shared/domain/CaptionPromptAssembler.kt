@@ -12,20 +12,27 @@ class CaptionPromptAssembler(
         productName: String? = null,
         eventNote: String? = null,
     ): String {
+        require(visionDescription.isNotBlank()) { "visionDescription cannot be blank" }
         val brandProfile = activeBrandProfileStore.readActiveBrandProfile()
         return buildString {
             appendLine("Write a social caption for ${targetPlatform.wireValue}.")
             appendLine()
             appendLine("Image description: ${visionDescription.trim()}")
-            appendLine()
-            userNotes?.takeIf { it.isNotBlank() }?.let {
-                appendLine("User notes: ${it.trim()}")
-            }
-            productName?.takeIf { it.isNotBlank() }?.let {
-                appendLine("Product or subject: ${it.trim()}")
-            }
-            eventNote?.takeIf { it.isNotBlank() }?.let {
-                appendLine("Event or occasion: ${it.trim()}")
+
+            val hasOptionalNotes = !userNotes.isNullOrBlank() ||
+                !productName.isNullOrBlank() ||
+                !eventNote.isNullOrBlank()
+            if (hasOptionalNotes) {
+                appendLine()
+                userNotes?.takeIf { it.isNotBlank() }?.let {
+                    appendLine("User notes: ${it.trim()}")
+                }
+                productName?.takeIf { it.isNotBlank() }?.let {
+                    appendLine("Product or subject: ${it.trim()}")
+                }
+                eventNote?.takeIf { it.isNotBlank() }?.let {
+                    appendLine("Event or occasion: ${it.trim()}")
+                }
             }
             appendLine()
             if (brandProfile == null) {
@@ -42,6 +49,7 @@ class CaptionPromptAssembler(
     }
 
     fun assembleAltTextPrompt(visionDescription: String): String {
+        require(visionDescription.isNotBlank()) { "visionDescription cannot be blank" }
         val brandProfile = activeBrandProfileStore.readActiveBrandProfile()
         return buildString {
             appendLine("Write accessible alt text for this image.")

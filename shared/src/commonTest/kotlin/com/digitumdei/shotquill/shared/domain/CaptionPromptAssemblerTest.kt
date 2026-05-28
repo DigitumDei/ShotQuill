@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertContains
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 
 class CaptionPromptAssemblerTest {
     @Test
@@ -115,6 +116,7 @@ class CaptionPromptAssemblerTest {
         assertFalse(prompt.contains("User notes:"))
         assertFalse(prompt.contains("Product or subject:"))
         assertFalse(prompt.contains("Event or occasion:"))
+        assertFalse(prompt.contains("\n\n\n"))
     }
 
     @Test
@@ -230,6 +232,22 @@ class CaptionPromptAssemblerTest {
 
         assertContains(prompt, "Image description: A bright taproom")
         assertContains(prompt, "Product or subject: Hoppy Day IPA")
+    }
+
+    @Test
+    fun throwsOnBlankVisionDescription() {
+        val assembler = assemblerWithActiveBrandProfile()
+
+        assertFailsWith<IllegalArgumentException> {
+            assembler.assembleCaptionPrompt(
+                visionDescription = "   ",
+                targetPlatform = TargetPlatform.InstagramFeedSquare,
+            )
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            assembler.assembleAltTextPrompt(visionDescription = "")
+        }
     }
 
     private fun assemblerWithActiveBrandProfile(): CaptionPromptAssembler {
