@@ -72,6 +72,7 @@ class ManualWorkflowModelsTest {
             draftId = draftId,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             caption = "Morning focus, freshly brewed.",
+            shortCaption = "Freshly brewed focus.",
             hashtags = listOf("#coffee", "#work"),
             modelName = "caption-model",
             createdAtEpochMillis = createdAt,
@@ -79,6 +80,7 @@ class ManualWorkflowModelsTest {
 
         assertEquals(captionRequestId, result.requestId)
         assertEquals("Morning focus, freshly brewed.", result.caption)
+        assertEquals("Freshly brewed focus.", result.shortCaption)
         assertEquals(listOf("#coffee", "#work"), result.hashtags)
     }
 

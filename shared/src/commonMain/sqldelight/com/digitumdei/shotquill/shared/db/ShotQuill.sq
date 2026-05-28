@@ -98,6 +98,7 @@ CREATE TABLE caption_results (
   draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
   target_platform TEXT NOT NULL,
   caption TEXT NOT NULL,
+  short_caption TEXT,
   model_name TEXT,
   created_at_epoch_millis INTEGER NOT NULL
 );
@@ -369,14 +370,16 @@ INSERT INTO caption_results(
   draft_id,
   target_platform,
   caption,
+  short_caption,
   model_name,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   request_id = excluded.request_id,
   draft_id = excluded.draft_id,
   target_platform = excluded.target_platform,
   caption = excluded.caption,
+  short_caption = excluded.short_caption,
   model_name = excluded.model_name,
   created_at_epoch_millis = excluded.created_at_epoch_millis;
 
