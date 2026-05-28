@@ -222,6 +222,7 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = draft.id,
             targetPlatform = platform,
             caption = generated.caption,
+            shortCaption = null,
             hashtags = generated.hashtags,
             modelName = generated.modelName,
             createdAtEpochMillis = now,

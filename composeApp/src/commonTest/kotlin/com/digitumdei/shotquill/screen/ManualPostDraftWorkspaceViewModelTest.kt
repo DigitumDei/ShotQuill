@@ -455,6 +455,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     draftId = draftId,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
                     caption = "Morning focus, freshly brewed.",
+                    shortCaption = null,
                     hashtags = listOf("#coffee", "#work"),
                     modelName = "fake",
                     createdAtEpochMillis = 1_700_000_010_000L,
