@@ -174,6 +174,40 @@ class PostTextGenerationPipelineTest {
         assertEquals(setOf(TargetPlatform.InstagramPortrait), success.draft.targetPlatforms)
     }
 
+    @Test
+    fun regenerationPreservesAdvancedDraftStatus() {
+        listOf(DraftStatus.PhotoEdited, DraftStatus.ReadyToShare).forEach { status ->
+            val repository = FakeManualWorkflowRepository(
+                sampleDraftWithVisionDescription().copy(status = status),
+            )
+            val pipeline = pipeline(
+                repository = repository,
+                settingsRepository = apiKeySettings(),
+                aiProvider = FakeAiProvider(),
+            )
+
+            val result = pipeline.generateText(draftId, TargetPlatform.InstagramPortrait)
+
+            val success = assertIs<PostTextGenerationResult.Success>(result)
+            assertEquals(status, success.draft.status)
+        }
+    }
+
+    @Test
+    fun blankShortCaptionIsStoredAsNull() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(shortCaption = "  "),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(null, success.captionResult.shortCaption)
+    }
+
     private fun pipeline(
         repository: ManualWorkflowRepository,
         settingsRepository: InMemoryLocalSettingsRepository,
@@ -253,7 +287,9 @@ class PostTextGenerationPipelineTest {
         override fun nowMillis(): Long = now
     }
 
-    private class RecordingAiProvider : AiProvider {
+    private class RecordingAiProvider(
+        private val shortCaption: String = "Recorded short caption.",
+    ) : AiProvider {
         var totalCalls = 0
 
         override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> {
@@ -266,7 +302,7 @@ class PostTextGenerationPipelineTest {
             return AiProviderResult.Success(
                 CaptionGenerationOutput(
                     caption = "Recorded caption.",
-                    shortCaption = "Recorded short caption.",
+                    shortCaption = shortCaption,
                     hashtags = listOf("#recorded"),
                     modelName = "recording-model",
                 ),

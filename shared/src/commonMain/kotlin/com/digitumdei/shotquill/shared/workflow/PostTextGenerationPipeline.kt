@@ -36,7 +36,7 @@ class PostTextGenerationPipeline(
     private val settingsRepository: LocalSettingsRepository,
     private val clock: EpochClock = EpochClock.Default,
 ) {
-    private var operationSequence = 0
+    private val operationSequence = AtomicCounter(0)
 
     fun generateText(
         draftId: PostDraftId,
@@ -127,7 +127,7 @@ class PostTextGenerationPipeline(
             draftId = draftId,
             targetPlatform = targetPlatform,
             caption = captionOutput.caption.trim(),
-            shortCaption = captionOutput.shortCaption.trim(),
+            shortCaption = captionOutput.shortCaption.trim().takeIf { it.isNotEmpty() },
             hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
             modelName = captionOutput.modelName,
             createdAtEpochMillis = now,
@@ -187,12 +187,14 @@ class PostTextGenerationPipeline(
     private fun textGeneratedStatus(draft: PostDraft): DraftStatus? =
         when {
             draft.status == DraftStatus.TextGenerated -> DraftStatus.TextGenerated
+            draft.status == DraftStatus.PhotoEdited -> DraftStatus.PhotoEdited
+            draft.status == DraftStatus.ReadyToShare -> DraftStatus.ReadyToShare
             draft.status.canTransitionTo(DraftStatus.TextGenerated) -> DraftStatus.TextGenerated
             else -> null
         }
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
-        "$nowEpochMillis-${operationSequence++}"
+        "$nowEpochMillis-${operationSequence.getAndIncrement()}"
 
     private fun operationUpdatedAt(draft: PostDraft, nowEpochMillis: Long): Instant {
         val now = Instant.fromEpochMilliseconds(nowEpochMillis)
