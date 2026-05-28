@@ -627,16 +627,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         ),
         captionRequests = listOf(sampleCaptionRequest()),
         captionResults = listOf(sampleCaptionResult()),
-        altTextResults = listOf(
-            AltTextResult(
-                id = AltTextResultId("alt-text-1"),
-                draftId = PostDraftId("draft-1"),
-                mediaAssetId = MediaAssetId("media-1"),
-                altText = "Coffee cup beside an open notebook.",
-                modelName = "alt-text-model",
-                createdAtEpochMillis = createdAt,
-            ),
-        ),
+        altTextResults = listOf(sampleAltTextResult()),
         photoEditRequests = listOf(samplePhotoEditRequest()),
         photoEditResults = listOf(
             PhotoEditResult(
@@ -653,17 +644,7 @@ class SqlDelightManualWorkflowRepositoryTest {
                 createdAtEpochMillis = updatedAt,
             ),
         ),
-        promptHistory = listOf(
-            PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-1"),
-                draftId = PostDraftId("draft-1"),
-                operationType = AiOperationType.CaptionGeneration,
-                prompt = "Write a concise caption.",
-                responseSummary = "Generated one caption.",
-                modelName = "caption-model",
-                createdAtEpochMillis = createdAt,
-            ),
-        ),
+        promptHistory = listOf(samplePromptHistoryEntry()),
         exportRecords = listOf(
             ExportRecord(
                 id = ExportRecordId("export-1"),
@@ -728,6 +709,25 @@ class SqlDelightManualWorkflowRepositoryTest {
         caption = "Morning focus, freshly brewed.",
         shortCaption = "Freshly brewed focus.",
         hashtags = listOf("#coffee", "#work"),
+        modelName = "caption-model",
+        createdAtEpochMillis = createdAt,
+    )
+
+    private fun sampleAltTextResult(): AltTextResult = AltTextResult(
+        id = AltTextResultId("alt-text-1"),
+        draftId = PostDraftId("draft-1"),
+        mediaAssetId = MediaAssetId("media-1"),
+        altText = "Coffee cup beside an open notebook.",
+        modelName = "alt-text-model",
+        createdAtEpochMillis = createdAt,
+    )
+
+    private fun samplePromptHistoryEntry(): PromptHistoryEntry = PromptHistoryEntry(
+        id = PromptHistoryEntryId("prompt-1"),
+        draftId = PostDraftId("draft-1"),
+        operationType = AiOperationType.CaptionGeneration,
+        prompt = "Write a concise caption.",
+        responseSummary = "Generated one caption.",
         modelName = "caption-model",
         createdAtEpochMillis = createdAt,
     )
