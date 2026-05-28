@@ -104,6 +104,7 @@ data class CaptionResult(
     val draftId: PostDraftId,
     val targetPlatform: TargetPlatform,
     val caption: String,
+    val shortCaption: String?,
     val hashtags: List<String>,
     val modelName: String?,
     val createdAtEpochMillis: Long,

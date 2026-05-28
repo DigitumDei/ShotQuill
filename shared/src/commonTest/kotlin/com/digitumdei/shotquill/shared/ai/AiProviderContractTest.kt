@@ -57,7 +57,7 @@ class AiProviderContractTest {
 
         val captionSuccess = assertIs<AiProviderResult.Success<CaptionGenerationOutput>>(caption)
         assertTrue(captionSuccess.value.caption.isNotBlank())
-        assertTrue(captionSuccess.value.shortCaption.isNotBlank())
+        assertTrue(captionSuccess.value.shortCaption?.isNotBlank() == true)
         assertFalse(captionSuccess.value.hashtags.any { !it.startsWith("#") })
 
         val altTextSuccess = assertIs<AiProviderResult.Success<AltTextGenerationOutput>>(altText)

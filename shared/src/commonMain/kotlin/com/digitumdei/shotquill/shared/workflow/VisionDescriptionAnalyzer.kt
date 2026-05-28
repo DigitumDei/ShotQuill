@@ -17,7 +17,6 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
-import kotlinx.datetime.Instant
 
 class VisionDescriptionAnalyzer(
     private val repository: ManualWorkflowRepository,
@@ -25,7 +24,7 @@ class VisionDescriptionAnalyzer(
     private val imageSource: VisionImageSource,
     private val clock: EpochClock = EpochClock.Default,
 ) {
-    private var operationSequence = 0
+    private val operationSequence = AtomicCounter(0)
 
     fun analyzePrimaryPhoto(
         draftId: PostDraftId,
@@ -75,13 +74,8 @@ class VisionDescriptionAnalyzer(
                     modelName = description.modelName,
                     createdAtEpochMillis = now,
                 )
-                repository.save(
-                    draft.copy(
-                        visionDescription = description,
-                        promptHistory = draft.promptHistory + promptHistoryEntry,
-                        updatedAt = operationUpdatedAt(draft, now),
-                    ),
-                )
+                repository.saveVisionDescription(description)
+                repository.savePromptHistoryEntry(promptHistoryEntry)
                 VisionDescriptionAnalysisResult.Success(description, cacheHit = false)
             }
         }
@@ -94,12 +88,7 @@ class VisionDescriptionAnalyzer(
             ?: draft.visionDescription?.takeIf { it.mediaAssetId == mediaAsset.id }
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
-        "$nowEpochMillis-${operationSequence++}"
-
-    private fun operationUpdatedAt(draft: PostDraft, nowEpochMillis: Long): Instant {
-        val now = Instant.fromEpochMilliseconds(nowEpochMillis)
-        return if (now >= draft.updatedAt) now else draft.updatedAt
-    }
+        "$nowEpochMillis-${operationSequence.getAndIncrement()}"
 }
 
 fun interface VisionImageSource {

@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.storage
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.ExportRecord
@@ -16,6 +17,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -102,5 +104,17 @@ interface ManualWorkflowRepository :
     fun savePhotoEditResult(photoEditResult: PhotoEditResult)
     fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry)
     fun saveExportRecord(exportRecord: ExportRecord)
+    fun recordPostTextGeneration(
+        draftId: PostDraftId,
+        status: DraftStatus,
+        caption: CaptionDraft,
+        targetPlatform: TargetPlatform,
+        brandProfile: BrandProfile?,
+        captionRequest: CaptionRequest,
+        captionResult: CaptionResult,
+        altTextResult: AltTextResult,
+        promptHistoryEntries: List<PromptHistoryEntry>,
+        updatedAt: Instant,
+    ): PostDraft?
     fun clearAll()
 }

@@ -291,6 +291,7 @@ class SqlDelightManualWorkflowRepository(
                 draft_id = captionResult.draftId.value,
                 target_platform = captionResult.targetPlatform.wireValue,
                 caption = captionResult.caption,
+                short_caption = captionResult.shortCaption,
                 model_name = captionResult.modelName,
                 created_at_epoch_millis = captionResult.createdAtEpochMillis,
             )
@@ -422,6 +423,60 @@ class SqlDelightManualWorkflowRepository(
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
+    override fun recordPostTextGeneration(
+        draftId: PostDraftId,
+        status: DraftStatus,
+        caption: CaptionDraft,
+        targetPlatform: TargetPlatform,
+        brandProfile: BrandProfile?,
+        captionRequest: CaptionRequest,
+        captionResult: CaptionResult,
+        altTextResult: AltTextResult,
+        promptHistoryEntries: List<PromptHistoryEntry>,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
+            val storedStatus = postTextGenerationStatus(currentDraft.status, status) ?: return@transaction
+            val storedUpdatedAt = if (updatedAt >= currentDraft.updatedAt) updatedAt else currentDraft.updatedAt
+            val storedBrandProfile = brandProfile ?: currentDraft.brandProfile
+            storedBrandProfile?.let { save(it) }
+            queries.updatePostDraftGeneratedText(
+                status = storedStatus.wireValue,
+                caption_text = caption.text,
+                brand_profile_id = storedBrandProfile?.id?.value,
+                updated_at_epoch_millis = storedUpdatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            queries.insertOrIgnorePostDraftTargetPlatform(draftId.value, targetPlatform.wireValue)
+            queries.deletePostDraftCaptionHashtags(draftId.value)
+            caption.hashtags.forEachIndexed { index, hashtag ->
+                queries.insertPostDraftCaptionHashtag(
+                    draft_id = draftId.value,
+                    hashtag = hashtag,
+                    hashtag_order = index.toLong(),
+                )
+            }
+            saveCaptionRequest(captionRequest)
+            saveCaptionResult(captionResult)
+            saveAltTextResult(altTextResult)
+            promptHistoryEntries.forEach(::savePromptHistoryEntry)
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
+
+    private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
+        when {
+            current == requested -> current
+            current == DraftStatus.TextGenerated -> DraftStatus.TextGenerated
+            current == DraftStatus.PhotoEdited -> DraftStatus.PhotoEdited
+            current == DraftStatus.ReadyToShare -> DraftStatus.ReadyToShare
+            current.canTransitionTo(requested) -> requested
+            else -> null
+        }
+
     override fun clearAll() {
         queries.transaction {
             queries.deleteAllExportRecords()
@@ -545,6 +600,7 @@ class SqlDelightManualWorkflowRepository(
         draftId: String,
         targetPlatform: String,
         caption: String,
+        shortCaption: String?,
         modelName: String?,
         createdAt: Long,
     ): CaptionResult = ManualWorkflowStorageMapper.captionResult(
@@ -553,6 +609,7 @@ class SqlDelightManualWorkflowRepository(
         draftId = draftId,
         targetPlatform = targetPlatform,
         caption = caption,
+        shortCaption = shortCaption,
         hashtags = emptyList(),
         modelName = modelName,
         createdAt = createdAt,
@@ -764,6 +821,7 @@ internal object ManualWorkflowStorageMapper {
         draftId: String,
         targetPlatform: String,
         caption: String,
+        shortCaption: String?,
         hashtags: List<String>,
         modelName: String?,
         createdAt: Long,
@@ -773,6 +831,7 @@ internal object ManualWorkflowStorageMapper {
         draftId = PostDraftId(draftId),
         targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
         caption = caption,
+        shortCaption = shortCaption,
         hashtags = hashtags,
         modelName = modelName,
         createdAtEpochMillis = createdAt,

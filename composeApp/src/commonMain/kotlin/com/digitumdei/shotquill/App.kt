@@ -54,6 +54,7 @@ import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -73,6 +74,7 @@ fun App(
     settingsRepository: LocalSettingsRepository? = null,
     brandProfileRepository: BrandProfileRepository? = null,
     manualWorkflowRepository: ManualWorkflowRepository? = null,
+    postTextGenerator: PostTextGenerator? = null,
     onCaptureFromCamera: (() -> Unit)? = null,
     onPickFromGallery: (() -> Unit)? = null,
     captureResult: MediaCaptureResult? = null,
@@ -173,6 +175,7 @@ fun App(
                             draftId = PostDraftId(draftId),
                             postDraftRepository = manualWorkflowRepository,
                             defaultTargetPlatform = defaultTargetPlatform,
+                            postTextGenerator = postTextGenerator,
                             onNavigateToNewPost = {
                                 currentScreen = AppScreen.NewPost.name
                                 currentDraftId = null

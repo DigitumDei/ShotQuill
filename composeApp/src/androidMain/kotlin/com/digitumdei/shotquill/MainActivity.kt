@@ -12,14 +12,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.digitumdei.shotquill.media.ContentResolverMediaImporter
+import com.digitumdei.shotquill.media.FileVisionImageSource
 import com.digitumdei.shotquill.media.MediaFileManager
 import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
+import com.digitumdei.shotquill.shared.ai.AiProviderFactory
+import com.digitumdei.shotquill.shared.ai.UrlConnectionOpenAiHttpTransport
+import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.AndroidBrandProfileRepositoryFactory
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerationPipeline
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -32,6 +37,16 @@ class MainActivity : ComponentActivity() {
         )
         val mediaFileManager = MediaFileManager(filesDir)
         val contentResolverMediaImporter = ContentResolverMediaImporter(contentResolver, filesDir)
+        val postTextGenerationPipeline = PostTextGenerationPipeline(
+            repository = manualWorkflowRepository,
+            aiProvider = AiProviderFactory.openAi(
+                settingsRepository = settingsRepository,
+                transport = UrlConnectionOpenAiHttpTransport(),
+            ),
+            imageSource = FileVisionImageSource(),
+            activeBrandProfileStore = ActiveBrandProfileStore(settingsRepository, brandProfileRepository),
+            settingsRepository = settingsRepository,
+        )
 
         setContent {
             val cleanupScope = rememberCoroutineScope()
@@ -58,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 settingsRepository = settingsRepository,
                 brandProfileRepository = brandProfileRepository,
                 manualWorkflowRepository = manualWorkflowRepository,
+                postTextGenerator = postTextGenerationPipeline,
                 onCaptureFromCamera = captureHandler.launchCamera,
                 onPickFromGallery = captureHandler.launchGallery,
                 captureResult = captureResult,

@@ -3,8 +3,11 @@ package com.digitumdei.shotquill.shared.domain
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 
 class CaptionPromptAssembler(
-    private val activeBrandProfileStore: ActiveBrandProfileStore,
+    private val activeBrandProfileStore: ActiveBrandProfileStore?,
+    private val brandProfileOverride: BrandProfile? = null,
 ) {
+    constructor(brandProfile: BrandProfile?) : this(null, brandProfile)
+
     fun assembleCaptionPrompt(
         visionDescription: String,
         targetPlatform: TargetPlatform,
@@ -13,7 +16,7 @@ class CaptionPromptAssembler(
         eventNote: String? = null,
     ): String {
         require(visionDescription.isNotBlank()) { "visionDescription cannot be blank" }
-        val brandProfile = activeBrandProfileStore.readActiveBrandProfile()
+        val brandProfile = brandProfileOverride ?: activeBrandProfileStore?.readActiveBrandProfile()
         return buildString {
             appendLine("Write a social caption for ${targetPlatform.wireValue}.")
             appendLine()
@@ -50,7 +53,7 @@ class CaptionPromptAssembler(
 
     fun assembleAltTextPrompt(visionDescription: String): String {
         require(visionDescription.isNotBlank()) { "visionDescription cannot be blank" }
-        val brandProfile = activeBrandProfileStore.readActiveBrandProfile()
+        val brandProfile = brandProfileOverride ?: activeBrandProfileStore?.readActiveBrandProfile()
         return buildString {
             appendLine("Write accessible alt text for this image.")
             appendLine("Describe the image plainly and factually. Do not use marketing language or hashtags.")
