@@ -8,6 +8,7 @@ import com.digitumdei.shotquill.shared.ai.VisionDescriptionRequest
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId

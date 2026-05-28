@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.storage
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.ExportRecord
