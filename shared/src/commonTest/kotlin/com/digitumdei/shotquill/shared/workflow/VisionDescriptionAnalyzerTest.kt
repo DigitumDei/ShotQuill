@@ -17,6 +17,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
@@ -38,6 +39,7 @@ import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.PostMediaItem
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
@@ -267,7 +269,46 @@ class VisionDescriptionAnalyzerTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun recordPostTextGeneration(
+            draftId: PostDraftId,
+            status: DraftStatus,
+            caption: CaptionDraft,
+            targetPlatform: TargetPlatform,
+            brandProfile: BrandProfile?,
+            captionRequest: CaptionRequest,
+            captionResult: CaptionResult,
+            altTextResult: AltTextResult,
+            promptHistoryEntries: List<PromptHistoryEntry>,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            val storedStatus = postTextGenerationStatus(draft.status, status) ?: return null
+            val storedUpdatedAt = if (updatedAt >= draft.updatedAt) updatedAt else draft.updatedAt
+            drafts[draftId] = draft.copy(
+                status = storedStatus,
+                caption = caption,
+                targetPlatforms = draft.targetPlatforms + targetPlatform,
+                brandProfile = brandProfile ?: draft.brandProfile,
+                captionRequests = draft.captionRequests + captionRequest,
+                captionResults = draft.captionResults + captionResult,
+                altTextResults = draft.altTextResults + altTextResult,
+                promptHistory = draft.promptHistory + promptHistoryEntries,
+                updatedAt = storedUpdatedAt,
+            )
+            return drafts[draftId]
+        }
+
         override fun clearAll() = drafts.clear()
+
+        private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
+            when {
+                current == requested -> current
+                current == DraftStatus.TextGenerated -> DraftStatus.TextGenerated
+                current == DraftStatus.PhotoEdited -> DraftStatus.PhotoEdited
+                current == DraftStatus.ReadyToShare -> DraftStatus.ReadyToShare
+                current.canTransitionTo(requested) -> requested
+                else -> null
+            }
     }
 
     private class FixedClock(private val now: Long) : EpochClock {

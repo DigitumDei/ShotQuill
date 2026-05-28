@@ -269,11 +269,23 @@ UPDATE post_drafts
 SET status = ?, updated_at_epoch_millis = ?
 WHERE id = ?;
 
+updatePostDraftGeneratedText:
+UPDATE post_drafts
+SET status = ?,
+    caption_text = ?,
+    brand_profile_id = ?,
+    updated_at_epoch_millis = ?
+WHERE id = ?;
+
 deletePostDraftTargetPlatforms:
 DELETE FROM post_draft_target_platforms WHERE draft_id = ?;
 
 insertPostDraftTargetPlatform:
 INSERT INTO post_draft_target_platforms(draft_id, platform)
+VALUES (?, ?);
+
+insertOrIgnorePostDraftTargetPlatform:
+INSERT OR IGNORE INTO post_draft_target_platforms(draft_id, platform)
 VALUES (?, ?);
 
 selectPostDraftTargetPlatforms:

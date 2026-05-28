@@ -33,6 +33,9 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.datetime.Instant
 
 data class ManualPostDraftWorkspaceState(
@@ -74,6 +77,7 @@ data class GeneratedVisionDescription(
 
 data class GeneratedPostText(
     val caption: String,
+    val shortCaption: String?,
     val hashtags: List<String>,
     val altText: String,
     val captionPrompt: String,
@@ -106,6 +110,7 @@ class FakeManualDraftAiProvider : ManualDraftAiProvider {
         val original = draft.primaryMediaAsset()
         return GeneratedPostText(
             caption = "Ready for ${targetPlatform.wireValue}: ${original.uri.substringAfterLast('/')}",
+            shortCaption = "Ready for ${targetPlatform.wireValue}",
             hashtags = listOf("#shotquill", "#draft"),
             altText = "Photo prepared for ${targetPlatform.wireValue}.",
             captionPrompt = "Generate a manual post caption for ${targetPlatform.wireValue} from ${original.uri}.",
@@ -129,6 +134,7 @@ class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
     private val aiProvider: ManualDraftAiProvider = FakeManualDraftAiProvider(),
+    private val postTextGenerator: PostTextGenerator? = null,
     private val clock: EpochClock = EpochClock.Default,
     private val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
 ) {
@@ -190,6 +196,10 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun generatePostText() {
+        postTextGenerator?.let {
+            generatePostTextWithPipeline(it)
+            return
+        }
         val draft = postDraftRepository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
             return
@@ -222,7 +232,7 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = draft.id,
             targetPlatform = platform,
             caption = generated.caption,
-            shortCaption = null,
+            shortCaption = generated.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
             hashtags = generated.hashtags,
             modelName = generated.modelName,
             createdAtEpochMillis = now,
@@ -269,6 +279,22 @@ class ManualPostDraftWorkspaceViewModel(
         )
         postDraftRepository.save(updated)
         state = updated.toState("Generated caption and alt text", state.isPromptHistoryVisible)
+    }
+
+    private fun generatePostTextWithPipeline(generator: PostTextGenerator) {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
+        when (val result = generator.generateText(draftId, platform)) {
+            is PostTextGenerationResult.Success -> {
+                state = result.draft.toState("Generated caption and alt text", state.isPromptHistoryVisible)
+            }
+            is PostTextGenerationResult.Failure -> {
+                state = draft.toState(result.error.statusMessage(), state.isPromptHistoryVisible)
+            }
+        }
     }
 
     fun editPhotoWithAi() {
@@ -465,6 +491,13 @@ class ManualPostDraftWorkspaceViewModel(
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence++}"
+
+    private fun PostTextGenerationError.statusMessage(): String =
+        when (this) {
+            PostTextGenerationError.DraftNotFound -> "Draft not found"
+            is PostTextGenerationError.InvalidDraftStatus -> "Cannot generate text while status is ${status.wireValue}"
+            is PostTextGenerationError.Provider -> "Unable to generate text: ${error.userMessage}"
+        }
 
     private companion object {
         val mutableDraftStatuses = setOf(

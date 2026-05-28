@@ -173,6 +173,53 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun captionResultPersistsNullShortCaption() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft().copy(captionResults = emptyList()))
+        repository.saveCaptionResult(sampleCaptionResult().copy(shortCaption = null))
+
+        assertNull(repository.getCaptionResult(CaptionResultId("caption-result-1"))?.shortCaption)
+        assertNull(repository.listCaptionResultsForDraft(PostDraftId("draft-1")).single().shortCaption)
+        driver.close()
+    }
+
+    @Test
+    fun recordsPostTextGenerationWithoutDeletingExistingHistoryRows() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+        val recorded = repository.recordPostTextGeneration(
+            draftId = PostDraftId("draft-1"),
+            status = DraftStatus.TextGenerated,
+            caption = CaptionDraft("New caption.", listOf("#new")),
+            targetPlatform = TargetPlatform.BlueskyPost,
+            brandProfile = null,
+            captionRequest = sampleCaptionRequest().copy(id = CaptionRequestId("caption-request-2")),
+            captionResult = sampleCaptionResult().copy(
+                id = CaptionResultId("caption-result-2"),
+                requestId = CaptionRequestId("caption-request-2"),
+                caption = "New caption.",
+                shortCaption = null,
+            ),
+            altTextResult = sampleAltTextResult().copy(id = AltTextResultId("alt-text-2")),
+            promptHistoryEntries = listOf(samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-2"))),
+            updatedAt = Instant.fromEpochMilliseconds(updatedAt + 1_000L),
+        )
+
+        assertNotNull(recorded)
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals("New caption.", stored?.caption?.text)
+        assertTrue(stored?.targetPlatforms?.contains(TargetPlatform.BlueskyPost) == true)
+        assertEquals(2, stored?.captionResults?.size)
+        assertEquals(2, stored?.altTextResults?.size)
+        assertEquals(2, stored?.promptHistory?.size)
+        driver.close()
+    }
+
+    @Test
     fun returnsNullOrEmptyForMissingRecords() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)

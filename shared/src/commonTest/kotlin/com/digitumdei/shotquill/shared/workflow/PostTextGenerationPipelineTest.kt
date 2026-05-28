@@ -18,6 +18,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
@@ -51,6 +52,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PostTextGenerationPipelineTest {
@@ -208,6 +210,153 @@ class PostTextGenerationPipelineTest {
         assertEquals(null, success.captionResult.shortCaption)
     }
 
+    @Test
+    fun draftNotFoundFailsOnEntry() {
+        val repository = FakeManualWorkflowRepository(sampleDraft()).also { it.clearAll() }
+        val provider = RecordingAiProvider()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = provider,
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertEquals(PostTextGenerationError.DraftNotFound, failure.error)
+        assertEquals(0, provider.totalCalls)
+    }
+
+    @Test
+    fun draftNotFoundAfterVisionFailsWithoutSavingText() {
+        val repository = FakeManualWorkflowRepository(sampleDraft()).also {
+            it.deleteBeforeDraftGetNumber = 3
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertEquals(PostTextGenerationError.DraftNotFound, failure.error)
+        assertNull(repository.get(draftId))
+    }
+
+    @Test
+    fun invalidDraftStatusFailsBeforeProviderCalls() {
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(status = DraftStatus.Archived))
+        val provider = RecordingAiProvider()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = provider,
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        val invalidStatus = assertIs<PostTextGenerationError.InvalidDraftStatus>(failure.error)
+        assertEquals(DraftStatus.Archived, invalidStatus.status)
+        assertEquals(0, provider.totalCalls)
+    }
+
+    @Test
+    fun providerFailuresPropagateFromEachGenerationStage() {
+        listOf(
+            RecordingAiProvider.FailureStage.Vision,
+            RecordingAiProvider.FailureStage.Caption,
+            RecordingAiProvider.FailureStage.AltText,
+        ).forEach { stage ->
+            val repository = FakeManualWorkflowRepository(sampleDraft())
+            val pipeline = pipeline(
+                repository = repository,
+                settingsRepository = apiKeySettings(),
+                aiProvider = RecordingAiProvider(failureStage = stage),
+            )
+
+            val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+            val failure = assertIs<PostTextGenerationResult.Failure>(result)
+            val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
+            assertEquals(AiError.ProviderFailure(statusCode = null), providerError.error)
+            assertEquals(null, repository.get(draftId)?.caption)
+        }
+    }
+
+    @Test
+    fun reuseVisionDescriptionFalseRunsVisionEvenWhenCachedDescriptionExists() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+        val provider = RecordingAiProvider()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = provider,
+        )
+
+        val result = pipeline.generateText(
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            reuseVisionDescription = false,
+        )
+
+        assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(1, provider.visionCalls)
+        assertEquals("Recorded vision.", repository.get(draftId)?.visionDescription?.description)
+    }
+
+    @Test
+    fun backwardClockLeavesUpdatedAtUnchanged() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+            clock = MutableClock(1_699_999_999_000L),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(1_700_000_000_000L, success.draft.updatedAt.toEpochMilliseconds())
+    }
+
+    @Test
+    fun savesTextGenerationWithoutDroppingRowsAddedDuringProviderCalls() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+        val provider = RecordingAiProvider(
+            onCaption = {
+                repository.saveCaptionResult(existingCaptionResult("caption-result-concurrent"))
+                repository.savePromptHistoryEntry(existingPromptHistory("prompt-concurrent"))
+                repository.get(draftId)?.let {
+                    repository.save(
+                        it.copy(
+                            status = DraftStatus.PhotoEdited,
+                            updatedAt = Instant.fromEpochMilliseconds(1_700_000_080_000L),
+                        ),
+                    )
+                }
+            },
+        )
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = provider,
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        assertIs<PostTextGenerationResult.Success>(result)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+        assertTrue(stored.captionResults.any { it.id.value == "caption-result-concurrent" })
+        assertTrue(stored.promptHistory.any { it.id.value == "prompt-concurrent" })
+        assertEquals(2, stored.captionResults.size)
+        assertEquals(3, stored.promptHistory.size)
+    }
+
     private fun pipeline(
         repository: ManualWorkflowRepository,
         settingsRepository: InMemoryLocalSettingsRepository,
@@ -287,18 +436,59 @@ class PostTextGenerationPipelineTest {
         override fun nowMillis(): Long = now
     }
 
+    private fun existingCaptionResult(id: String): CaptionResult =
+        CaptionResult(
+            id = CaptionResultId(id),
+            requestId = CaptionRequestId("caption-request-existing"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Concurrent caption.",
+            shortCaption = null,
+            hashtags = emptyList(),
+            modelName = "existing-model",
+            createdAtEpochMillis = 1_700_000_075_000L,
+        )
+
+    private fun existingPromptHistory(id: String): PromptHistoryEntry =
+        PromptHistoryEntry(
+            id = PromptHistoryEntryId(id),
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Concurrent prompt.",
+            responseSummary = "Concurrent caption.",
+            modelName = "existing-model",
+            createdAtEpochMillis = 1_700_000_075_000L,
+        )
+
     private class RecordingAiProvider(
         private val shortCaption: String = "Recorded short caption.",
+        private val failureStage: FailureStage? = null,
+        private val onCaption: () -> Unit = {},
     ) : AiProvider {
+        enum class FailureStage {
+            Vision,
+            Caption,
+            AltText,
+        }
+
         var totalCalls = 0
+        var visionCalls = 0
 
         override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> {
             totalCalls += 1
+            visionCalls += 1
+            if (failureStage == FailureStage.Vision) {
+                return AiProviderResult.Failure(AiError.ProviderFailure(statusCode = null))
+            }
             return AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
         }
 
         override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> {
             totalCalls += 1
+            onCaption()
+            if (failureStage == FailureStage.Caption) {
+                return AiProviderResult.Failure(AiError.ProviderFailure(statusCode = null))
+            }
             return AiProviderResult.Success(
                 CaptionGenerationOutput(
                     caption = "Recorded caption.",
@@ -311,6 +501,9 @@ class PostTextGenerationPipelineTest {
 
         override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> {
             totalCalls += 1
+            if (failureStage == FailureStage.AltText) {
+                return AiProviderResult.Failure(AiError.ProviderFailure(statusCode = null))
+            }
             return AiProviderResult.Success(AltTextGenerationOutput("Recorded alt text.", "recording-model"))
         }
 
@@ -320,6 +513,8 @@ class PostTextGenerationPipelineTest {
 
     private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        var deleteBeforeDraftGetNumber: Int? = null
+        private var draftGetCount = 0
 
         override fun save(mediaAsset: MediaAsset) = Unit
         override fun get(id: MediaAssetId): MediaAsset? = drafts.values
@@ -333,7 +528,13 @@ class PostTextGenerationPipelineTest {
             drafts[postDraft.id] = postDraft
         }
 
-        override fun get(id: PostDraftId): PostDraft? = drafts[id]
+        override fun get(id: PostDraftId): PostDraft? {
+            draftGetCount += 1
+            if (deleteBeforeDraftGetNumber == draftGetCount) {
+                drafts.remove(id)
+            }
+            return drafts[id]
+        }
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
@@ -409,6 +610,45 @@ class PostTextGenerationPipelineTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun recordPostTextGeneration(
+            draftId: PostDraftId,
+            status: DraftStatus,
+            caption: CaptionDraft,
+            targetPlatform: TargetPlatform,
+            brandProfile: BrandProfile?,
+            captionRequest: CaptionRequest,
+            captionResult: CaptionResult,
+            altTextResult: AltTextResult,
+            promptHistoryEntries: List<PromptHistoryEntry>,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            val storedStatus = postTextGenerationStatus(draft.status, status) ?: return null
+            val storedUpdatedAt = if (updatedAt >= draft.updatedAt) updatedAt else draft.updatedAt
+            drafts[draftId] = draft.copy(
+                status = storedStatus,
+                caption = caption,
+                targetPlatforms = draft.targetPlatforms + targetPlatform,
+                brandProfile = brandProfile ?: draft.brandProfile,
+                captionRequests = draft.captionRequests + captionRequest,
+                captionResults = draft.captionResults + captionResult,
+                altTextResults = draft.altTextResults + altTextResult,
+                promptHistory = draft.promptHistory + promptHistoryEntries,
+                updatedAt = storedUpdatedAt,
+            )
+            return drafts[draftId]
+        }
+
         override fun clearAll() = drafts.clear()
+
+        private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
+            when {
+                current == requested -> current
+                current == DraftStatus.TextGenerated -> DraftStatus.TextGenerated
+                current == DraftStatus.PhotoEdited -> DraftStatus.PhotoEdited
+                current == DraftStatus.ReadyToShare -> DraftStatus.ReadyToShare
+                current.canTransitionTo(requested) -> requested
+                else -> null
+            }
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -35,13 +36,15 @@ fun ManualPostDraftWorkspaceScreen(
     draftId: PostDraftId,
     postDraftRepository: PostDraftRepository,
     defaultTargetPlatform: TargetPlatform,
+    postTextGenerator: PostTextGenerator? = null,
     onNavigateToNewPost: () -> Unit,
 ) {
-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform) {
+    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, postTextGenerator) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
             defaultTargetPlatform = defaultTargetPlatform,
+            postTextGenerator = postTextGenerator,
         )
     }
     var state by remember(viewModel) { mutableStateOf(viewModel.state) }

@@ -28,6 +28,14 @@ import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import kotlinx.datetime.Instant
 
+interface PostTextGenerator {
+    fun generateText(
+        draftId: PostDraftId,
+        targetPlatform: TargetPlatform,
+        reuseVisionDescription: Boolean = true,
+    ): PostTextGenerationResult
+}
+
 class PostTextGenerationPipeline(
     private val repository: ManualWorkflowRepository,
     private val aiProvider: AiProvider,
@@ -35,13 +43,22 @@ class PostTextGenerationPipeline(
     private val activeBrandProfileStore: ActiveBrandProfileStore,
     private val settingsRepository: LocalSettingsRepository,
     private val clock: EpochClock = EpochClock.Default,
-) {
+) : PostTextGenerator {
     private val operationSequence = AtomicCounter(0)
 
     fun generateText(
         draftId: PostDraftId,
-        targetPlatform: TargetPlatform = settingsRepository.readSettings().defaultTargetPlatform,
-        reuseVisionDescription: Boolean = true,
+        targetPlatform: TargetPlatform,
+    ): PostTextGenerationResult = generateText(
+        draftId = draftId,
+        targetPlatform = targetPlatform,
+        reuseVisionDescription = true,
+    )
+
+    override fun generateText(
+        draftId: PostDraftId,
+        targetPlatform: TargetPlatform,
+        reuseVisionDescription: Boolean,
     ): PostTextGenerationResult {
         val draft = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
             PostTextGenerationError.DraftNotFound,
@@ -49,9 +66,9 @@ class PostTextGenerationPipeline(
         if (!settingsRepository.hasOpenAiApiKey()) {
             return PostTextGenerationResult.Failure(PostTextGenerationError.Provider(AiError.MissingApiKey))
         }
-        val textStatus = textGeneratedStatus(draft) ?: return PostTextGenerationResult.Failure(
-            PostTextGenerationError.InvalidDraftStatus(draft.status),
-        )
+        if (textGeneratedStatus(draft) == null) {
+            return PostTextGenerationResult.Failure(PostTextGenerationError.InvalidDraftStatus(draft.status))
+        }
 
         val visionDescription = when (
             val result = VisionDescriptionAnalyzer(
@@ -74,7 +91,7 @@ class PostTextGenerationPipeline(
             PostTextGenerationError.DraftNotFound,
         )
         val activeBrandProfile = activeBrandProfileStore.readActiveBrandProfile()
-        val promptAssembler = CaptionPromptAssembler(activeBrandProfileStore)
+        val promptAssembler = CaptionPromptAssembler(activeBrandProfile)
         val captionPrompt = promptAssembler.assembleCaptionPrompt(
             visionDescription = visionDescription.description,
             targetPlatform = targetPlatform,
@@ -127,7 +144,7 @@ class PostTextGenerationPipeline(
             draftId = draftId,
             targetPlatform = targetPlatform,
             caption = captionOutput.caption.trim(),
-            shortCaption = captionOutput.shortCaption.trim().takeIf { it.isNotEmpty() },
+            shortCaption = captionOutput.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
             hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
             modelName = captionOutput.modelName,
             createdAtEpochMillis = now,
@@ -158,21 +175,30 @@ class PostTextGenerationPipeline(
             modelName = altTextResult.modelName,
             createdAtEpochMillis = now,
         )
-        val updatedDraft = currentDraft.copy(
-            status = textStatus,
-            caption = CaptionDraft(
-                text = captionResult.caption,
-                hashtags = captionResult.hashtags,
-            ),
-            targetPlatforms = currentDraft.targetPlatforms + targetPlatform,
-            brandProfile = activeBrandProfile ?: currentDraft.brandProfile,
-            captionRequests = currentDraft.captionRequests + captionRequest,
-            captionResults = currentDraft.captionResults + captionResult,
-            altTextResults = currentDraft.altTextResults + altTextResult,
-            promptHistory = currentDraft.promptHistory + captionHistoryEntry + altTextHistoryEntry,
-            updatedAt = operationUpdatedAt(currentDraft, now),
+        val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
+            PostTextGenerationError.DraftNotFound,
         )
-        repository.save(updatedDraft)
+        val saveStatus = textGeneratedStatus(currentBeforeSave) ?: return PostTextGenerationResult.Failure(
+            PostTextGenerationError.InvalidDraftStatus(currentBeforeSave.status),
+        )
+        val captionDraft = CaptionDraft(
+            text = captionResult.caption,
+            hashtags = captionResult.hashtags,
+        )
+        val updatedDraft = repository.recordPostTextGeneration(
+            draftId = draftId,
+            status = saveStatus,
+            caption = captionDraft,
+            targetPlatform = targetPlatform,
+            brandProfile = activeBrandProfile ?: currentBeforeSave.brandProfile,
+            captionRequest = captionRequest,
+            captionResult = captionResult,
+            altTextResult = altTextResult,
+            promptHistoryEntries = listOf(captionHistoryEntry, altTextHistoryEntry),
+            updatedAt = operationUpdatedAt(currentBeforeSave, now),
+        ) ?: return repository.get(draftId)?.let {
+            PostTextGenerationResult.Failure(PostTextGenerationError.InvalidDraftStatus(it.status))
+        } ?: PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
 
         return PostTextGenerationResult.Success(
             draft = updatedDraft,
@@ -204,7 +230,7 @@ class PostTextGenerationPipeline(
     private fun CaptionResult.responseSummary(): String =
         buildString {
             append(caption)
-            shortCaption?.takeIf { it.isNotBlank() }?.let {
+            shortCaption?.let {
                 append("\nShort: ")
                 append(it)
             }

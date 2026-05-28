@@ -423,6 +423,60 @@ class SqlDelightManualWorkflowRepository(
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
+    override fun recordPostTextGeneration(
+        draftId: PostDraftId,
+        status: DraftStatus,
+        caption: CaptionDraft,
+        targetPlatform: TargetPlatform,
+        brandProfile: BrandProfile?,
+        captionRequest: CaptionRequest,
+        captionResult: CaptionResult,
+        altTextResult: AltTextResult,
+        promptHistoryEntries: List<PromptHistoryEntry>,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
+            val storedStatus = postTextGenerationStatus(currentDraft.status, status) ?: return@transaction
+            val storedUpdatedAt = if (updatedAt >= currentDraft.updatedAt) updatedAt else currentDraft.updatedAt
+            val storedBrandProfile = brandProfile ?: currentDraft.brandProfile
+            storedBrandProfile?.let { save(it) }
+            queries.updatePostDraftGeneratedText(
+                status = storedStatus.wireValue,
+                caption_text = caption.text,
+                brand_profile_id = storedBrandProfile?.id?.value,
+                updated_at_epoch_millis = storedUpdatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            queries.insertOrIgnorePostDraftTargetPlatform(draftId.value, targetPlatform.wireValue)
+            queries.deletePostDraftCaptionHashtags(draftId.value)
+            caption.hashtags.forEachIndexed { index, hashtag ->
+                queries.insertPostDraftCaptionHashtag(
+                    draft_id = draftId.value,
+                    hashtag = hashtag,
+                    hashtag_order = index.toLong(),
+                )
+            }
+            saveCaptionRequest(captionRequest)
+            saveCaptionResult(captionResult)
+            saveAltTextResult(altTextResult)
+            promptHistoryEntries.forEach(::savePromptHistoryEntry)
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
+
+    private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
+        when {
+            current == requested -> current
+            current == DraftStatus.TextGenerated -> DraftStatus.TextGenerated
+            current == DraftStatus.PhotoEdited -> DraftStatus.PhotoEdited
+            current == DraftStatus.ReadyToShare -> DraftStatus.ReadyToShare
+            current.canTransitionTo(requested) -> requested
+            else -> null
+        }
+
     override fun clearAll() {
         queries.transaction {
             queries.deleteAllExportRecords()

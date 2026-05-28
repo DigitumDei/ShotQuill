@@ -23,6 +23,8 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -137,6 +139,29 @@ class ManualPostDraftWorkspaceViewModelTest {
             viewModel.state.promptHistory[1].prompt,
         )
         assertTrue(viewModel.state.actions.canShareOrExport)
+    }
+
+    @Test
+    fun usesConfiguredPostTextGeneratorWhenGeneratingText() {
+        val generated = sampleDraftWithGeneratedText().copy(
+            caption = CaptionDraft("Pipeline caption.", listOf("#pipeline")),
+            targetPlatforms = setOf(TargetPlatform.BlueskyPost),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val generator = RecordingPostTextGenerator(generated)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            postTextGenerator = generator,
+            defaultTargetPlatform = TargetPlatform.BlueskyPost,
+        )
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        assertEquals(listOf(TargetPlatform.BlueskyPost), generator.targetPlatforms)
+        assertEquals("Pipeline caption.", viewModel.state.generatedCaption)
+        assertEquals("Generated caption and alt text", viewModel.state.statusMessage)
     }
 
     @Test
@@ -533,5 +558,42 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     private class IncrementingClock(private var now: Long) : EpochClock {
         override fun nowMillis(): Long = now++
+    }
+
+    private class RecordingPostTextGenerator(
+        private val draft: PostDraft,
+    ) : PostTextGenerator {
+        val targetPlatforms = mutableListOf<TargetPlatform>()
+
+        override fun generateText(
+            draftId: PostDraftId,
+            targetPlatform: TargetPlatform,
+            reuseVisionDescription: Boolean,
+        ): PostTextGenerationResult {
+            targetPlatforms += targetPlatform
+            return PostTextGenerationResult.Success(
+                draft = draft,
+                visionDescription = VisionDescription(
+                    id = VisionDescriptionId("vision-description-generated"),
+                    draftId = draftId,
+                    mediaAssetId = MediaAssetId("media-1"),
+                    description = "Generated vision.",
+                    modelName = "pipeline",
+                    createdAtEpochMillis = 1_700_000_100_000L,
+                ),
+                captionRequest = com.digitumdei.shotquill.shared.domain.CaptionRequest(
+                    id = CaptionRequestId("caption-request-generated"),
+                    draftId = draftId,
+                    targetPlatform = targetPlatform,
+                    prompt = "Pipeline prompt.",
+                    tone = null,
+                    brandProfileId = null,
+                    createdAtEpochMillis = 1_700_000_100_000L,
+                ),
+                captionResult = draft.captionResults.first(),
+                altTextResult = draft.altTextResults.first(),
+                promptHistoryEntries = emptyList(),
+            )
+        }
     }
 }
