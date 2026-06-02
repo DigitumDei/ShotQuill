@@ -164,22 +164,30 @@ class MaskRegionTest {
 
     @Test
     fun acceptsNormalizedBoundsWithFloatPrecisionRightEdge() {
+        val left = 0.33333334f
+        val width = 0.66666674f
+        val rightEdge = left + width
+        assert(rightEdge > 1.0f) { "rightEdge ($rightEdge) must exceed 1.0f to exercise tolerance" }
         val region = MaskRegion(
-            MaskBounds.Normalized(left = 0.33333334f, top = 0.0f, width = 0.6666667f, height = 0.5f),
+            MaskBounds.Normalized(left = left, top = 0.0f, width = width, height = 0.5f),
         )
         val bounds = region.bounds as MaskBounds.Normalized
-        assertEquals(0.33333334f, bounds.left)
-        assertEquals(0.6666667f, bounds.width)
+        assertEquals(left, bounds.left)
+        assertEquals(width, bounds.width)
     }
 
     @Test
     fun acceptsNormalizedBoundsWithFloatPrecisionBottomEdge() {
+        val top = 0.33333334f
+        val height = 0.66666674f
+        val bottomEdge = top + height
+        assert(bottomEdge > 1.0f) { "bottomEdge ($bottomEdge) must exceed 1.0f to exercise tolerance" }
         val region = MaskRegion(
-            MaskBounds.Normalized(left = 0.0f, top = 0.33333334f, width = 0.5f, height = 0.6666667f),
+            MaskBounds.Normalized(left = 0.0f, top = top, width = 0.5f, height = height),
         )
         val bounds = region.bounds as MaskBounds.Normalized
-        assertEquals(0.33333334f, bounds.top)
-        assertEquals(0.6666667f, bounds.height)
+        assertEquals(top, bounds.top)
+        assertEquals(height, bounds.height)
     }
 
     @Test
