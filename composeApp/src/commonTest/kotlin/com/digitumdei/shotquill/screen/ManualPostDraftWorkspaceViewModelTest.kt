@@ -321,6 +321,46 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("file://photo.jpg#edited-1700000200000", viewModel.state.editedPhotoUri)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertTrue(viewModel.state.actions.canViewPromptHistory)
+        val request = stored?.photoEditRequests?.single()
+        assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
+        assertEquals(RealismLevel.Photoreal, request?.realismLevel)
+        assertEquals(QualityTier.Standard, request?.qualityTier)
+        assertEquals(null, request?.subjectDescription)
+        assertEquals(null, request?.userRefinement)
+        assertEquals(null, request?.maskRegion)
+    }
+
+    @Test
+    fun usesPreferredTargetPlatformAndVisionContextWhenEditingPhotoWithAi() {
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                targetPlatforms = setOf(TargetPlatform.BlueskyPost),
+                visionDescription = VisionDescription(
+                    id = VisionDescriptionId("vision-description-1"),
+                    draftId = draftId,
+                    mediaAssetId = mediaAssetId,
+                    description = "A coffee cup on a wooden table.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_010_000L,
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(TargetPlatform.BlueskyPost, request?.targetPlatform)
+        assertEquals("A coffee cup on a wooden table.", request?.subjectDescription)
+        assertEquals(RealismLevel.Photoreal, request?.realismLevel)
+        assertEquals(QualityTier.Standard, request?.qualityTier)
+        assertEquals(null, request?.userRefinement)
+        assertEquals(null, request?.maskRegion)
     }
 
     @Test
