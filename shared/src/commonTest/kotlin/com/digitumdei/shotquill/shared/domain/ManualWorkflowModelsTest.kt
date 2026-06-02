@@ -434,6 +434,42 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun editIntentMembersAndWireValuesRemainStable() {
+        assertEquals(
+            listOf(
+                "ImproveLighting" to "improve_lighting",
+                "AddLogoOverlay" to "add_logo_overlay",
+                "RemoveObject" to "remove_object",
+                "CropOrExtend" to "crop_or_extend",
+                "BackgroundAdjustment" to "background_adjustment",
+                "SubtleRetouch" to "subtle_retouch",
+                "StyleTransfer" to "style_transfer",
+                "Custom" to "custom",
+            ),
+            EditIntent.entries.map { it.name to it.wireValue },
+        )
+    }
+
+    @Test
+    fun constructsPhotoEditRequestForEachEditIntent() {
+        for (intent in EditIntent.entries) {
+            val request = PhotoEditRequest(
+                id = photoEditRequestId,
+                draftId = draftId,
+                sourceMediaAssetId = mediaAssetId,
+                intent = intent,
+                prompt = "Apply edit.",
+                targetPlatform = TargetPlatform.InstagramFeedSquare,
+                createdAtEpochMillis = createdAt,
+            )
+
+            assertEquals(intent, request.intent)
+            assertEquals(intent.wireValue, EditIntent.fromWireValue(intent.wireValue)?.wireValue)
+            assertEquals(intent, EditIntent.fromWireValue(intent.wireValue))
+        }
+    }
+
+    @Test
     fun returnsNullForUnknownWireValues() {
         assertEquals(null, DraftStatus.fromWireValue("unknown"))
         assertEquals(null, TargetPlatform.fromWireValue("unknown"))
