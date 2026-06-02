@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertNotNull
 
 class VisionDescriptionPromptFactoryTest {
     @Test
@@ -30,5 +31,11 @@ class VisionDescriptionPromptFactoryTest {
         assertContains(prompt, "maximum 1568 px long edge")
         assertContains(prompt, "JPEG quality 85")
         assertContains(prompt, "Strip EXIF metadata")
+    }
+
+    @Test
+    fun platformPresetsAreAccessibleFromImageWorkflow() {
+        val preset = TargetPlatform.InstagramFeedSquare.platformPreset
+        assertNotNull(preset.aspectRatio)
     }
 }

@@ -137,6 +137,8 @@ class ManualPostDraftWorkspaceViewModel(
     private val postTextGenerator: PostTextGenerator? = null,
     private val clock: EpochClock = EpochClock.Default,
     private val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
+    private val defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
+    private val defaultQualityTier: QualityTier = QualityTier.Standard,
 ) {
     var state: ManualPostDraftWorkspaceState = unloadedState()
         private set
@@ -318,10 +320,14 @@ class ManualPostDraftWorkspaceViewModel(
             id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
             draftId = draft.id,
             sourceMediaAssetId = original.id,
-            intent = EditIntent.Enhance,
-            realismLevel = RealismLevel.Polished,
-            qualityTier = QualityTier.Draft,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = defaultRealismLevel,
+            qualityTier = defaultQualityTier,
             prompt = generated.prompt,
+            userRefinement = null,
+            subjectDescription = draft.visionDescription?.description,
+            targetPlatform = draft.preferredTargetPlatform() ?: defaultTargetPlatform,
+            maskRegion = null,
             createdAtEpochMillis = now,
         )
         val editedMedia = MediaAsset(

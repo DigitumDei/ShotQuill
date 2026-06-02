@@ -586,13 +586,28 @@ class PostTextGenerationPipelineTest {
         )
 
         override fun save(photoEditRequest: PhotoEditRequest) = savePhotoEditRequest(photoEditRequest)
-        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = null
-        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> = emptyList()
-        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) = Unit
+        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = drafts.values
+            .flatMap { it.photoEditRequests }
+            .firstOrNull { it.id == id }
+
+        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> =
+            drafts[id]?.photoEditRequests.orEmpty()
+
+        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) = save(
+            drafts.getValue(photoEditRequest.draftId).let { it.copy(photoEditRequests = it.photoEditRequests + photoEditRequest) },
+        )
+
         override fun save(photoEditResult: PhotoEditResult) = savePhotoEditResult(photoEditResult)
-        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = null
-        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> = emptyList()
-        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = Unit
+        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = drafts.values
+            .flatMap { it.photoEditResults }
+            .firstOrNull { it.id == id }
+
+        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
+            drafts[id]?.photoEditResults.orEmpty()
+
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = save(
+            drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
+        )
 
         override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = drafts.values

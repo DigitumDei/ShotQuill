@@ -1,5 +1,13 @@
 package com.digitumdei.shotquill.shared.ai
 
+import com.digitumdei.shotquill.shared.domain.EditIntent
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
+import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.QualityTier
+import com.digitumdei.shotquill.shared.domain.RealismLevel
+import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlin.test.Test
@@ -98,6 +106,10 @@ class OpenAiProviderTest {
         assertTrue(request.headers.getValue("Content-Type").startsWith("multipart/form-data"))
         assertTrue(request.bodyText.contains("name=\"prompt\""))
         assertTrue(request.bodyText.contains("Improve lighting while preserving the subject."))
+        assertTrue(request.bodyText.contains("Target platform: Original (no resize)"))
+        assertTrue(request.bodyText.contains("Framing behavior: no_resize"))
+        assertTrue(request.bodyText.contains("Realism: Preserve natural camera realism and avoid visibly generated or illustrated details."))
+        assertTrue(request.bodyText.contains("Quality tier: standard"))
         assertTrue(request.bodyText.contains("name=\"image\"; filename=\"photo.png\""))
         assertFalse(request.bodyText.contains(apiKey))
     }
@@ -117,6 +129,42 @@ class OpenAiProviderTest {
 
         val failure = assertIs<AiProviderResult.Failure>(result)
         assertIs<AiError.ProviderFailure>(failure.error)
+    }
+
+    @Test
+    fun enrichedEditPromptIncludesTargetPlatformPresetDetails() {
+        val transport = SuccessfulOpenAiTransport()
+        val provider = configuredProvider(transport)
+
+        val request = PhotoEditGenerationRequest(
+            editRequest = PhotoEditRequest(
+                id = PhotoEditRequestId("edit-preset-1"),
+                draftId = PostDraftId("draft-preset-1"),
+                sourceMediaAssetId = MediaAssetId("media-preset-1"),
+                intent = EditIntent.CropOrExtend,
+                realismLevel = RealismLevel.Photoreal,
+                qualityTier = QualityTier.Standard,
+                prompt = "Crop to fit the platform.",
+                userRefinement = "Keep the main subject centered",
+                subjectDescription = "A coffee cup on a wooden table",
+                targetPlatform = TargetPlatform.InstagramFeedSquare,
+                maskRegion = null,
+                createdAtEpochMillis = 1_700_000_000_000L,
+            ),
+            sourceImage = sampleImageInput(),
+        )
+        provider.editPhoto(request)
+
+        val bodyText = transport.requests.single().bodyText
+        assertTrue(bodyText.contains("Target platform: Instagram Feed Square"))
+        assertTrue(bodyText.contains("Aspect ratio: 1:1"))
+        assertTrue(bodyText.contains("Recommended dimensions: 1080x1080px"))
+        assertTrue(bodyText.contains("Framing behavior: fit"))
+        assertTrue(bodyText.contains("Realism: Preserve natural camera realism"))
+        assertTrue(bodyText.contains("Quality tier: standard"))
+        assertTrue(bodyText.contains("Subject: A coffee cup on a wooden table"))
+        assertTrue(bodyText.contains("User notes: Keep the main subject centered"))
+        assertTrue(bodyText.contains("Crop to fit the platform."))
     }
 
     @Test

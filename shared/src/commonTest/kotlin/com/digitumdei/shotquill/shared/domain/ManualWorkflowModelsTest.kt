@@ -105,8 +105,60 @@ class ManualWorkflowModelsTest {
         val request = samplePhotoEditRequest()
 
         assertEquals(photoEditRequestId, request.id)
-        assertEquals(EditIntent.ColorCorrect, request.intent)
+        assertEquals(EditIntent.ImproveLighting, request.intent)
         assertEquals(QualityTier.High, request.qualityTier)
+    }
+
+    @Test
+    fun photoEditRequestDefaultsToStandardQualityAndPhotorealRealism() {
+        val request = PhotoEditRequest(
+            id = photoEditRequestId,
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.ImproveLighting,
+            prompt = "Make the image brighter.",
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            createdAtEpochMillis = createdAt,
+        )
+
+        assertEquals(QualityTier.Standard, request.qualityTier)
+        assertEquals(RealismLevel.Photoreal, request.realismLevel)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithNegativeCreatedTimestamp() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(createdAtEpochMillis = -1)
+        }
+
+        assertEquals("createdAtEpochMillis must be non-negative", failure.message)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithBlankUserRefinement() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(userRefinement = " ")
+        }
+
+        assertEquals("userRefinement must not be blank when provided", failure.message)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithBlankSubjectDescription() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(subjectDescription = "")
+        }
+
+        assertEquals("subjectDescription must not be blank when provided", failure.message)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithBlankPrompt() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(prompt = "  ")
+        }
+
+        assertEquals("prompt must not be blank", failure.message)
     }
 
     @Test
@@ -341,7 +393,7 @@ class ManualWorkflowModelsTest {
         assertEquals(DraftStatus.ReadyToShare, DraftStatus.fromWireValue("ready_to_share"))
         assertEquals(TargetPlatform.Original, TargetPlatform.fromWireValue("original"))
         assertEquals(MediaType.EditedPhoto, MediaType.fromWireValue("edited_photo"))
-        assertEquals(EditIntent.RemoveBackground, EditIntent.fromWireValue("remove_background"))
+        assertEquals(EditIntent.RemoveObject, EditIntent.fromWireValue("remove_object"))
         assertEquals(RealismLevel.Polished, RealismLevel.fromWireValue("polished"))
         assertEquals(QualityTier.Standard, QualityTier.fromWireValue("standard"))
         assertEquals(AiOperationType.AltTextGeneration, AiOperationType.fromWireValue("alt_text_generation"))
@@ -388,6 +440,42 @@ class ManualWorkflowModelsTest {
         )
         assertTrue(QualityTier.High.modelMappingNote.contains("AI provider"))
         assertTrue(QualityTier.High.costNote.contains("Highest"))
+    }
+
+    @Test
+    fun editIntentMembersAndWireValuesRemainStable() {
+        assertEquals(
+            listOf(
+                "ImproveLighting" to "improve_lighting",
+                "AddLogoOverlay" to "add_logo_overlay",
+                "RemoveObject" to "remove_object",
+                "CropOrExtend" to "crop_or_extend",
+                "BackgroundAdjustment" to "background_adjustment",
+                "SubtleRetouch" to "subtle_retouch",
+                "StyleTransfer" to "style_transfer",
+                "Custom" to "custom",
+            ),
+            EditIntent.entries.map { it.name to it.wireValue },
+        )
+    }
+
+    @Test
+    fun constructsPhotoEditRequestForEachEditIntent() {
+        for (intent in EditIntent.entries) {
+            val request = PhotoEditRequest(
+                id = photoEditRequestId,
+                draftId = draftId,
+                sourceMediaAssetId = mediaAssetId,
+                intent = intent,
+                prompt = "Apply edit.",
+                targetPlatform = TargetPlatform.InstagramFeedSquare,
+                createdAtEpochMillis = createdAt,
+            )
+
+            assertEquals(intent, request.intent)
+            assertEquals(intent.wireValue, EditIntent.fromWireValue(intent.wireValue)?.wireValue)
+            assertEquals(intent, EditIntent.fromWireValue(intent.wireValue))
+        }
     }
 
     @Test
@@ -515,10 +603,14 @@ class ManualWorkflowModelsTest {
         id = photoEditRequestId,
         draftId = draftId,
         sourceMediaAssetId = mediaAssetId,
-        intent = EditIntent.ColorCorrect,
+        intent = EditIntent.ImproveLighting,
         realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",
+        userRefinement = "Focus on the coffee cup",
+        subjectDescription = "A coffee cup on a wooden table",
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
+        maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
 }

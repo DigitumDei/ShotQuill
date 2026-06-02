@@ -7,6 +7,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
@@ -14,7 +15,10 @@ import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
+import com.digitumdei.shotquill.shared.domain.QualityTier
+import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
@@ -317,6 +321,66 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("file://photo.jpg#edited-1700000200000", viewModel.state.editedPhotoUri)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertTrue(viewModel.state.actions.canViewPromptHistory)
+        val request = stored?.photoEditRequests?.single()
+        assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
+        assertEquals(RealismLevel.Photoreal, request?.realismLevel)
+        assertEquals(QualityTier.Standard, request?.qualityTier)
+        assertEquals(null, request?.subjectDescription)
+        assertEquals(null, request?.userRefinement)
+        assertEquals(null, request?.maskRegion)
+    }
+
+    @Test
+    fun usesPreferredTargetPlatformAndVisionContextWhenEditingPhotoWithAi() {
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                targetPlatforms = setOf(TargetPlatform.BlueskyPost),
+                visionDescription = VisionDescription(
+                    id = VisionDescriptionId("vision-description-1"),
+                    draftId = draftId,
+                    mediaAssetId = mediaAssetId,
+                    description = "A coffee cup on a wooden table.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_010_000L,
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(TargetPlatform.BlueskyPost, request?.targetPlatform)
+        assertEquals("A coffee cup on a wooden table.", request?.subjectDescription)
+        assertEquals(RealismLevel.Photoreal, request?.realismLevel)
+        assertEquals(QualityTier.Standard, request?.qualityTier)
+        assertEquals(null, request?.userRefinement)
+        assertEquals(null, request?.maskRegion)
+    }
+
+    @Test
+    fun usesConfiguredRealismAndQualityDefaultsWhenEditingPhotoWithAi() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+            defaultRealismLevel = RealismLevel.Polished,
+            defaultQualityTier = QualityTier.High,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(RealismLevel.Polished, request?.realismLevel)
+        assertEquals(QualityTier.High, request?.qualityTier)
+        assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
     }
 
     @Test
@@ -501,6 +565,22 @@ class ManualPostDraftWorkspaceViewModelTest {
     private fun sampleDraftWithEditedMedia(): PostDraft =
         sampleDraft().copy(
             status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Brighten the image",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_025_000L,
+                ),
+            ),
             photoEditResults = listOf(
                 PhotoEditResult(
                     id = PhotoEditResultId("photo-edit-result-1"),

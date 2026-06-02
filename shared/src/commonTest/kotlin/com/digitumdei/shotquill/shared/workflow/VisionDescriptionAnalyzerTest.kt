@@ -245,13 +245,30 @@ class VisionDescriptionAnalyzerTest {
         override fun saveAltTextResult(altTextResult: AltTextResult) = Unit
 
         override fun save(photoEditRequest: PhotoEditRequest) = savePhotoEditRequest(photoEditRequest)
-        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = null
-        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> = emptyList()
-        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) = Unit
+        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = drafts.values
+            .flatMap { it.photoEditRequests }
+            .firstOrNull { it.id == id }
+
+        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> =
+            drafts[id]?.photoEditRequests.orEmpty()
+
+        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {
+            val draft = drafts.getValue(photoEditRequest.draftId)
+            drafts[photoEditRequest.draftId] = draft.copy(photoEditRequests = draft.photoEditRequests + photoEditRequest)
+        }
+
         override fun save(photoEditResult: PhotoEditResult) = savePhotoEditResult(photoEditResult)
-        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = null
-        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> = emptyList()
-        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = Unit
+        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = drafts.values
+            .flatMap { it.photoEditResults }
+            .firstOrNull { it.id == id }
+
+        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
+            drafts[id]?.photoEditResults.orEmpty()
+
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
+            val draft = drafts.getValue(photoEditResult.draftId)
+            drafts[photoEditResult.draftId] = draft.copy(photoEditResults = draft.photoEditResults + photoEditResult)
+        }
 
         override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? =
