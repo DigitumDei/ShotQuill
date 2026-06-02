@@ -163,6 +163,26 @@ class MaskRegionTest {
     }
 
     @Test
+    fun acceptsNormalizedBoundsWithFloatPrecisionRightEdge() {
+        val region = MaskRegion(
+            MaskBounds.Normalized(left = 0.33333334f, top = 0.0f, width = 0.6666667f, height = 0.5f),
+        )
+        val bounds = region.bounds as MaskBounds.Normalized
+        assertEquals(0.33333334f, bounds.left)
+        assertEquals(0.6666667f, bounds.width)
+    }
+
+    @Test
+    fun acceptsNormalizedBoundsWithFloatPrecisionBottomEdge() {
+        val region = MaskRegion(
+            MaskBounds.Normalized(left = 0.0f, top = 0.33333334f, width = 0.5f, height = 0.6666667f),
+        )
+        val bounds = region.bounds as MaskBounds.Normalized
+        assertEquals(0.33333334f, bounds.top)
+        assertEquals(0.6666667f, bounds.height)
+    }
+
+    @Test
     fun roundTripsPixelMaskRegionThroughString() {
         val original = MaskRegion(MaskBounds.Pixel(left = 10, top = 20, width = 100, height = 200))
         val serialized = original.toString()

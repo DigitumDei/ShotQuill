@@ -12,8 +12,12 @@ sealed class MaskBounds {
             require(top in 0.0f..1.0f) { "Normalized top must be in range [0.0, 1.0], got $top" }
             require(width > 0.0f && width <= 1.0f) { "Normalized width must be in range (0.0, 1.0], got $width" }
             require(height > 0.0f && height <= 1.0f) { "Normalized height must be in range (0.0, 1.0], got $height" }
-            require(left + width <= 1.0f) { "Normalized right edge (left + width) must be <= 1.0, got ${left + width}" }
-            require(top + height <= 1.0f) { "Normalized bottom edge (top + height) must be <= 1.0, got ${top + height}" }
+            require(left + width <= 1.0f + NORMALIZED_EDGE_TOLERANCE) { "Normalized right edge (left + width) must be <= 1.0, got ${left + width}" }
+            require(top + height <= 1.0f + NORMALIZED_EDGE_TOLERANCE) { "Normalized bottom edge (top + height) must be <= 1.0, got ${top + height}" }
+        }
+
+        private companion object {
+            private const val NORMALIZED_EDGE_TOLERANCE = 1e-5f
         }
     }
 
