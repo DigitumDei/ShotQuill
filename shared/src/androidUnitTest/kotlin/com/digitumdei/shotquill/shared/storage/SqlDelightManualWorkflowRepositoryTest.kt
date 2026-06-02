@@ -383,6 +383,10 @@ class SqlDelightManualWorkflowRepositoryTest {
             realismLevel = "photoreal",
             qualityTier = "high",
             prompt = "Make the image brighter while keeping it realistic.",
+            userRefinement = "Focus on the coffee cup",
+            subjectDescription = "A coffee cup on a wooden table",
+            targetPlatform = "instagram_feed_square",
+            maskRegion = null,
             createdAt = createdAt,
         )
         val mappedPhotoEditResult = ManualWorkflowStorageMapper.photoEditResult(
