@@ -124,15 +124,21 @@ data class PhotoEditRequest(
     val draftId: PostDraftId,
     val sourceMediaAssetId: MediaAssetId,
     val intent: EditIntent,
-    val realismLevel: RealismLevel,
-    val qualityTier: QualityTier,
+    val realismLevel: RealismLevel = RealismLevel.Photoreal,
+    val qualityTier: QualityTier = QualityTier.Standard,
     val prompt: String,
     val userRefinement: String? = null,
     val subjectDescription: String? = null,
     val targetPlatform: TargetPlatform,
     val maskRegion: MaskRegion? = null,
     val createdAtEpochMillis: Long,
-)
+) {
+    init {
+        require(createdAtEpochMillis >= 0) { "createdAtEpochMillis must be non-negative" }
+        require(userRefinement == null || userRefinement.isNotBlank()) { "userRefinement must not be blank when provided" }
+        require(subjectDescription == null || subjectDescription.isNotBlank()) { "subjectDescription must not be blank when provided" }
+    }
+}
 
 data class PhotoEditResult(
     val id: PhotoEditResultId,

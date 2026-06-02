@@ -110,6 +110,33 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun rejectsPhotoEditRequestWithNegativeCreatedTimestamp() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(createdAtEpochMillis = -1)
+        }
+
+        assertEquals("createdAtEpochMillis must be non-negative", failure.message)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithBlankUserRefinement() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(userRefinement = " ")
+        }
+
+        assertEquals("userRefinement must not be blank when provided", failure.message)
+    }
+
+    @Test
+    fun rejectsPhotoEditRequestWithBlankSubjectDescription() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(subjectDescription = "")
+        }
+
+        assertEquals("subjectDescription must not be blank when provided", failure.message)
+    }
+
+    @Test
     fun createsPhotoEditResult() {
         val result = PhotoEditResult(
             id = PhotoEditResultId("photo-edit-result-1"),
