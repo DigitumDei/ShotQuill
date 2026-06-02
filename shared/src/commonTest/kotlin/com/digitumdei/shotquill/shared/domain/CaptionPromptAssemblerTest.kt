@@ -93,6 +93,9 @@ class CaptionPromptAssemblerTest {
         )
 
         for (platform in TargetPlatform.entries) {
+            val preset = platform.platformPreset
+            assertFalse(preset.displayName.isBlank())
+
             val prompt = assembler.assembleCaptionPrompt(
                 visionDescription = "A product shot.",
                 targetPlatform = platform,
