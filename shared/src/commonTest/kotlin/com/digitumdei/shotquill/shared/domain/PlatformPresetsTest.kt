@@ -69,16 +69,6 @@ class PlatformPresetsTest {
     }
 
     @Test
-    fun originalPresetPreservesSourceDimensions() {
-        val preset = PlatformPreset.defaults[TargetPlatform.Original]!!
-
-        assertNull(preset.aspectRatio, "Original preset should not constrain aspect ratio")
-        assertNull(preset.recommendedWidthPx, "Original preset should not constrain width")
-        assertNull(preset.recommendedHeightPx, "Original preset should not constrain height")
-        assertEquals(FramingBehavior.NoResize, preset.defaultFramingBehavior)
-    }
-
-    @Test
     fun forPlatformReturnsCorrectPreset() {
         TargetPlatform.entries.forEach { platform ->
             val preset = PlatformPreset.forPlatform(platform)
@@ -160,6 +150,58 @@ class PlatformPresetsTest {
                 defaultFramingBehavior = FramingBehavior.Fit,
             )
         }
+    }
+
+    @Test
+    fun defaultsMapHasExactlyOneEntryPerTargetPlatform() {
+        assertEquals(
+            TargetPlatform.entries.size,
+            PlatformPreset.defaults.size,
+            "defaults map must have exactly one entry per TargetPlatform; " +
+                "entries=${TargetPlatform.entries.size}, mapSize=${PlatformPreset.defaults.size}",
+        )
+    }
+
+    @Test
+    fun allNonOriginalPresetsDefineAspectRatioAndDimensions() {
+        val nonOriginal = TargetPlatform.entries.filter { it != TargetPlatform.Original }
+        nonOriginal.forEach { platform ->
+            val preset = requireNotNull(PlatformPreset.defaults[platform]) {
+                "Missing default preset for $platform"
+            }
+            assertNotNull(preset.aspectRatio, "$platform preset must define an aspect ratio")
+            assertNotNull(preset.recommendedWidthPx, "$platform preset must recommend a width")
+            assertNotNull(preset.recommendedHeightPx, "$platform preset must recommend a height")
+        }
+    }
+
+    @Test
+    fun recommendedDimensionsAlignWithAspectRatio() {
+        val nonOriginal = TargetPlatform.entries.filter { it != TargetPlatform.Original }
+        nonOriginal.forEach { platform ->
+            val preset = requireNotNull(PlatformPreset.defaults[platform])
+            val ratio = requireNotNull(preset.aspectRatio)
+            val width = requireNotNull(preset.recommendedWidthPx)
+            val height = requireNotNull(preset.recommendedHeightPx)
+
+            // width / height ≈ ratio.width / ratio.height
+            val expectedHeight = (width.toDouble() * ratio.height / ratio.width)
+            val tolerance = 1.0
+            assertEquals(expectedHeight, height.toDouble(), tolerance,
+                "$platform recommended dimensions $width x $height do not align " +
+                    "with aspect ratio ${ratio.width}:${ratio.height}")
+        }
+    }
+
+    @Test
+    fun originalPresetPreservesSourceSizing() {
+        val preset = requireNotNull(PlatformPreset.defaults[TargetPlatform.Original])
+
+        assertNull(preset.aspectRatio, "Original preset must not constrain aspect ratio")
+        assertNull(preset.recommendedWidthPx, "Original preset must not recommend a width")
+        assertNull(preset.recommendedHeightPx, "Original preset must not recommend a height")
+        assertEquals(FramingBehavior.NoResize, preset.defaultFramingBehavior,
+            "Original preset must not resize source")
     }
 
     @Test
