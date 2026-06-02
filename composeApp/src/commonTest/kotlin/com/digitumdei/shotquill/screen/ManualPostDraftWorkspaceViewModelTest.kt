@@ -7,6 +7,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
@@ -14,7 +15,10 @@ import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
+import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
+import com.digitumdei.shotquill.shared.domain.QualityTier
+import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
@@ -501,6 +505,17 @@ class ManualPostDraftWorkspaceViewModelTest {
     private fun sampleDraftWithEditedMedia(): PostDraft =
         sampleDraft().copy(
             status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    prompt = "Brighten the image",
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    createdAtEpochMillis = 1_700_000_025_000L,
+                ),
+            ),
             photoEditResults = listOf(
                 PhotoEditResult(
                     id = PhotoEditResultId("photo-edit-result-1"),
