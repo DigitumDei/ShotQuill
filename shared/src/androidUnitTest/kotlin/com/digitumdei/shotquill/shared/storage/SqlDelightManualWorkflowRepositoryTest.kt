@@ -379,7 +379,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             requestId = "photo-edit-request-1",
             draftId = "draft-1",
             sourceMediaAssetId = "media-1",
-            intent = "color_correct",
+            intent = "improve_lighting",
             realismLevel = "photoreal",
             qualityTier = "high",
             prompt = "Make the image brighter while keeping it realistic.",
