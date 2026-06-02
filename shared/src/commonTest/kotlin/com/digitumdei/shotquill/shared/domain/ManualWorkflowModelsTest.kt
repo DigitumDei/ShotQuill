@@ -110,6 +110,22 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun photoEditRequestDefaultsToStandardQualityAndPhotorealRealism() {
+        val request = PhotoEditRequest(
+            id = photoEditRequestId,
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.ImproveLighting,
+            prompt = "Make the image brighter.",
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            createdAtEpochMillis = createdAt,
+        )
+
+        assertEquals(QualityTier.Standard, request.qualityTier)
+        assertEquals(RealismLevel.Photoreal, request.realismLevel)
+    }
+
+    @Test
     fun rejectsPhotoEditRequestWithNegativeCreatedTimestamp() {
         val failure = assertFailsWith<IllegalArgumentException> {
             samplePhotoEditRequest().copy(createdAtEpochMillis = -1)
