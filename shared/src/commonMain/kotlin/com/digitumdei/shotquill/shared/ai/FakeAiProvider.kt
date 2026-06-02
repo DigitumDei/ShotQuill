@@ -34,10 +34,10 @@ class FakeAiProvider(
     override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
         AiProviderResult.Success(
             PhotoEditOutput(
-                imageBytes = ("fake-edit:${request.editRequest.id.value}:${request.editRequest.intent.wireValue}")
+                imageBytes = ("fake-edit:${request.editRequest.id.value}:${request.editRequest.intent.wireValue}:${request.editRequest.targetPlatform.wireValue}")
                     .encodeToByteArray(),
                 mimeType = request.sourceImage.mimeType,
-                summary = "Fake ${request.editRequest.intent.wireValue} edit: ${stablePromptSummary(request.editRequest.prompt)}",
+                summary = "Fake ${request.editRequest.intent.wireValue} edit for ${request.editRequest.targetPlatform.wireValue}: ${stablePromptSummary(request.editRequest.prompt)}",
                 modelName = modelName,
             ),
         )

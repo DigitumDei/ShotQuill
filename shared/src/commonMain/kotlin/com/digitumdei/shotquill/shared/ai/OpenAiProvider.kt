@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.shared.ai
 
+import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlin.io.encoding.Base64
@@ -194,9 +195,10 @@ class OpenAiProvider(
 
     private fun buildImageEditBody(request: PhotoEditGenerationRequest): MultipartBody {
         val boundary = "shotquill-openai-boundary"
+        val prompt = buildEditPrompt(request)
         val bytes = buildList {
             addMultipartText(boundary, "model", config.imageEditModel)
-            addMultipartText(boundary, "prompt", request.editRequest.prompt)
+            addMultipartText(boundary, "prompt", prompt)
             addMultipartFile(boundary, "image", request.sourceImage)
             request.maskImage?.let { addMultipartFile(boundary, "mask", it) }
             add("--$boundary--\r\n".encodeToByteArray())
@@ -204,8 +206,27 @@ class OpenAiProvider(
         return MultipartBody(
             boundary = boundary,
             bodyBytes = bytes,
-            redactedBody = "multipart image edit request: model=${config.imageEditModel}, prompt=${request.editRequest.prompt}, image=[REDACTED_IMAGE_PAYLOAD]",
+            redactedBody = "multipart image edit request: model=${config.imageEditModel}, prompt=${prompt.take(120)}, image=[REDACTED_IMAGE_PAYLOAD]",
         )
+    }
+
+    private fun buildEditPrompt(request: PhotoEditGenerationRequest): String {
+        val edit = request.editRequest
+        val preset = edit.targetPlatform.platformPreset
+        return buildString {
+            append(edit.prompt)
+            append("\n\n---\n")
+            append("Target platform: ${preset.displayName}")
+            preset.aspectRatio?.let { append("\nAspect ratio: ${it.width}:${it.height}") }
+            if (preset.recommendedWidthPx != null && preset.recommendedHeightPx != null) {
+                append("\nRecommended dimensions: ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px")
+            }
+            append("\nFraming behavior: ${preset.defaultFramingBehavior.wireValue}")
+            append("\nRealism: ${edit.realismLevel.promptIntent}")
+            append("\nQuality tier: ${edit.qualityTier.wireValue}")
+            edit.subjectDescription?.let { append("\nSubject: $it") }
+            edit.userRefinement?.let { append("\nUser notes: $it") }
+        }
     }
 }
 
