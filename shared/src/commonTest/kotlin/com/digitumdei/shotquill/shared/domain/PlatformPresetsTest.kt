@@ -52,7 +52,7 @@ class PlatformPresetsTest {
     fun facebookPostPreset() {
         val preset = PlatformPreset.defaults[TargetPlatform.FacebookPost]!!
 
-        assertEquals(AspectRatio(191, 100), preset.aspectRatio)
+        assertEquals(AspectRatio(40, 21), preset.aspectRatio)
         assertEquals(1200, preset.recommendedWidthPx)
         assertEquals(630, preset.recommendedHeightPx)
         assertEquals(FramingBehavior.Fit, preset.defaultFramingBehavior)

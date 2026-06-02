@@ -69,7 +69,7 @@ data class PlatformPreset(
                 TargetPlatform.FacebookPost -> PlatformPreset(
                     platform = platform,
                     displayName = "Facebook Post",
-                    aspectRatio = AspectRatio(width = 191, height = 100),
+                    aspectRatio = AspectRatio(width = 40, height = 21),
                     recommendedWidthPx = 1200,
                     recommendedHeightPx = 630,
                     defaultFramingBehavior = FramingBehavior.Fit,
