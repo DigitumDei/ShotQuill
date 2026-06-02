@@ -127,6 +127,42 @@ class MaskRegionTest {
     }
 
     @Test
+    fun rejectsNormalizedBoundsOverflowingRightEdge() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            MaskBounds.Normalized(left = 0.75f, top = 0.0f, width = 0.5f, height = 0.5f)
+        }
+        assertEquals("Normalized right edge (left + width) must be <= 1.0, got 1.25", failure.message)
+    }
+
+    @Test
+    fun rejectsNormalizedBoundsOverflowingBottomEdge() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            MaskBounds.Normalized(left = 0.0f, top = 0.95f, width = 0.5f, height = 0.1f)
+        }
+        assertEquals("Normalized bottom edge (top + height) must be <= 1.0, got 1.05", failure.message)
+    }
+
+    @Test
+    fun acceptsNormalizedBoundsExactlyFillingWidth() {
+        val region = MaskRegion(
+            MaskBounds.Normalized(left = 0.5f, top = 0.0f, width = 0.5f, height = 0.5f),
+        )
+        val bounds = region.bounds as MaskBounds.Normalized
+        assertEquals(0.5f, bounds.left)
+        assertEquals(0.5f, bounds.width)
+    }
+
+    @Test
+    fun acceptsNormalizedBoundsExactlyFillingHeight() {
+        val region = MaskRegion(
+            MaskBounds.Normalized(left = 0.0f, top = 0.5f, width = 0.5f, height = 0.5f),
+        )
+        val bounds = region.bounds as MaskBounds.Normalized
+        assertEquals(0.5f, bounds.top)
+        assertEquals(0.5f, bounds.height)
+    }
+
+    @Test
     fun roundTripsPixelMaskRegionThroughString() {
         val original = MaskRegion(MaskBounds.Pixel(left = 10, top = 20, width = 100, height = 200))
         val serialized = original.toString()
