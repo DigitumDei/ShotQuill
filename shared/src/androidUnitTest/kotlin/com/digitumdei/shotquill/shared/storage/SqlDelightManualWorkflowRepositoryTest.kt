@@ -736,7 +736,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         id = PhotoEditRequestId("photo-edit-request-1"),
         draftId = PostDraftId("draft-1"),
         sourceMediaAssetId = MediaAssetId("media-1"),
-        intent = EditIntent.ColorCorrect,
+        intent = EditIntent.ImproveLighting,
         realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",

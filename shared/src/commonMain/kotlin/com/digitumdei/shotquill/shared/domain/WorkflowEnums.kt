@@ -55,13 +55,14 @@ enum class MediaType(val wireValue: String) {
 }
 
 enum class EditIntent(val wireValue: String) {
-    Enhance("enhance"),
-    RemoveBackground("remove_background"),
-    ReplaceBackground("replace_background"),
-    Crop("crop"),
-    ColorCorrect("color_correct"),
+    ImproveLighting("improve_lighting"),
+    AddLogoOverlay("add_logo_overlay"),
     RemoveObject("remove_object"),
-    AddText("add_text");
+    CropOrExtend("crop_or_extend"),
+    BackgroundAdjustment("background_adjustment"),
+    SubtleRetouch("subtle_retouch"),
+    StyleTransfer("style_transfer"),
+    Custom("custom");
 
     companion object {
         fun fromWireValue(value: String): EditIntent? = entries.firstOrNull { it.wireValue == value }

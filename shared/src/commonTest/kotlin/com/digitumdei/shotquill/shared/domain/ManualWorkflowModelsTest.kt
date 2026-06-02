@@ -105,7 +105,7 @@ class ManualWorkflowModelsTest {
         val request = samplePhotoEditRequest()
 
         assertEquals(photoEditRequestId, request.id)
-        assertEquals(EditIntent.ColorCorrect, request.intent)
+        assertEquals(EditIntent.ImproveLighting, request.intent)
         assertEquals(QualityTier.High, request.qualityTier)
     }
 
@@ -341,7 +341,7 @@ class ManualWorkflowModelsTest {
         assertEquals(DraftStatus.ReadyToShare, DraftStatus.fromWireValue("ready_to_share"))
         assertEquals(TargetPlatform.Original, TargetPlatform.fromWireValue("original"))
         assertEquals(MediaType.EditedPhoto, MediaType.fromWireValue("edited_photo"))
-        assertEquals(EditIntent.RemoveBackground, EditIntent.fromWireValue("remove_background"))
+        assertEquals(EditIntent.RemoveObject, EditIntent.fromWireValue("remove_object"))
         assertEquals(RealismLevel.Polished, RealismLevel.fromWireValue("polished"))
         assertEquals(QualityTier.Standard, QualityTier.fromWireValue("standard"))
         assertEquals(AiOperationType.AltTextGeneration, AiOperationType.fromWireValue("alt_text_generation"))
@@ -515,7 +515,7 @@ class ManualWorkflowModelsTest {
         id = photoEditRequestId,
         draftId = draftId,
         sourceMediaAssetId = mediaAssetId,
-        intent = EditIntent.ColorCorrect,
+        intent = EditIntent.ImproveLighting,
         realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",

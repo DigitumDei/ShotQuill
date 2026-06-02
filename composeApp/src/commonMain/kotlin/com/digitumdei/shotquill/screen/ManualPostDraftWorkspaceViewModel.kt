@@ -318,7 +318,7 @@ class ManualPostDraftWorkspaceViewModel(
             id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
             draftId = draft.id,
             sourceMediaAssetId = original.id,
-            intent = EditIntent.Enhance,
+            intent = EditIntent.ImproveLighting,
             realismLevel = RealismLevel.Polished,
             qualityTier = QualityTier.Draft,
             prompt = generated.prompt,
