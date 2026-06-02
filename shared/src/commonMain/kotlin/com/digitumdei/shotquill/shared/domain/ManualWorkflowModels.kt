@@ -130,7 +130,7 @@ data class PhotoEditRequest(
     val userRefinement: String? = null,
     val subjectDescription: String? = null,
     val targetPlatform: TargetPlatform,
-    val maskRegion: String? = null,
+    val maskRegion: MaskRegion? = null,
     val createdAtEpochMillis: Long,
 )
 

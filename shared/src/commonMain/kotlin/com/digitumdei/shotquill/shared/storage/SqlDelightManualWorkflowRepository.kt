@@ -20,6 +20,7 @@ import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
@@ -350,7 +351,7 @@ class SqlDelightManualWorkflowRepository(
             user_refinement = photoEditRequest.userRefinement,
             subject_description = photoEditRequest.subjectDescription,
             target_platform = photoEditRequest.targetPlatform.wireValue,
-            mask_region = photoEditRequest.maskRegion,
+            mask_region = photoEditRequest.maskRegion?.toString(),
             created_at_epoch_millis = photoEditRequest.createdAtEpochMillis,
         )
     }
@@ -888,7 +889,7 @@ internal object ManualWorkflowStorageMapper {
         userRefinement = userRefinement,
         subjectDescription = subjectDescription,
         targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
-        maskRegion = maskRegion,
+        maskRegion = maskRegion?.let { MaskRegion.parse(it) },
         createdAtEpochMillis = createdAt,
     )
 
