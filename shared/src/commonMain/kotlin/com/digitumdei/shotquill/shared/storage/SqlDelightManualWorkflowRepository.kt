@@ -347,6 +347,10 @@ class SqlDelightManualWorkflowRepository(
             realism_level = photoEditRequest.realismLevel.wireValue,
             quality_tier = photoEditRequest.qualityTier.wireValue,
             prompt = photoEditRequest.prompt,
+            user_refinement = photoEditRequest.userRefinement,
+            subject_description = photoEditRequest.subjectDescription,
+            target_platform = photoEditRequest.targetPlatform.wireValue,
+            mask_region = photoEditRequest.maskRegion,
             created_at_epoch_millis = photoEditRequest.createdAtEpochMillis,
         )
     }
@@ -639,9 +643,16 @@ class SqlDelightManualWorkflowRepository(
                 realismLevel,
                 qualityTier,
                 prompt,
+                userRefinement,
+                subjectDescription,
+                targetPlatform,
+                maskRegion,
                 createdAt,
             ->
-            ManualWorkflowStorageMapper.photoEditRequest(requestId, draftId, sourceMediaAssetId, intent, realismLevel, qualityTier, prompt, createdAt)
+            ManualWorkflowStorageMapper.photoEditRequest(
+                requestId, draftId, sourceMediaAssetId, intent, realismLevel, qualityTier, prompt,
+                userRefinement, subjectDescription, targetPlatform, maskRegion, createdAt,
+            )
         }.executeAsList()
 
     private fun selectPhotoEditResults(id: PostDraftId): List<PhotoEditResult> =
@@ -861,6 +872,10 @@ internal object ManualWorkflowStorageMapper {
         realismLevel: String,
         qualityTier: String,
         prompt: String,
+        userRefinement: String?,
+        subjectDescription: String?,
+        targetPlatform: String,
+        maskRegion: String?,
         createdAt: Long,
     ): PhotoEditRequest = PhotoEditRequest(
         id = PhotoEditRequestId(requestId),
@@ -870,6 +885,10 @@ internal object ManualWorkflowStorageMapper {
         realismLevel = enumFromWire(realismLevel, RealismLevel::fromWireValue),
         qualityTier = enumFromWire(qualityTier, QualityTier::fromWireValue),
         prompt = prompt,
+        userRefinement = userRefinement,
+        subjectDescription = subjectDescription,
+        targetPlatform = enumFromWire(targetPlatform, TargetPlatform::fromWireValue),
+        maskRegion = maskRegion,
         createdAtEpochMillis = createdAt,
     )
 

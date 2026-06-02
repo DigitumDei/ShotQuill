@@ -127,6 +127,10 @@ data class PhotoEditRequest(
     val realismLevel: RealismLevel,
     val qualityTier: QualityTier,
     val prompt: String,
+    val userRefinement: String? = null,
+    val subjectDescription: String? = null,
+    val targetPlatform: TargetPlatform,
+    val maskRegion: String? = null,
     val createdAtEpochMillis: Long,
 )
 

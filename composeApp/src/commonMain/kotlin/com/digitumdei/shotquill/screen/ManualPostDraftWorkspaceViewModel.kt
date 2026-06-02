@@ -322,6 +322,10 @@ class ManualPostDraftWorkspaceViewModel(
             realismLevel = RealismLevel.Polished,
             qualityTier = QualityTier.Draft,
             prompt = generated.prompt,
+            userRefinement = null,
+            subjectDescription = null,
+            targetPlatform = TargetPlatform.Original,
+            maskRegion = null,
             createdAtEpochMillis = now,
         )
         val editedMedia = MediaAsset(

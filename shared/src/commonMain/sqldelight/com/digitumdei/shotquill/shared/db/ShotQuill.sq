@@ -127,6 +127,10 @@ CREATE TABLE photo_edit_requests (
   realism_level TEXT NOT NULL,
   quality_tier TEXT NOT NULL,
   prompt TEXT NOT NULL,
+  user_refinement TEXT,
+  subject_description TEXT,
+  target_platform TEXT NOT NULL,
+  mask_region TEXT,
   created_at_epoch_millis INTEGER NOT NULL
 );
 
@@ -460,8 +464,12 @@ INSERT INTO photo_edit_requests(
   realism_level,
   quality_tier,
   prompt,
+  user_refinement,
+  subject_description,
+  target_platform,
+  mask_region,
   created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   draft_id = excluded.draft_id,
   source_media_asset_id = excluded.source_media_asset_id,
@@ -469,6 +477,10 @@ ON CONFLICT(id) DO UPDATE SET
   realism_level = excluded.realism_level,
   quality_tier = excluded.quality_tier,
   prompt = excluded.prompt,
+  user_refinement = excluded.user_refinement,
+  subject_description = excluded.subject_description,
+  target_platform = excluded.target_platform,
+  mask_region = excluded.mask_region,
   created_at_epoch_millis = excluded.created_at_epoch_millis;
 
 deletePhotoEditRequestsByDraftId:

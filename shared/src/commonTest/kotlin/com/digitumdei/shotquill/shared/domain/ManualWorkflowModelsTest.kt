@@ -519,6 +519,10 @@ class ManualWorkflowModelsTest {
         realismLevel = RealismLevel.Photoreal,
         qualityTier = QualityTier.High,
         prompt = "Make the image brighter while keeping it realistic.",
+        userRefinement = "Focus on the coffee cup",
+        subjectDescription = "A coffee cup on a wooden table",
+        targetPlatform = TargetPlatform.InstagramFeedSquare,
+        maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
 }
