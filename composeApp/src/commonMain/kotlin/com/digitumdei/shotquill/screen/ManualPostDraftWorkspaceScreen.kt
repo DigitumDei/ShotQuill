@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.QualityTier
+import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
@@ -36,14 +38,18 @@ fun ManualPostDraftWorkspaceScreen(
     draftId: PostDraftId,
     postDraftRepository: PostDraftRepository,
     defaultTargetPlatform: TargetPlatform,
+    defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
+    defaultQualityTier: QualityTier = QualityTier.Standard,
     postTextGenerator: PostTextGenerator? = null,
     onNavigateToNewPost: () -> Unit,
 ) {
-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, postTextGenerator) {
+    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
             defaultTargetPlatform = defaultTargetPlatform,
+            defaultRealismLevel = defaultRealismLevel,
+            defaultQualityTier = defaultQualityTier,
             postTextGenerator = postTextGenerator,
         )
     }

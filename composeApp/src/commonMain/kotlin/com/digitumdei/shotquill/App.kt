@@ -168,13 +168,15 @@ fun App(
                 AppScreen.DraftWorkspace -> {
                     val draftId = currentDraftId
                     if (manualWorkflowRepository != null && draftId != null) {
-                        val defaultTargetPlatform = remember(repository, draftId) {
-                            repository.readSettings().defaultTargetPlatform
+                        val settings = remember(repository, draftId) {
+                            repository.readSettings()
                         }
                         ManualPostDraftWorkspaceScreen(
                             draftId = PostDraftId(draftId),
                             postDraftRepository = manualWorkflowRepository,
-                            defaultTargetPlatform = defaultTargetPlatform,
+                            defaultTargetPlatform = settings.defaultTargetPlatform,
+                            defaultRealismLevel = settings.defaultRealismLevel,
+                            defaultQualityTier = settings.defaultQualityTier,
                             postTextGenerator = postTextGenerator,
                             onNavigateToNewPost = {
                                 currentScreen = AppScreen.NewPost.name

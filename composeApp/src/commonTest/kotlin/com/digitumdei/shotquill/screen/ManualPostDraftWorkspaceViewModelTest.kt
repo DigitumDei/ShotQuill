@@ -364,6 +364,26 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun usesConfiguredRealismAndQualityDefaultsWhenEditingPhotoWithAi() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+            defaultRealismLevel = RealismLevel.Polished,
+            defaultQualityTier = QualityTier.High,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(RealismLevel.Polished, request?.realismLevel)
+        assertEquals(QualityTier.High, request?.qualityTier)
+        assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
+    }
+
+    @Test
     fun rejectsTerminalDraftMutationsWithoutThrowing() {
         listOf(DraftStatus.Archived, DraftStatus.Shared).forEach { terminalStatus ->
             val repository = FakePostDraftRepository(sampleDraftWithGeneratedText().copy(status = terminalStatus))
