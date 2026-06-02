@@ -10,8 +10,8 @@ sealed class MaskBounds {
         init {
             require(left in 0.0f..1.0f) { "Normalized left must be in range [0.0, 1.0], got $left" }
             require(top in 0.0f..1.0f) { "Normalized top must be in range [0.0, 1.0], got $top" }
-            require(width in 0.0f..1.0f) { "Normalized width must be in range [0.0, 1.0], got $width" }
-            require(height in 0.0f..1.0f) { "Normalized height must be in range [0.0, 1.0], got $height" }
+            require(width > 0.0f && width <= 1.0f) { "Normalized width must be in range (0.0, 1.0], got $width" }
+            require(height > 0.0f && height <= 1.0f) { "Normalized height must be in range (0.0, 1.0], got $height" }
         }
     }
 

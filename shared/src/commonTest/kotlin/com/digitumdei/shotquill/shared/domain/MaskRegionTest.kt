@@ -99,7 +99,7 @@ class MaskRegionTest {
         val failure = assertFailsWith<IllegalArgumentException> {
             MaskBounds.Normalized(left = 0.0f, top = 0.0f, width = 1.5f, height = 0.5f)
         }
-        assertEquals("Normalized width must be in range [0.0, 1.0], got 1.5", failure.message)
+        assertEquals("Normalized width must be in range (0.0, 1.0], got 1.5", failure.message)
     }
 
     @Test
@@ -107,7 +107,23 @@ class MaskRegionTest {
         val failure = assertFailsWith<IllegalArgumentException> {
             MaskBounds.Normalized(left = 0.0f, top = 0.0f, width = 0.5f, height = -0.1f)
         }
-        assertEquals("Normalized height must be in range [0.0, 1.0], got -0.1", failure.message)
+        assertEquals("Normalized height must be in range (0.0, 1.0], got -0.1", failure.message)
+    }
+
+    @Test
+    fun rejectsNormalizedBoundsWithZeroWidth() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            MaskBounds.Normalized(left = 0.0f, top = 0.0f, width = 0.0f, height = 0.5f)
+        }
+        assertEquals("Normalized width must be in range (0.0, 1.0], got 0.0", failure.message)
+    }
+
+    @Test
+    fun rejectsNormalizedBoundsWithZeroHeight() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            MaskBounds.Normalized(left = 0.0f, top = 0.0f, width = 0.5f, height = 0.0f)
+        }
+        assertEquals("Normalized height must be in range (0.0, 1.0], got 0.0", failure.message)
     }
 
     @Test
