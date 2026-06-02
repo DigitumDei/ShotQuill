@@ -36,6 +36,9 @@ data class PlatformPreset(
     }
 
     companion object {
+        fun forPlatform(platform: TargetPlatform): PlatformPreset =
+            requireNotNull(defaults[platform]) { "No PlatformPreset defined for $platform" }
+
         val defaults: Map<TargetPlatform, PlatformPreset> = TargetPlatform.entries.associateBy(
             { it },
             { platform -> when (platform) {
@@ -91,3 +94,6 @@ data class PlatformPreset(
         )
     }
 }
+
+val TargetPlatform.platformPreset: PlatformPreset
+    get() = PlatformPreset.forPlatform(this)

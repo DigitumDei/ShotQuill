@@ -79,6 +79,23 @@ class PlatformPresetsTest {
     }
 
     @Test
+    fun forPlatformReturnsCorrectPreset() {
+        TargetPlatform.entries.forEach { platform ->
+            val preset = PlatformPreset.forPlatform(platform)
+            assertEquals(platform, preset.platform)
+        }
+    }
+
+    @Test
+    fun platformPresetExtensionDelegatesToForPlatform() {
+        TargetPlatform.entries.forEach { platform ->
+            val preset = platform.platformPreset
+            assertEquals(PlatformPreset.forPlatform(platform), preset)
+            assertEquals(platform, preset.platform)
+        }
+    }
+
+    @Test
     fun rejectsInvalidAspectRatio() {
         val zeroWidth = assertFailsWith<IllegalArgumentException> {
             AspectRatio(width = 0, height = 1)
