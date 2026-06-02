@@ -13,7 +13,8 @@ data class AspectRatio(
 enum class FramingBehavior(val wireValue: String) {
     Fit("fit"),
     Fill("fill"),
-    Stretch("stretch");
+    Stretch("stretch"),
+    NoResize("no_resize");
 
     companion object {
         fun fromWireValue(value: String): FramingBehavior? = entries.firstOrNull { it.wireValue == value }
@@ -23,14 +24,14 @@ enum class FramingBehavior(val wireValue: String) {
 data class PlatformPreset(
     val platform: TargetPlatform,
     val displayName: String,
-    val aspectRatio: AspectRatio,
-    val recommendedWidthPx: Int,
-    val recommendedHeightPx: Int,
+    val aspectRatio: AspectRatio?,
+    val recommendedWidthPx: Int?,
+    val recommendedHeightPx: Int?,
     val defaultFramingBehavior: FramingBehavior,
 ) {
     init {
-        require(recommendedWidthPx > 0) { "recommendedWidthPx must be greater than zero, got $recommendedWidthPx" }
-        require(recommendedHeightPx > 0) { "recommendedHeightPx must be greater than zero, got $recommendedHeightPx" }
+        require(recommendedWidthPx == null || recommendedWidthPx > 0) { "recommendedWidthPx must be null or greater than zero, got $recommendedWidthPx" }
+        require(recommendedHeightPx == null || recommendedHeightPx > 0) { "recommendedHeightPx must be null or greater than zero, got $recommendedHeightPx" }
         require(displayName.isNotBlank()) { "displayName cannot be blank" }
     }
 
@@ -81,10 +82,10 @@ data class PlatformPreset(
                 TargetPlatform.Original -> PlatformPreset(
                     platform = platform,
                     displayName = "Original (no resize)",
-                    aspectRatio = AspectRatio(width = 1, height = 1),
-                    recommendedWidthPx = 1,
-                    recommendedHeightPx = 1,
-                    defaultFramingBehavior = FramingBehavior.Stretch,
+                    aspectRatio = null,
+                    recommendedWidthPx = null,
+                    recommendedHeightPx = null,
+                    defaultFramingBehavior = FramingBehavior.NoResize,
                 )
             } },
         )
