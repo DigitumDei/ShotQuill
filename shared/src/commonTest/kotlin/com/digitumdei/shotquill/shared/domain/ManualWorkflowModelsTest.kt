@@ -153,6 +153,15 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun rejectsPhotoEditRequestWithBlankPrompt() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            samplePhotoEditRequest().copy(prompt = "  ")
+        }
+
+        assertEquals("prompt must not be blank", failure.message)
+    }
+
+    @Test
     fun createsPhotoEditResult() {
         val result = PhotoEditResult(
             id = PhotoEditResultId("photo-edit-result-1"),

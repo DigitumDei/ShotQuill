@@ -134,6 +134,7 @@ data class PhotoEditRequest(
     val createdAtEpochMillis: Long,
 ) {
     init {
+        require(prompt.isNotBlank()) { "prompt must not be blank" }
         require(createdAtEpochMillis >= 0) { "createdAtEpochMillis must be non-negative" }
         require(userRefinement == null || userRefinement.isNotBlank()) { "userRefinement must not be blank when provided" }
         require(subjectDescription == null || subjectDescription.isNotBlank()) { "subjectDescription must not be blank when provided" }
