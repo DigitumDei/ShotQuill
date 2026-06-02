@@ -18,6 +18,8 @@ import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
+import com.digitumdei.shotquill.shared.domain.MaskBounds
+import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -603,6 +605,108 @@ class SqlDelightManualWorkflowRepositoryTest {
     @Test
     fun hasMigrationScaffoldForVersionOne() {
         assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
+    }
+
+    @Test
+    fun savesAndReadsPhotoEditRequestWithAllFieldsRoundTrip() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val request = PhotoEditRequest(
+            id = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = PostDraftId("draft-1"),
+            sourceMediaAssetId = MediaAssetId("media-1"),
+            intent = EditIntent.RemoveObject,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            prompt = "Remove the background object.",
+            userRefinement = "Keep the foreground sharp",
+            subjectDescription = "A coffee cup on a wooden table",
+            targetPlatform = TargetPlatform.InstagramPortrait,
+            maskRegion = MaskRegion(MaskBounds.Normalized(0.1f, 0.1f, 0.5f, 0.5f)),
+            createdAtEpochMillis = createdAt,
+        )
+        repository.savePhotoEditRequest(request)
+
+        val stored = repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-1"))
+        assertNotNull(stored)
+        assertEquals(request.id, stored.id)
+        assertEquals(request.draftId, stored.draftId)
+        assertEquals(request.sourceMediaAssetId, stored.sourceMediaAssetId)
+        assertEquals(request.intent, stored.intent)
+        assertEquals(request.realismLevel, stored.realismLevel)
+        assertEquals(request.qualityTier, stored.qualityTier)
+        assertEquals(request.prompt, stored.prompt)
+        assertEquals(request.userRefinement, stored.userRefinement)
+        assertEquals(request.subjectDescription, stored.subjectDescription)
+        assertEquals(request.targetPlatform, stored.targetPlatform)
+        assertEquals(request.maskRegion, stored.maskRegion)
+        assertEquals(request.createdAtEpochMillis, stored.createdAtEpochMillis)
+        driver.close()
+    }
+
+    @Test
+    fun savesAndReadsPhotoEditRequestWithNullOptionalFields() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val request = PhotoEditRequest(
+            id = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = PostDraftId("draft-1"),
+            sourceMediaAssetId = MediaAssetId("media-1"),
+            intent = EditIntent.BackgroundAdjustment,
+            realismLevel = RealismLevel.Stylized,
+            qualityTier = QualityTier.Draft,
+            prompt = "Adjust the background.",
+            userRefinement = null,
+            subjectDescription = null,
+            targetPlatform = TargetPlatform.InstagramStoryReel,
+            maskRegion = null,
+            createdAtEpochMillis = createdAt,
+        )
+        repository.savePhotoEditRequest(request)
+
+        val stored = repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-1"))
+        assertNotNull(stored)
+        assertEquals(request.id, stored.id)
+        assertEquals(request.draftId, stored.draftId)
+        assertEquals(request.sourceMediaAssetId, stored.sourceMediaAssetId)
+        assertEquals(request.intent, stored.intent)
+        assertEquals(request.realismLevel, stored.realismLevel)
+        assertEquals(request.qualityTier, stored.qualityTier)
+        assertEquals(request.prompt, stored.prompt)
+        assertNull(stored.userRefinement)
+        assertNull(stored.subjectDescription)
+        assertEquals(request.targetPlatform, stored.targetPlatform)
+        assertNull(stored.maskRegion)
+        assertEquals(request.createdAtEpochMillis, stored.createdAtEpochMillis)
+        driver.close()
+    }
+
+    @Test
+    fun hydratesPhotoEditRequestFromPostDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        val hydrated = stored.photoEditRequests.single()
+        assertEquals(PhotoEditRequestId("photo-edit-request-1"), hydrated.id)
+        assertEquals(PostDraftId("draft-1"), hydrated.draftId)
+        assertEquals(MediaAssetId("media-1"), hydrated.sourceMediaAssetId)
+        assertEquals(EditIntent.ImproveLighting, hydrated.intent)
+        assertEquals(RealismLevel.Photoreal, hydrated.realismLevel)
+        assertEquals(QualityTier.High, hydrated.qualityTier)
+        assertEquals("Make the image brighter while keeping it realistic.", hydrated.prompt)
+        assertEquals("Focus on the coffee cup", hydrated.userRefinement)
+        assertEquals("A coffee cup on a wooden table", hydrated.subjectDescription)
+        assertEquals(TargetPlatform.InstagramFeedSquare, hydrated.targetPlatform)
+        assertNull(hydrated.maskRegion)
+        assertEquals(createdAt, hydrated.createdAtEpochMillis)
+        driver.close()
     }
 
     private fun inMemoryDriver(): JdbcSqliteDriver =
