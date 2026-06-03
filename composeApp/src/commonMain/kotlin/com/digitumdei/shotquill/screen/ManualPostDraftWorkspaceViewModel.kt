@@ -9,6 +9,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
@@ -378,16 +379,25 @@ class ManualPostDraftWorkspaceViewModel(
             photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Loading),
             actions = state.actions.copy(canEditPhotoWithAi = false),
         )
-        val result = executor.execute(
-            draftId = draftId,
-            intent = currentForm.selectedIntent,
-            realismLevel = currentForm.selectedRealismLevel,
-            qualityTier = currentForm.selectedQualityTier,
-            targetPlatform = currentForm.selectedTargetPlatform,
-            prompt = "Edit the image (${currentForm.selectedIntent.wireValue}, ${currentForm.selectedTargetPlatform.wireValue}).",
-            userRefinement = currentForm.userRefinementText.trim().takeIf { it.isNotEmpty() },
-            reuseVisionDescription = true,
-        )
+        val result = try {
+            executor.execute(
+                draftId = draftId,
+                intent = currentForm.selectedIntent,
+                realismLevel = currentForm.selectedRealismLevel,
+                qualityTier = currentForm.selectedQualityTier,
+                targetPlatform = currentForm.selectedTargetPlatform,
+                prompt = "Edit the image (${currentForm.selectedIntent.wireValue}, ${currentForm.selectedTargetPlatform.wireValue}).",
+                userRefinement = currentForm.userRefinementText.trim().takeIf { it.isNotEmpty() },
+                reuseVisionDescription = true,
+            )
+        } catch (e: Exception) {
+            state = state.copy(
+                statusMessage = "Photo edit failed: ${e.message}",
+                photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
+                actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
+            )
+            return
+        }
         when (result) {
             is PhotoEditExecutionResult.Success -> {
                 val updatedDraft = result.updatedDraft
@@ -417,6 +427,12 @@ class ManualPostDraftWorkspaceViewModel(
                         photoEditForm = baseState.photoEditForm.copy(
                             operationState = PhotoEditFormOperationState.Error,
                         ),
+                    )
+                } else if (cause is PhotoEditExecutionError.DraftNotFound) {
+                    state = state.copy(
+                        statusMessage = msg,
+                        photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
+                        actions = state.actions.copy(canEditPhotoWithAi = false),
                     )
                 } else {
                     state = state.copy(

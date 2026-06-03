@@ -424,7 +424,8 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         val request = executor.capturedIntent
         assertEquals(EditIntent.ImproveLighting, request)
-        assertEquals(TargetPlatform.InstagramFeedSquare, executor.capturedTargetPlatform)
+        assertEquals(TargetPlatform.BlueskyPost, executor.capturedTargetPlatform)
+        assertTrue(executor.capturedReuseVisionDescription ?: false)
     }
 
     @Test
@@ -1751,6 +1752,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         var capturedMaskRegion: MaskRegion? = null
         var capturedUserRefinement: String? = null
         var capturedPrompt: String? = null
+        var capturedReuseVisionDescription: Boolean? = null
 
         private fun defaultMediaAsset(): MediaAsset =
             defaultMediaAsset ?: MediaAsset(
@@ -1783,6 +1785,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             capturedMaskRegion = maskRegion
             capturedUserRefinement = userRefinement
             capturedPrompt = prompt
+            capturedReuseVisionDescription = reuseVisionDescription
 
             if (result != null) {
                 result.let { r ->
