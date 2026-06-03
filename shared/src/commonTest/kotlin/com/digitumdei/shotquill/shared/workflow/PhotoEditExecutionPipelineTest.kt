@@ -92,13 +92,12 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.photoEditResults.size)
         assertTrue(stored.promptHistory.any { it.operationType == AiOperationType.PhotoEdit && it.responseSummary != null })
 
-        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems")
-        val primary = stored.mediaItems.minByOrNull { it.order }!!
-        assertEquals(editedAsset.id, primary.mediaAsset.id, "Edited asset must become the primary media item (order 0)")
-        assertEquals(MediaType.EditedPhoto, primary.mediaAsset.type)
-        val original = stored.mediaItems.firstOrNull { it.mediaAsset.type == MediaType.Photo }
-        assertNotNull(original, "Original photo must remain identifiable by MediaType.Photo")
-        assertEquals(mediaAssetId, original.mediaAsset.id)
+        assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified")
+        val originalAsset = stored.mediaItems.first().mediaAsset
+        assertEquals(mediaAssetId, originalAsset.id)
+        val latestResult = stored.photoEditResults.maxByOrNull { it.createdAtEpochMillis }
+        assertNotNull(latestResult, "Edited asset must be linked via photoEditResults")
+        assertEquals(editedAsset.id, latestResult.editedMediaAsset.id)
     }
 
     @Test
@@ -222,16 +221,14 @@ class PhotoEditExecutionPipelineTest {
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
         assertEquals(DraftStatus.PhotoEdited, stored.status)
-        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems on retry success")
+        assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified after retry success")
         assertEquals(
-            MediaType.EditedPhoto,
-            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
-            "Edited asset must be primary (order 0) after retry success",
+            MediaType.Photo,
+            stored.mediaItems.first().mediaAsset.type,
+            "Original photo must remain the only media item",
         )
-        assertNotNull(
-            stored.mediaItems.firstOrNull { it.mediaAsset.type == MediaType.Photo },
-            "Original photo must remain in mediaItems after retry success",
-        )
+        val latestResult = stored.photoEditResults.maxByOrNull { it.createdAtEpochMillis }
+        assertNotNull(latestResult, "Edited asset must be linked via photoEditResults on retry")
     }
 
     @Test
@@ -340,17 +337,13 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
-        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems for subsequent edits")
+        assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified for subsequent edits")
         assertEquals(
-            MediaType.EditedPhoto,
-            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
-            "Most recent edited asset must be primary after second edit",
+            MediaType.Photo,
+            stored.mediaItems.first().mediaAsset.type,
+            "Original photo must remain the only media item",
         )
-        assertEquals(
-            1,
-            stored.mediaItems.count { it.mediaAsset.type == MediaType.Photo },
-            "Original photo must remain in mediaItems",
-        )
+        assertEquals(2, stored.photoEditResults.size, "Both edits must be recorded in photoEditResults")
     }
 
     @Test
@@ -390,12 +383,14 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
-        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems when editing a ReadyToShare draft")
+        assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified when editing a ReadyToShare draft")
         assertEquals(
-            MediaType.EditedPhoto,
-            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
-            "Edited asset must be primary (order 0) in mediaItems",
+            MediaType.Photo,
+            stored.mediaItems.first().mediaAsset.type,
+            "Original photo must remain the only media item",
         )
+        val latestResult = stored.photoEditResults.maxByOrNull { it.createdAtEpochMillis }
+        assertNotNull(latestResult, "Edited asset must be linked via photoEditResults")
     }
 
     @Test

@@ -19,7 +19,6 @@ import com.digitumdei.shotquill.shared.domain.PhotoEditResult
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
-import com.digitumdei.shotquill.shared.domain.PostMediaItem
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
@@ -224,12 +223,6 @@ class PhotoEditExecutionPipeline(
         repository.savePhotoEditRequest(editRequest)
         repository.savePhotoEditResult(editResult)
         repository.savePromptHistoryEntry(promptHistoryEntry)
-        val updatedMediaItems = listOf(
-            PostMediaItem(editedMediaAsset, order = 0),
-        ) + currentBeforeSave.mediaItems.mapIndexed { i, item ->
-            item.copy(order = i + 1)
-        }
-        repository.replaceMediaItems(draftId, updatedMediaItems.map { it.mediaAsset.id })
         val updatedAt = operationUpdatedAt(currentBeforeSave, now)
         if (targetStatus != currentBeforeSave.status) {
             repository.updateStatus(draftId, targetStatus, updatedAt)
@@ -243,7 +236,6 @@ class PhotoEditExecutionPipeline(
             currentBeforeSave.copy(updatedAt = updatedAt)
         }
         val updatedDraft = baseDraft.copy(
-            mediaItems = updatedMediaItems,
             photoEditRequests = currentBeforeSave.photoEditRequests + editRequest,
             photoEditResults = currentBeforeSave.photoEditResults + editResult,
             promptHistory = currentBeforeSave.promptHistory + promptHistoryEntry,
