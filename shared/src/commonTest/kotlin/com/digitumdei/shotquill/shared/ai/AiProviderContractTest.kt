@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.shared.ai
 
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -13,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AiProviderContractTest {
@@ -25,6 +27,34 @@ class AiProviderContractTest {
         val first = provider.generateCaption(sampleCaptionRequest())
         val second = provider.generateCaption(sampleCaptionRequest())
         assertEquals(first, second)
+    }
+
+    @Test
+    fun fakeProviderEditPhotoSummaryDerivedFromAssembledPrompt() {
+        val provider = FakeAiProvider()
+        val request = sampleEditGenerationRequest()
+
+        val rawPrompt = request.editRequest.prompt
+        val assembledPrompt = PhotoEditPromptAssembler.assemble(request.editRequest)
+        assertTrue(
+            assembledPrompt.contains("Edit this image:"),
+            "assembled prompt should contain prose not present in raw prompt",
+        )
+
+        val result = provider.editPhoto(request)
+        val success = assertIs<AiProviderResult.Success<PhotoEditOutput>>(result)
+        val summary = success.value.summary
+        assertNotNull(summary)
+
+        assertTrue(
+            summary.contains("Edit this image:"),
+            "FakeAiProvider summary should be derived from the assembled prompt, not the raw prompt. " +
+                "Expected 'Edit this image:' (from assembled prompt) in summary but got: $summary",
+        )
+        assertTrue(
+            summary.startsWith("Fake improve_lighting edit for original:"),
+            "Expected summary to start with the fake prefix but got: $summary",
+        )
     }
 
     @Test
@@ -66,6 +96,8 @@ class AiProviderContractTest {
         val editSuccess = assertIs<AiProviderResult.Success<PhotoEditOutput>>(edit)
         assertTrue(editSuccess.value.imageBytes.isNotEmpty())
         assertTrue(editSuccess.value.mimeType.startsWith("image/"))
+        assertNotNull(editSuccess.value.summary)
+        assertTrue(editSuccess.value.summary.isNotBlank())
     }
 }
 
