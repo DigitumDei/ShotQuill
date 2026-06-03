@@ -182,7 +182,7 @@ class PhotoEditPromptAssemblerTest {
             val expectedSnippet = expectations.getValue(intent)
             val request = samplePhotoEditRequest(intent = intent)
             val prompt = PhotoEditPromptAssembler.assemble(request)
-            assertContains(prompt, expectedSnippet, "EditIntent.${intent.name} should produce expected instruction")
+            assertContains(prompt, expectedSnippet, message = "EditIntent.${intent.name} should produce expected instruction")
         }
     }
 
