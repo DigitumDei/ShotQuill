@@ -4,14 +4,14 @@ object PhotoEditPromptAssembler {
     fun assemble(request: PhotoEditRequest): String {
         val preset = request.targetPlatform.platformPreset
         return buildString {
-            append("Edit this image: ${request.intent.promptIntent} ${request.prompt.trim().trimEnd('.')}.")
+            append("Edit this image: ${request.intent.promptIntent} ${normalize(request.prompt)}.")
             append(" Apply a ${request.realismLevel.adjective} edit. ${request.realismLevel.promptIntent}")
             append(" Use ${request.qualityTier.wireValue} quality tier.")
-            append(" Target platform: ${preset.displayName}")
+            append(" Frame the result for ${preset.displayName}")
             if (preset.aspectRatio != null) {
-                append(" — ${preset.aspectRatio.width}:${preset.aspectRatio.height}, ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px, ${preset.defaultFramingBehavior.wireValue} framing")
+                append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}, ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px, using ${preset.defaultFramingBehavior.wireValue} framing")
             } else {
-                append(" (${preset.defaultFramingBehavior.wireValue} framing)")
+                append(" using ${preset.defaultFramingBehavior.wireValue} framing")
             }
             append(".")
             if (request.maskRegion != null) {
@@ -34,12 +34,17 @@ object PhotoEditPromptAssembler {
                 }
             }
             if (!request.subjectDescription.isNullOrBlank()) {
-                append(" The subject is ${request.subjectDescription.trim()}.")
+                append(" The subject is ${normalize(request.subjectDescription)}.")
                 append(" Preserve the subject's appearance.")
             }
             if (!request.userRefinement.isNullOrBlank()) {
-                append(" ${request.userRefinement.trim()}.")
+                append(" ${normalize(request.userRefinement)}.")
             }
         }
     }
+
+    private fun normalize(text: String): String = text
+        .trim()
+        .replace(Regex("\\s+"), " ")
+        .trimEnd('.')
 }

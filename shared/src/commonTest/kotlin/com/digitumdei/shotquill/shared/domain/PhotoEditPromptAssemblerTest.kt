@@ -28,7 +28,7 @@ class PhotoEditPromptAssemblerTest {
             append("Edit this image: Improve the lighting and exposure of the image. Make the image brighter while keeping it realistic.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
-            append(" Target platform: Instagram Feed Square — 1:1, 1080x1080px, fit framing.")
+            append(" Frame the result for Instagram Feed Square at 1:1, 1080x1080px, using fit framing.")
             append(" The subject is A coffee cup on a wooden table.")
             append(" Preserve the subject's appearance.")
             append(" Focus on the coffee cup.")
