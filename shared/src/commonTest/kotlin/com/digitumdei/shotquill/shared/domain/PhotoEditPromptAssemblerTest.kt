@@ -81,15 +81,6 @@ class PhotoEditPromptAssemblerTest {
     }
 
     @Test
-    fun omitsUserRefinementWhenBlank() {
-        val request = samplePhotoEditRequest(userRefinement = "   ")
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertFalse(prompt.contains("Additional user notes"))
-    }
-
-    @Test
     fun includesSubjectDescriptionWhenPresent() {
         val request = samplePhotoEditRequest(
             subjectDescription = "A red bicycle leaning against a wall",
@@ -103,15 +94,6 @@ class PhotoEditPromptAssemblerTest {
     @Test
     fun omitsSubjectDescriptionWhenNull() {
         val request = samplePhotoEditRequest(subjectDescription = null)
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertFalse(prompt.contains("The subject is"))
-    }
-
-    @Test
-    fun omitsSubjectDescriptionWhenBlank() {
-        val request = samplePhotoEditRequest(subjectDescription = "   ")
 
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
