@@ -11,7 +11,9 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.digitumdei.shotquill.media.AndroidPhotoEditMediaSaver
 import com.digitumdei.shotquill.media.ContentResolverMediaImporter
+import com.digitumdei.shotquill.media.FilePhotoEditImageSource
 import com.digitumdei.shotquill.media.FileVisionImageSource
 import com.digitumdei.shotquill.media.MediaFileManager
 import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
@@ -24,6 +26,7 @@ import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.AndroidBrandProfileRepositoryFactory
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionPipeline
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationPipeline
 import java.io.File
 
@@ -46,6 +49,17 @@ class MainActivity : ComponentActivity() {
             imageSource = FileVisionImageSource(),
             activeBrandProfileStore = ActiveBrandProfileStore(settingsRepository, brandProfileRepository),
             settingsRepository = settingsRepository,
+        )
+        val photoEditExecutionPipeline = PhotoEditExecutionPipeline(
+            repository = manualWorkflowRepository,
+            aiProvider = AiProviderFactory.openAi(
+                settingsRepository = settingsRepository,
+                transport = UrlConnectionOpenAiHttpTransport(),
+            ),
+            settingsRepository = settingsRepository,
+            imageSource = FilePhotoEditImageSource(),
+            mediaSaver = AndroidPhotoEditMediaSaver(filesDir),
+            visionImageSource = FileVisionImageSource(),
         )
 
         setContent {
@@ -74,6 +88,7 @@ class MainActivity : ComponentActivity() {
                 brandProfileRepository = brandProfileRepository,
                 manualWorkflowRepository = manualWorkflowRepository,
                 postTextGenerator = postTextGenerationPipeline,
+                photoEditExecutor = photoEditExecutionPipeline,
                 onCaptureFromCamera = captureHandler.launchCamera,
                 onPickFromGallery = captureHandler.launchGallery,
                 captureResult = captureResult,

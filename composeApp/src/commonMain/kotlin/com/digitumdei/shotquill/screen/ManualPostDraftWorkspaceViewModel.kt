@@ -34,6 +34,9 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
@@ -168,6 +171,7 @@ class ManualPostDraftWorkspaceViewModel(
     private val postDraftRepository: PostDraftRepository,
     private val aiProvider: ManualDraftAiProvider = FakeManualDraftAiProvider(),
     private val postTextGenerator: PostTextGenerator? = null,
+    private val photoEditExecutor: PhotoEditExecutor? = null,
     private val clock: EpochClock = EpochClock.Default,
     private val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
     private val defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
@@ -374,6 +378,10 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun editPhotoWithAi() {
+        photoEditExecutor?.let {
+            editPhotoWithPipeline(it)
+            return
+        }
         val draft = postDraftRepository.get(draftId) ?: run {
             state = state.copy(
                 statusMessage = "Draft not found",
@@ -461,6 +469,55 @@ class ManualPostDraftWorkspaceViewModel(
                 photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
                 actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
             )
+        }
+    }
+
+    private fun editPhotoWithPipeline(executor: PhotoEditExecutor) {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = state.copy(
+                statusMessage = "Draft not found",
+                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
+                actions = state.actions.copy(canEditPhotoWithAi = false),
+            )
+            return
+        }
+        val currentForm = state.photoEditForm
+        state = state.copy(
+            statusMessage = "Editing photo with AI...",
+            photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Loading),
+            actions = state.actions.copy(canEditPhotoWithAi = false),
+        )
+        val result = executor.execute(
+            draftId = draftId,
+            intent = currentForm.selectedIntent,
+            realismLevel = currentForm.selectedRealismLevel,
+            qualityTier = currentForm.selectedQualityTier,
+            targetPlatform = currentForm.selectedTargetPlatform,
+            prompt = "Edit the image (${currentForm.selectedIntent.wireValue}, ${currentForm.selectedTargetPlatform.wireValue}).",
+            userRefinement = currentForm.userRefinementText,
+            reuseVisionDescription = true,
+        )
+        when (result) {
+            is PhotoEditExecutionResult.Success -> {
+                val updatedDraft = result.updatedDraft
+                state = updatedDraft.toState("Edited photo created", state.isPromptHistoryVisible)
+            }
+            is PhotoEditExecutionResult.Failure -> {
+                val cause = result.error
+                val msg = when (cause) {
+                    is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
+                    is PhotoEditExecutionError.InvalidDraftStatus -> "Cannot edit photo while status is ${cause.status.wireValue}"
+                    is PhotoEditExecutionError.Provider -> "Unable to edit photo: ${cause.error.userMessage}"
+                    is PhotoEditExecutionError.FailedToLoadSourceImage -> cause.message
+                    is PhotoEditExecutionError.FailedToSaveEditedImage -> cause.message
+                    is PhotoEditExecutionError.FailurePersisted -> cause.cause.message?.let { "Photo edit failed: $it" } ?: "Photo edit failed"
+                }
+                state = state.copy(
+                    statusMessage = msg,
+                    photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
+                    actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
+                )
+            }
         }
     }
 
