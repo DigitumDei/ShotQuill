@@ -14,11 +14,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -53,7 +50,7 @@ fun ManualPostDraftWorkspaceScreen(
             postTextGenerator = postTextGenerator,
         )
     }
-    var state by remember(viewModel) { mutableStateOf(viewModel.state) }
+    val state = viewModel.state
     val coroutineScope = rememberCoroutineScope()
     val operationMutex = remember(viewModel) { Mutex() }
 
@@ -63,7 +60,6 @@ fun ManualPostDraftWorkspaceScreen(
                 withContext(Dispatchers.IO) {
                     viewModel.block()
                 }
-                state = viewModel.state
             }
         }
     }
@@ -73,7 +69,6 @@ fun ManualPostDraftWorkspaceScreen(
             withContext(Dispatchers.IO) {
                 viewModel.load()
             }
-            state = viewModel.state
         }
     }
 

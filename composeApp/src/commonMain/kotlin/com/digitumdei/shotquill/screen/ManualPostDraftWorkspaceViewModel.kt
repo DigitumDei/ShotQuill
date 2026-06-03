@@ -37,6 +37,9 @@ import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.datetime.Instant
 
 enum class PhotoEditFormOperationState {
@@ -164,7 +167,7 @@ class ManualPostDraftWorkspaceViewModel(
     private val defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
     private val defaultQualityTier: QualityTier = QualityTier.Standard,
 ) {
-    var state: ManualPostDraftWorkspaceState = unloadedState()
+    var state: ManualPostDraftWorkspaceState by mutableStateOf(unloadedState())
         private set
     private var operationSequence = 0
 
