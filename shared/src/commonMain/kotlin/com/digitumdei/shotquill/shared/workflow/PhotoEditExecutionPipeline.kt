@@ -119,10 +119,37 @@ class PhotoEditExecutionPipeline(
             createdAtEpochMillis = now,
         )
         val assembledPrompt = PhotoEditPromptAssembler.assemble(editRequest)
+        val failurePromptHistoryEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-photo-edit-failure-$idSuffix"),
+            draftId = draftId,
+            operationType = AiOperationType.PhotoEdit,
+            prompt = assembledPrompt,
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = now,
+        )
+
+        fun persistFailure(cause: PhotoEditExecutionError): PhotoEditExecutionResult.Failure {
+            repository.savePhotoEditRequest(editRequest)
+            repository.savePromptHistoryEntry(failurePromptHistoryEntry)
+            val persistedDraft = currentDraft.copy(
+                photoEditRequests = currentDraft.photoEditRequests + editRequest,
+                promptHistory = currentDraft.promptHistory + failurePromptHistoryEntry,
+            )
+            return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = editRequest,
+                    assembledPrompt = assembledPrompt,
+                    promptHistoryEntry = failurePromptHistoryEntry,
+                    updatedDraft = persistedDraft,
+                    cause = cause,
+                ),
+            )
+        }
 
         val sourceImageResult = imageSource.load(sourceMediaAsset)
         if (sourceImageResult is SourceImageResult.Failure) {
-            return PhotoEditExecutionResult.Failure(
+            return persistFailure(
                 PhotoEditExecutionError.FailedToLoadSourceImage(sourceImageResult.message),
             )
         }
@@ -135,7 +162,7 @@ class PhotoEditExecutionPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PhotoEditExecutionResult.Failure(
+            is AiProviderResult.Failure -> return persistFailure(
                 PhotoEditExecutionError.Provider(result.error),
             )
             is AiProviderResult.Success -> result.value
@@ -148,7 +175,7 @@ class PhotoEditExecutionPipeline(
             createdAtEpochMillis = now,
         )
         if (saveResult is SaveEditedImageResult.Failure) {
-            return PhotoEditExecutionResult.Failure(
+            return persistFailure(
                 PhotoEditExecutionError.FailedToSaveEditedImage(saveResult.message),
             )
         }

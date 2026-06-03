@@ -2,11 +2,23 @@ package com.digitumdei.shotquill.shared.workflow
 
 import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.ai.AiImageInput
+import com.digitumdei.shotquill.shared.ai.AiProvider
+import com.digitumdei.shotquill.shared.ai.AiProviderResult
+import com.digitumdei.shotquill.shared.ai.AltTextGenerationOutput
+import com.digitumdei.shotquill.shared.ai.AltTextGenerationRequest
+import com.digitumdei.shotquill.shared.ai.CaptionGenerationOutput
+import com.digitumdei.shotquill.shared.ai.CaptionGenerationRequest
+import com.digitumdei.shotquill.shared.ai.FakeAiProvider
+import com.digitumdei.shotquill.shared.ai.PhotoEditGenerationRequest
+import com.digitumdei.shotquill.shared.ai.PhotoEditOutput
+import com.digitumdei.shotquill.shared.ai.VisionDescriptionOutput
+import com.digitumdei.shotquill.shared.ai.VisionDescriptionRequest
+import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
+import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
-import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
@@ -21,6 +33,10 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.domain.VisionDescription
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
+import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,6 +51,295 @@ class PhotoEditExecutionPipelineTest {
     private val requestId = PhotoEditRequestId("edit-req-1")
     private val resultId = PhotoEditResultId("edit-result-1")
     private val baseEpoch = 1_700_000_000_000L
+
+    @Test
+    fun `happy path with fake provider preserves original media and links edited image to draft`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+
+        val originalAsset = repository.get(mediaAssetId)
+        assertNotNull(originalAsset, "Original media asset must still exist")
+        assertEquals(MediaType.Photo, originalAsset.type)
+
+        val editedAsset = success.photoEditResult.editedMediaAsset
+        assertEquals(MediaType.EditedPhoto, editedAsset.type)
+        assertTrue(stored.photoEditResults.any { it.editedMediaAsset.id == editedAsset.id })
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(1, stored.photoEditResults.size)
+        assertTrue(stored.promptHistory.any { it.operationType == AiOperationType.PhotoEdit && it.responseSummary != null })
+    }
+
+    @Test
+    fun `failed edit stores error history via FailurePersisted`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertIs<PhotoEditExecutionError.Provider>(persisted.cause)
+        assertEquals(AiError.RateLimited(), (persisted.cause as PhotoEditExecutionError.Provider).error)
+        assertEquals(1, persisted.photoEditRequest.draftId.value)
+        assertNotNull(persisted.assembledPrompt)
+        assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
+        assertEquals(null, persisted.promptHistoryEntry.responseSummary)
+
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(0, stored.photoEditResults.size)
+        assertEquals(1, stored.promptHistory.size)
+        assertEquals(null, stored.promptHistory.first().responseSummary)
+        assertEquals(DraftStatus.PhotoAdded, stored.status)
+    }
+
+    @Test
+    fun `retry appends another history entry after a failed edit`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            var callCount = 0
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> {
+                callCount += 1
+                if (callCount == 1) return AiProviderResult.Failure(AiError.RateLimited())
+                return AiProviderResult.Success(
+                    PhotoEditOutput(
+                        imageBytes = "fake-edit-success".encodeToByteArray(),
+                        mimeType = "image/jpeg",
+                        summary = "Fake success edit",
+                        modelName = "recording-model",
+                    ),
+                )
+            }
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        clock.now = 1_700_000_200_000L
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(2, stored.photoEditRequests.size)
+        assertEquals(1, stored.photoEditResults.size)
+        assertEquals(2, stored.promptHistory.size)
+        val historyFailure = stored.promptHistory.first()
+        assertEquals(null, historyFailure.responseSummary)
+        val historySuccess = stored.promptHistory.last()
+        assertNotNull(historySuccess.responseSummary)
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+    }
+
+    @Test
+    fun `source image load failure returns FailurePersisted`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = settingsRepository,
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Failure("File not found") },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
+            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(persisted.cause)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(1, stored.promptHistory.size)
+    }
+
+    @Test
+    fun `media saver failure returns FailurePersisted`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = settingsRepository,
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") },
+            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertIs<PhotoEditExecutionError.FailedToSaveEditedImage>(persisted.cause)
+    }
+
+    @Test
+    fun `missing API key fails early without persisting anything`() {
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = InMemoryLocalSettingsRepository(),
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.Provider>(failure.error)
+        assertEquals(AiError.MissingApiKey, (failure.error as PhotoEditExecutionError.Provider).error)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(0, stored.photoEditRequests.size)
+        assertEquals(0, stored.promptHistory.size)
+    }
+
+    @Test
+    fun `draft not found fails early without persisting anything`() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription()).also { it.clearAll() }
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.DraftNotFound>(failure.error)
+    }
 
     @Test
     fun `PhotoEditImageSource load returns Success with AiImageInput`() {
@@ -236,6 +541,24 @@ class PhotoEditExecutionPipelineTest {
         ))
     }
 
+    private fun pipeline(
+        repository: ManualWorkflowRepository,
+        settingsRepository: InMemoryLocalSettingsRepository,
+        aiProvider: AiProvider,
+        clock: EpochClock = MutableClock(1_700_000_100_000L),
+    ): PhotoEditExecutionPipeline = PhotoEditExecutionPipeline(
+        repository = repository,
+        aiProvider = aiProvider,
+        settingsRepository = settingsRepository,
+        imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+        mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Success(sampleEditedMediaAsset()) },
+        visionImageSource = VisionImageSource { sampleAiImageInput() },
+        clock = clock,
+    )
+
+    private fun apiKeySettings(): InMemoryLocalSettingsRepository =
+        InMemoryLocalSettingsRepository().also { it.saveOpenAiApiKey("sk-test") }
+
     private fun sampleDraft(): PostDraft = PostDraft(
         id = draftId,
         format = PostFormat.SingleImage,
@@ -256,6 +579,18 @@ class PhotoEditExecutionPipelineTest {
         updatedAt = Instant.fromEpochMilliseconds(baseEpoch),
     )
 
+    private fun sampleDraftWithVisionDescription(): PostDraft {
+        val visionDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-cached"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "A handmade ceramic mug beside a notebook.",
+            modelName = "cached-model",
+            createdAtEpochMillis = 1_700_000_050_000L,
+        )
+        return sampleDraft().copy(visionDescription = visionDescription)
+    }
+
     private fun sampleMediaAsset(): MediaAsset = MediaAsset(
         id = mediaAssetId,
         type = MediaType.Photo,
@@ -264,6 +599,16 @@ class PhotoEditExecutionPipelineTest {
         widthPx = 1920,
         heightPx = 1080,
         createdAtEpochMillis = baseEpoch,
+    )
+
+    private fun sampleEditedMediaAsset(): MediaAsset = MediaAsset(
+        id = MediaAssetId("media-edited-result"),
+        type = MediaType.EditedPhoto,
+        uri = "file://edited/output.jpg",
+        mimeType = "image/jpeg",
+        widthPx = 1920,
+        heightPx = 1080,
+        createdAtEpochMillis = baseEpoch + 2000,
     )
 
     private fun sampleAiImageInput(): AiImageInput = AiImageInput(
@@ -291,12 +636,7 @@ class PhotoEditExecutionPipelineTest {
         id = resultId,
         requestId = requestId,
         draftId = draftId,
-        editedMediaAsset = sampleMediaAsset().copy(
-            id = MediaAssetId("media-edited-result"),
-            type = MediaType.EditedPhoto,
-            uri = "file://edited/output.jpg",
-            createdAtEpochMillis = baseEpoch + 2000,
-        ),
+        editedMediaAsset = sampleEditedMediaAsset(),
         summary = "Brightened the image",
         modelName = "dall-e-3",
         createdAtEpochMillis = baseEpoch + 2000,
@@ -311,4 +651,112 @@ class PhotoEditExecutionPipelineTest {
         modelName = "dall-e-3",
         createdAtEpochMillis = baseEpoch + 2000,
     )
+
+    private class MutableClock(var now: Long) : EpochClock {
+        override fun nowMillis(): Long = now
+    }
+
+    private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
+        private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        private val mediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
+
+        init {
+            initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+        }
+
+        override fun save(mediaAsset: MediaAsset) {
+            mediaAssets[mediaAsset.id] = mediaAsset
+        }
+
+        override fun get(id: MediaAssetId): MediaAsset? = mediaAssets[id]
+
+        override fun save(brandProfile: com.digitumdei.shotquill.shared.domain.BrandProfile) = Unit
+        override fun get(id: com.digitumdei.shotquill.shared.domain.BrandProfileId): com.digitumdei.shotquill.shared.domain.BrandProfile? = null
+
+        override fun save(postDraft: PostDraft) {
+            drafts[postDraft.id] = postDraft
+        }
+
+        override fun get(id: PostDraftId): PostDraft? = drafts[id]
+
+        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
+        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
+
+        override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
+        override fun saveVisionDescription(visionDescription: VisionDescription) = save(
+            drafts.getValue(visionDescription.draftId).copy(visionDescription = visionDescription),
+        )
+        override fun get(id: VisionDescriptionId): VisionDescription? =
+            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+        override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
+            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+
+        override fun save(captionRequest: com.digitumdei.shotquill.shared.domain.CaptionRequest) = saveCaptionRequest(captionRequest)
+        override fun getCaptionRequest(id: com.digitumdei.shotquill.shared.domain.CaptionRequestId): com.digitumdei.shotquill.shared.domain.CaptionRequest? = null
+        override fun listCaptionRequestsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.CaptionRequest> = emptyList()
+        override fun saveCaptionRequest(captionRequest: com.digitumdei.shotquill.shared.domain.CaptionRequest) = Unit
+
+        override fun save(captionResult: com.digitumdei.shotquill.shared.domain.CaptionResult) = saveCaptionResult(captionResult)
+        override fun getCaptionResult(id: com.digitumdei.shotquill.shared.domain.CaptionResultId): com.digitumdei.shotquill.shared.domain.CaptionResult? = null
+        override fun listCaptionResultsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.CaptionResult> = emptyList()
+        override fun saveCaptionResult(captionResult: com.digitumdei.shotquill.shared.domain.CaptionResult) = Unit
+
+        override fun save(altTextResult: com.digitumdei.shotquill.shared.domain.AltTextResult) = saveAltTextResult(altTextResult)
+        override fun get(id: com.digitumdei.shotquill.shared.domain.AltTextResultId): com.digitumdei.shotquill.shared.domain.AltTextResult? = null
+        override fun listAltTextResultsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.AltTextResult> = emptyList()
+        override fun saveAltTextResult(altTextResult: com.digitumdei.shotquill.shared.domain.AltTextResult) = Unit
+
+        override fun save(photoEditRequest: PhotoEditRequest) = savePhotoEditRequest(photoEditRequest)
+        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = drafts.values
+            .flatMap { it.photoEditRequests }
+            .firstOrNull { it.id == id }
+        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> =
+            drafts[id]?.photoEditRequests.orEmpty()
+        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) = save(
+            drafts.getValue(photoEditRequest.draftId).let { it.copy(photoEditRequests = it.photoEditRequests + photoEditRequest) },
+        )
+
+        override fun save(photoEditResult: PhotoEditResult) = savePhotoEditResult(photoEditResult)
+        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = drafts.values
+            .flatMap { it.photoEditResults }
+            .firstOrNull { it.id == id }
+        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
+            drafts[id]?.photoEditResults.orEmpty()
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = save(
+            drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
+        )
+
+        override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
+        override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = drafts.values
+            .flatMap { it.promptHistory }
+            .firstOrNull { it.id == id }
+        override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+            drafts[id]?.promptHistory.orEmpty()
+        override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
+            drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },
+        )
+
+        override fun save(exportRecord: com.digitumdei.shotquill.shared.domain.ExportRecord) = saveExportRecord(exportRecord)
+        override fun get(id: com.digitumdei.shotquill.shared.domain.ExportRecordId): com.digitumdei.shotquill.shared.domain.ExportRecord? = null
+        override fun listExportRecordsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.ExportRecord> = emptyList()
+        override fun saveExportRecord(exportRecord: com.digitumdei.shotquill.shared.domain.ExportRecord) = Unit
+
+        override fun recordPostTextGeneration(
+            draftId: PostDraftId,
+            status: DraftStatus,
+            caption: com.digitumdei.shotquill.shared.domain.CaptionDraft,
+            targetPlatform: TargetPlatform,
+            brandProfile: com.digitumdei.shotquill.shared.domain.BrandProfile?,
+            captionRequest: com.digitumdei.shotquill.shared.domain.CaptionRequest,
+            captionResult: com.digitumdei.shotquill.shared.domain.CaptionResult,
+            altTextResult: com.digitumdei.shotquill.shared.domain.AltTextResult,
+            promptHistoryEntries: List<PromptHistoryEntry>,
+            updatedAt: Instant,
+        ): PostDraft? = null
+
+        override fun clearAll() {
+            drafts.clear()
+            mediaAssets.clear()
+        }
+    }
 }
