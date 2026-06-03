@@ -91,6 +91,14 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.photoEditRequests.size)
         assertEquals(1, stored.photoEditResults.size)
         assertTrue(stored.promptHistory.any { it.operationType == AiOperationType.PhotoEdit && it.responseSummary != null })
+
+        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems")
+        val primary = stored.mediaItems.minByOrNull { it.order }!!
+        assertEquals(editedAsset.id, primary.mediaAsset.id, "Edited asset must become the primary media item (order 0)")
+        assertEquals(MediaType.EditedPhoto, primary.mediaAsset.type)
+        val original = stored.mediaItems.firstOrNull { it.mediaAsset.type == MediaType.Photo }
+        assertNotNull(original, "Original photo must remain identifiable by MediaType.Photo")
+        assertEquals(mediaAssetId, original.mediaAsset.id)
     }
 
     @Test
@@ -214,6 +222,16 @@ class PhotoEditExecutionPipelineTest {
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
         assertEquals(DraftStatus.PhotoEdited, stored.status)
+        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems on retry success")
+        assertEquals(
+            MediaType.EditedPhoto,
+            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
+            "Edited asset must be primary (order 0) after retry success",
+        )
+        assertNotNull(
+            stored.mediaItems.firstOrNull { it.mediaAsset.type == MediaType.Photo },
+            "Original photo must remain in mediaItems after retry success",
+        )
     }
 
     @Test
@@ -322,6 +340,17 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
+        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems for subsequent edits")
+        assertEquals(
+            MediaType.EditedPhoto,
+            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
+            "Most recent edited asset must be primary after second edit",
+        )
+        assertEquals(
+            1,
+            stored.mediaItems.count { it.mediaAsset.type == MediaType.Photo },
+            "Original photo must remain in mediaItems",
+        )
     }
 
     @Test
@@ -361,6 +390,12 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
+        assertEquals(2, stored.mediaItems.size, "Edited asset must be added to mediaItems when editing a ReadyToShare draft")
+        assertEquals(
+            MediaType.EditedPhoto,
+            stored.mediaItems.minByOrNull { it.order }!!.mediaAsset.type,
+            "Edited asset must be primary (order 0) in mediaItems",
+        )
     }
 
     @Test
@@ -783,7 +818,15 @@ class PhotoEditExecutionPipelineTest {
             drafts[id] = draft.copy(updatedAt = updatedAt)
             return true
         }
-        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
+        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean {
+            val draft = drafts[id] ?: return false
+            val items = mediaItems.mapIndexedNotNull { index, mid ->
+                mediaAssets[mid]?.let { PostMediaItem(it, index) }
+            }
+            if (items.size != mediaItems.size) return false
+            drafts[id] = draft.copy(mediaItems = items)
+            return true
+        }
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) = save(
