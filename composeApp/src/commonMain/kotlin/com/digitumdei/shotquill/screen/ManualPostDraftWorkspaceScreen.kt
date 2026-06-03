@@ -10,7 +10,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,10 +26,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +60,7 @@ fun ManualPostDraftWorkspaceScreen(
             postTextGenerator = postTextGenerator,
         )
     }
-    var state by remember(viewModel) { mutableStateOf(viewModel.state) }
+    val state = viewModel.state
     val coroutineScope = rememberCoroutineScope()
     val operationMutex = remember(viewModel) { Mutex() }
 
@@ -63,7 +70,14 @@ fun ManualPostDraftWorkspaceScreen(
                 withContext(Dispatchers.IO) {
                     viewModel.block()
                 }
-                state = viewModel.state
+            }
+        }
+    }
+
+    fun refreshInMemory(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
+        coroutineScope.launch {
+            operationMutex.withLock {
+                viewModel.block()
             }
         }
     }
@@ -73,7 +87,6 @@ fun ManualPostDraftWorkspaceScreen(
             withContext(Dispatchers.IO) {
                 viewModel.load()
             }
-            state = viewModel.state
         }
     }
 
@@ -82,11 +95,16 @@ fun ManualPostDraftWorkspaceScreen(
         onAnalyzeVision = { refresh { analyzeVisionDescription() } },
         onGeneratePostText = { refresh { generatePostText() } },
         onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
-        onCopyCaption = { refresh { markCaptionCopied() } },
-        onCopyAltText = { refresh { markAltTextCopied() } },
+        onCopyCaption = { refreshInMemory { markCaptionCopied() } },
+        onCopyAltText = { refreshInMemory { markAltTextCopied() } },
         onShareOrExport = { refresh { markShareOrExportStarted() } },
-        onTogglePromptHistory = { refresh { togglePromptHistory() } },
+        onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
+        onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
+        onUpdatePhotoEditRefinement = { viewModel.updatePhotoEditRefinement(it) },
+        onUpdatePhotoEditRealism = { viewModel.updatePhotoEditRealism(it) },
+        onUpdatePhotoEditTargetPlatform = { viewModel.updatePhotoEditTargetPlatform(it) },
+        onUpdatePhotoEditQualityTier = { viewModel.updatePhotoEditQualityTier(it) },
     )
 }
 
@@ -101,6 +119,11 @@ fun ManualPostDraftWorkspaceContent(
     onShareOrExport: () -> Unit,
     onTogglePromptHistory: () -> Unit,
     onNavigateToNewPost: () -> Unit,
+    onUpdatePhotoEditIntent: (EditIntent) -> Unit,
+    onUpdatePhotoEditRefinement: (String) -> Unit,
+    onUpdatePhotoEditRealism: (RealismLevel) -> Unit,
+    onUpdatePhotoEditTargetPlatform: (TargetPlatform) -> Unit,
+    onUpdatePhotoEditQualityTier: (QualityTier) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -148,12 +171,84 @@ fun ManualPostDraftWorkspaceContent(
         ) {
             Text("Generate post text")
         }
+        val form = state.photoEditForm
+        val formEnabled = form.operationState != PhotoEditFormOperationState.Loading
+
+        EnumDropdown(
+            label = "Edit intent",
+            selected = form.selectedIntent,
+            values = EditIntent.entries,
+            display = { "${it.wireValue} — ${it.promptIntent}" },
+            onSelected = onUpdatePhotoEditIntent,
+            enabled = formEnabled,
+        )
+
+        OutlinedTextField(
+            value = form.userRefinementText,
+            onValueChange = onUpdatePhotoEditRefinement,
+            label = { Text("Refinement (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false,
+            minLines = 1,
+            maxLines = 3,
+            enabled = formEnabled,
+        )
+
+        EnumDropdown(
+            label = "Realism level",
+            selected = form.selectedRealismLevel,
+            values = RealismLevel.entries,
+            display = { "${it.wireValue} — ${it.promptIntent}" },
+            onSelected = onUpdatePhotoEditRealism,
+            enabled = formEnabled,
+        )
+
+        EnumDropdown(
+            label = "Target platform / framing",
+            selected = form.selectedTargetPlatform,
+            values = TargetPlatform.entries,
+            display = {
+                val preset = it.platformPreset
+                "${preset.displayName} (${preset.defaultFramingBehavior.wireValue})"
+            },
+            onSelected = onUpdatePhotoEditTargetPlatform,
+            enabled = formEnabled,
+        )
+
+        EnumDropdown(
+            label = "Quality tier",
+            selected = form.selectedQualityTier,
+            values = QualityTier.entries,
+            display = { it.wireValue },
+            onSelected = onUpdatePhotoEditQualityTier,
+            enabled = formEnabled,
+        )
+
+        Text(
+            text = "Model: ${form.qualityTierModelNotes} — ${form.qualityTierCostNotes}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         OutlinedButton(
             onClick = onEditPhotoWithAi,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canEditPhotoWithAi,
+            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading,
         ) {
-            Text("Edit photo with AI")
+            Text(if (state.editedPhotoUri != null) "Re-run photo edit" else "Run photo edit")
+        }
+
+        if (form.operationState == PhotoEditFormOperationState.Loading) {
+            Text(
+                text = "Editing photo...",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        form.latestSummary?.let { summary ->
+            Text(
+                text = "Latest result (${form.latestModelName ?: "unknown"}): $summary",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -188,12 +283,29 @@ fun ManualPostDraftWorkspaceContent(
         }
 
         if (state.isPromptHistoryVisible) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 state.promptHistory.forEach { entry ->
-                    Text(
-                        text = "${entry.operationType.wireValue}: ${entry.prompt}",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = entry.operationType.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = entry.prompt,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val details = buildList {
+                            entry.modelName?.let { add("Model: $it") }
+                            entry.responseSummary?.let { add("Response: $it") }
+                        }
+                        if (details.isNotEmpty()) {
+                            Text(
+                                text = details.joinToString(" — "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -208,5 +320,52 @@ private fun WorkspaceSection(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.titleSmall)
         Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> EnumDropdown(
+    label: String,
+    selected: T,
+    values: List<T>,
+    display: (T) -> String,
+    onSelected: (T) -> Unit,
+    enabled: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { if (enabled) expanded = !expanded },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = display(selected),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            enabled = enabled,
+        )
+        ExposedDropdownMenu(
+            expanded = enabled && expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            values.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(display(value)) },
+                    onClick = {
+                        if (enabled) {
+                            onSelected(value)
+                        }
+                        expanded = false
+                    },
+                )
+            }
+        }
     }
 }
