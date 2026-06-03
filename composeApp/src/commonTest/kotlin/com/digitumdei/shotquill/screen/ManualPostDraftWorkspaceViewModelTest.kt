@@ -35,6 +35,8 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -279,7 +281,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.PhotoEdited, stored?.status)
         assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
-        assertEquals("file://photo.jpg#edited-1700000500001", viewModel.state.editedPhotoUri)
+        assertEquals("file://photo.jpg#edited-improve_lighting-instagram_feed_square-1700000500001", viewModel.state.editedPhotoUri)
         assertEquals(3, viewModel.state.promptHistory.size)
         val photoEditEntry = viewModel.state.promptHistory.first()
         assertEquals(AiOperationType.PhotoEdit, photoEditEntry.operationType)
@@ -327,7 +329,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.PhotoEdited, stored?.status)
-        assertEquals("file://photo.jpg#edited-1700000200000", viewModel.state.editedPhotoUri)
+        assertEquals("file://photo.jpg#edited-improve_lighting-instagram_feed_square-1700000200000", viewModel.state.editedPhotoUri)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertTrue(viewModel.state.actions.canViewPromptHistory)
         val request = stored?.photoEditRequests?.single()
@@ -912,6 +914,83 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(1, capturedStates.size)
         assertEquals(PhotoEditFormOperationState.Loading, capturedStates.single())
         assertEquals(PhotoEditFormOperationState.Idle, viewModel.state.photoEditForm.operationState)
+    }
+
+    @Test
+    fun reRunningEditAppendsSecondRequestResultAndHistoryEntry() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = IncrementingClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+        val storedAfterFirst = repository.get(draftId)
+        assertEquals(1, storedAfterFirst?.photoEditRequests?.size)
+        assertEquals(1, storedAfterFirst?.photoEditResults?.size)
+        assertEquals(1, viewModel.state.promptHistory.size)
+
+        viewModel.editPhotoWithAi()
+        val storedAfterSecond = repository.get(draftId)
+        assertEquals(2, storedAfterSecond?.photoEditRequests?.size)
+        assertEquals(2, storedAfterSecond?.photoEditResults?.size)
+        assertEquals(2, viewModel.state.promptHistory.size)
+        assertNotEquals(
+            storedAfterSecond?.photoEditRequests?.first()?.id,
+            storedAfterSecond?.photoEditRequests?.last()?.id,
+        )
+        assertEquals(DraftStatus.PhotoEdited, storedAfterSecond?.status)
+    }
+
+    @Test
+    fun preservesOriginalMediaAssetDuringPhotoEdit() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertNull(viewModel.state.editedPhotoUri)
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertNotNull(viewModel.state.editedPhotoUri)
+        val stored = repository.get(draftId)
+        val originalMedia = stored?.mediaItems?.firstOrNull { it.mediaAsset.type == MediaType.Photo }
+        assertNotNull(originalMedia)
+        assertEquals("file://photo.jpg", originalMedia.mediaAsset.uri)
+    }
+
+    @Test
+    fun exposesLatestEditedImageStateAfterEdit() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val form = viewModel.state.photoEditForm
+        assertNotNull(form.latestRequestId)
+        assertNotNull(form.latestResultId)
+        assertEquals("fake-manual-draft-ai", form.latestModelName)
+        assertNotNull(form.latestSummary)
+        assertTrue(form.latestSummary!!.contains("intent=improve_lighting"))
+        val editedUri = viewModel.state.editedPhotoUri
+        assertNotNull(editedUri)
+        assertTrue(editedUri.startsWith("file://photo.jpg#edited-"))
+        assertTrue(editedUri.contains("improve_lighting"))
+        assertTrue(editedUri.contains("instagram_feed_square"))
+        assertTrue(editedUri.contains("1700000200000"))
     }
 
     @Test
