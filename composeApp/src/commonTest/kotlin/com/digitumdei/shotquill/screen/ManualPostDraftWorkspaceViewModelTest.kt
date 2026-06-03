@@ -867,7 +867,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 error("unused")
             override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
                 error("unused")
-            override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit =
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
                 throw RuntimeException("Provider failure")
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -893,9 +893,9 @@ class ManualPostDraftWorkspaceViewModelTest {
                 error("unused")
             override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
                 error("unused")
-            override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit {
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit {
                 capturedStates.add(viewModelRef[0]!!.state.photoEditForm.operationState)
-                return FakeManualDraftAiProvider().editPhoto(draft, nowEpochMillis)
+                return FakeManualDraftAiProvider().editPhoto(draft, formState, nowEpochMillis)
             }
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -949,7 +949,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 error("unused")
             override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
                 error("unused")
-            override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit =
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
                 GeneratedPhotoEdit(
                     editedMediaUri = "file://edited.jpg",
                     prompt = "",
@@ -969,6 +969,38 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
         assertEquals("Photo edit failed: prompt must not be blank", viewModel.state.statusMessage)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun fakeEditPhotoEncodesFormValuesInOutput() {
+        val provider = FakeManualDraftAiProvider()
+        val draft = sampleDraft()
+        val formState = PhotoEditFormState(
+            selectedIntent = EditIntent.BackgroundAdjustment,
+            userRefinementText = "Make it warmer",
+            selectedRealismLevel = RealismLevel.Polished,
+            selectedTargetPlatform = TargetPlatform.BlueskyPost,
+            selectedQualityTier = QualityTier.High,
+            qualityTierModelNotes = QualityTier.High.modelMappingNote,
+            qualityTierCostNotes = QualityTier.High.costNote,
+            unsupportedModelWarning = null,
+            latestRequestId = null,
+            latestResultId = null,
+            latestModelName = null,
+            latestSummary = null,
+            operationState = PhotoEditFormOperationState.Idle,
+        )
+        val result = provider.editPhoto(draft, formState, 1_700_000_200_000L)
+
+        assertTrue(result.editedMediaUri.contains("background_adjustment"))
+        assertTrue(result.editedMediaUri.contains("bluesky_post"))
+        assertTrue(result.summary.contains("intent=background_adjustment"))
+        assertTrue(result.summary.contains("platform=bluesky_post"))
+        assertTrue(result.summary.contains("realism=polished"))
+        assertTrue(result.summary.contains("quality=high"))
+        assertTrue(result.summary.contains("refinement=Make it warmer"))
+        assertTrue(result.prompt.contains("background_adjustment"))
+        assertTrue(result.prompt.contains("bluesky_post"))
     }
 
     private class RecordingPostTextGenerator(

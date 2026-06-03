@@ -93,7 +93,7 @@ data class ManualPostDraftWorkspaceActions(
 interface ManualDraftAiProvider {
     fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription
     fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText
-    fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit
+    fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit
 }
 
 data class GeneratedVisionDescription(
@@ -146,12 +146,19 @@ class FakeManualDraftAiProvider : ManualDraftAiProvider {
         )
     }
 
-    override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit {
+    override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit {
         val original = draft.primaryMediaAsset()
+        val summaryDetails = listOfNotNull(
+            "intent=${formState.selectedIntent.wireValue}",
+            "platform=${formState.selectedTargetPlatform.wireValue}",
+            "realism=${formState.selectedRealismLevel.wireValue}",
+            "quality=${formState.selectedQualityTier.wireValue}",
+            formState.userRefinementText.trim().takeIf { it.isNotEmpty() }?.let { "refinement=$it" },
+        ).joinToString(",")
         return GeneratedPhotoEdit(
-            editedMediaUri = "${original.uri}#edited-$nowEpochMillis",
-            prompt = "Enhance the original photo while preserving the subject.",
-            summary = "Created a polished preview edit.",
+            editedMediaUri = "${original.uri}#edited-${formState.selectedIntent.wireValue}-${formState.selectedTargetPlatform.wireValue}-$nowEpochMillis",
+            prompt = "Edit the image (${formState.selectedIntent.wireValue}, ${formState.selectedTargetPlatform.wireValue}).",
+            summary = "Fake preview: $summaryDetails",
             modelName = "fake-manual-draft-ai",
         )
     }
@@ -387,7 +394,7 @@ class ManualPostDraftWorkspaceViewModel(
         val currentForm = state.photoEditForm
         try {
             val idSuffix = nextIdSuffix(now)
-            val generated = aiProvider.editPhoto(draft, now)
+            val generated = aiProvider.editPhoto(draft, currentForm, now)
             val original = draft.primaryMediaAsset()
             val request = PhotoEditRequest(
                 id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
