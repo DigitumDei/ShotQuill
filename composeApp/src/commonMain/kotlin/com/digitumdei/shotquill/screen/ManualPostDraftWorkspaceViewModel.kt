@@ -323,6 +323,40 @@ class ManualPostDraftWorkspaceViewModel(
         }
     }
 
+    fun updatePhotoEditIntent(intent: EditIntent) {
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(selectedIntent = intent),
+        )
+    }
+
+    fun updatePhotoEditRefinement(refinement: String) {
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(userRefinementText = refinement),
+        )
+    }
+
+    fun updatePhotoEditRealism(realism: RealismLevel) {
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(selectedRealismLevel = realism),
+        )
+    }
+
+    fun updatePhotoEditTargetPlatform(platform: TargetPlatform) {
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(selectedTargetPlatform = platform),
+        )
+    }
+
+    fun updatePhotoEditQualityTier(quality: QualityTier) {
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(
+                selectedQualityTier = quality,
+                qualityTierModelNotes = quality.modelMappingNote,
+                qualityTierCostNotes = quality.costNote,
+            ),
+        )
+    }
+
     fun editPhotoWithAi() {
         val draft = postDraftRepository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
@@ -337,20 +371,35 @@ class ManualPostDraftWorkspaceViewModel(
             )
             return
         }
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Loading),
+        )
         val idSuffix = nextIdSuffix(now)
-        val generated = aiProvider.editPhoto(draft, now)
+        val generated = try {
+            aiProvider.editPhoto(draft, now)
+        } catch (e: Exception) {
+            state = state.copy(
+                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
+            )
+            state = draft.toState(
+                statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
         val original = draft.primaryMediaAsset()
+        val form = state.photoEditForm
         val request = PhotoEditRequest(
             id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
             draftId = draft.id,
             sourceMediaAssetId = original.id,
-            intent = EditIntent.ImproveLighting,
-            realismLevel = defaultRealismLevel,
-            qualityTier = defaultQualityTier,
+            intent = form.selectedIntent,
+            realismLevel = form.selectedRealismLevel,
+            qualityTier = form.selectedQualityTier,
             prompt = generated.prompt,
-            userRefinement = null,
+            userRefinement = form.userRefinementText.ifBlank { null },
             subjectDescription = draft.visionDescription?.description,
-            targetPlatform = draft.preferredTargetPlatform() ?: defaultTargetPlatform,
+            targetPlatform = form.selectedTargetPlatform,
             maskRegion = null,
             createdAtEpochMillis = now,
         )
@@ -393,6 +442,9 @@ class ManualPostDraftWorkspaceViewModel(
         )
         postDraftRepository.save(updated)
         state = updated.toState("Edited photo preview created", state.isPromptHistoryVisible)
+        state = state.copy(
+            photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Idle),
+        )
     }
 
     fun markCaptionCopied() {

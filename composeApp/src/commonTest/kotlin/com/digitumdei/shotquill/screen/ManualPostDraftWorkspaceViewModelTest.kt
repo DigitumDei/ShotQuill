@@ -660,6 +660,185 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun nowMillis(): Long = now++
     }
 
+    @Test
+    fun exposesPhotoEditFormDefaultsAfterLoad() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.ImproveLighting, form.selectedIntent)
+        assertEquals("", form.userRefinementText)
+        assertEquals(RealismLevel.Photoreal, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.InstagramFeedSquare, form.selectedTargetPlatform)
+        assertEquals(QualityTier.Standard, form.selectedQualityTier)
+        assertEquals(QualityTier.Standard.modelMappingNote, form.qualityTierModelNotes)
+        assertEquals(QualityTier.Standard.costNote, form.qualityTierCostNotes)
+        assertEquals(null, form.unsupportedModelWarning)
+        assertEquals(null, form.latestRequestId)
+        assertEquals(null, form.latestResultId)
+        assertEquals(null, form.latestModelName)
+        assertEquals(null, form.latestSummary)
+        assertEquals(PhotoEditFormOperationState.Idle, form.operationState)
+    }
+
+    @Test
+    fun loadsPhotoEditFormFromLatestRequest() {
+        val request = PhotoEditRequest(
+            id = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.RemoveObject,
+            realismLevel = RealismLevel.Polished,
+            qualityTier = QualityTier.High,
+            prompt = "Remove the coffee cup",
+            userRefinement = "Be careful with shadows",
+            subjectDescription = null,
+            targetPlatform = TargetPlatform.BlueskyPost,
+            maskRegion = null,
+            createdAtEpochMillis = 1_700_000_025_000L,
+        )
+        val result = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-1"),
+            requestId = request.id,
+            draftId = draftId,
+            editedMediaAsset = sampleMediaAsset().copy(
+                id = MediaAssetId("media-edited-1"),
+                type = MediaType.EditedPhoto,
+                uri = "file://photo-edited.jpg",
+            ),
+            summary = "Removed the coffee cup.",
+            modelName = "fake-test-model",
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                status = DraftStatus.PhotoEdited,
+                photoEditRequests = listOf(request),
+                photoEditResults = listOf(result),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.RemoveObject, form.selectedIntent)
+        assertEquals("Be careful with shadows", form.userRefinementText)
+        assertEquals(RealismLevel.Polished, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.BlueskyPost, form.selectedTargetPlatform)
+        assertEquals(QualityTier.High, form.selectedQualityTier)
+        assertEquals(QualityTier.High.modelMappingNote, form.qualityTierModelNotes)
+        assertEquals(QualityTier.High.costNote, form.qualityTierCostNotes)
+        assertEquals(request.id, form.latestRequestId)
+        assertEquals(result.id, form.latestResultId)
+        assertEquals("fake-test-model", form.latestModelName)
+        assertEquals("Removed the coffee cup.", form.latestSummary)
+        assertEquals(PhotoEditFormOperationState.Idle, form.operationState)
+    }
+
+    @Test
+    fun updatesPhotoEditFormIntent() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.AddLogoOverlay)
+
+        assertEquals(EditIntent.AddLogoOverlay, viewModel.state.photoEditForm.selectedIntent)
+    }
+
+    @Test
+    fun updatesPhotoEditFormRefinement() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.updatePhotoEditRefinement("Make it warmer")
+
+        assertEquals("Make it warmer", viewModel.state.photoEditForm.userRefinementText)
+    }
+
+    @Test
+    fun updatesPhotoEditFormRealism() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.updatePhotoEditRealism(RealismLevel.Stylized)
+
+        assertEquals(RealismLevel.Stylized, viewModel.state.photoEditForm.selectedRealismLevel)
+    }
+
+    @Test
+    fun updatesPhotoEditFormTargetPlatform() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+
+        assertEquals(TargetPlatform.FacebookPost, viewModel.state.photoEditForm.selectedTargetPlatform)
+    }
+
+    @Test
+    fun updatesPhotoEditFormQualityTierWithNotes() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+
+        val form = viewModel.state.photoEditForm
+        assertEquals(QualityTier.High, form.selectedQualityTier)
+        assertEquals(QualityTier.High.modelMappingNote, form.qualityTierModelNotes)
+        assertEquals(QualityTier.High.costNote, form.qualityTierCostNotes)
+    }
+
+    @Test
+    fun usesPhotoEditFormValuesWhenEditingPhoto() {
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(
+                targetPlatforms = setOf(TargetPlatform.BlueskyPost),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Remove the cup")
+        viewModel.updatePhotoEditRealism(RealismLevel.Polished)
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(EditIntent.RemoveObject, request?.intent)
+        assertEquals(RealismLevel.Polished, request?.realismLevel)
+        assertEquals(QualityTier.High, request?.qualityTier)
+        assertEquals("Remove the cup", request?.userRefinement)
+        assertEquals(TargetPlatform.FacebookPost, request?.targetPlatform)
+    }
+
+    @Test
+    fun usesPhotoEditFormDefaultsWhenRefinementIsBlank() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals(null, request?.userRefinement)
+    }
+
     private class RecordingPostTextGenerator(
         private val draft: PostDraft,
     ) : PostTextGenerator {
