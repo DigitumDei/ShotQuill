@@ -40,22 +40,21 @@ class MainActivity : ComponentActivity() {
         )
         val mediaFileManager = MediaFileManager(filesDir)
         val contentResolverMediaImporter = ContentResolverMediaImporter(contentResolver, filesDir)
+        val transport = UrlConnectionOpenAiHttpTransport()
+        val aiProvider = AiProviderFactory.openAi(
+            settingsRepository = settingsRepository,
+            transport = transport,
+        )
         val postTextGenerationPipeline = PostTextGenerationPipeline(
             repository = manualWorkflowRepository,
-            aiProvider = AiProviderFactory.openAi(
-                settingsRepository = settingsRepository,
-                transport = UrlConnectionOpenAiHttpTransport(),
-            ),
+            aiProvider = aiProvider,
             imageSource = FileVisionImageSource(),
             activeBrandProfileStore = ActiveBrandProfileStore(settingsRepository, brandProfileRepository),
             settingsRepository = settingsRepository,
         )
         val photoEditExecutionPipeline = PhotoEditExecutionPipeline(
             repository = manualWorkflowRepository,
-            aiProvider = AiProviderFactory.openAi(
-                settingsRepository = settingsRepository,
-                transport = UrlConnectionOpenAiHttpTransport(),
-            ),
+            aiProvider = aiProvider,
             settingsRepository = settingsRepository,
             imageSource = FilePhotoEditImageSource(),
             mediaSaver = AndroidPhotoEditMediaSaver(filesDir),
