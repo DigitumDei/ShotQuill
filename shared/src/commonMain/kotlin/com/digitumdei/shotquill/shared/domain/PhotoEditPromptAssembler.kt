@@ -19,13 +19,14 @@ object PhotoEditPromptAssembler {
                 append(" (${preset.defaultFramingBehavior.wireValue} framing)")
             }
             append(".")
-            append(" Apply ${request.realismLevel.wireValue} realism: ${request.realismLevel.promptIntent.trimEnd('.')}.")
+            append(" Apply a ${request.realismLevel.adjective} edit. ${request.realismLevel.promptIntent}")
             append(" Use ${request.qualityTier.wireValue} quality tier.")
             if (!request.subjectDescription.isNullOrBlank()) {
                 append(" The subject is ${request.subjectDescription.trim()}.")
+                append(" Preserve the subject's appearance.")
             }
             if (!request.userRefinement.isNullOrBlank()) {
-                append(" Additional user notes: ${request.userRefinement.trim()}.")
+                append(" ${request.userRefinement.trim()}.")
             }
         }
     }

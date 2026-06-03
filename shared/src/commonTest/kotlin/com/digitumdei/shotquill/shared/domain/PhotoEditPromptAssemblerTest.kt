@@ -29,10 +29,11 @@ class PhotoEditPromptAssemblerTest {
             append(". The target platform is Instagram Feed Square")
             append(" (1:1, 1080x1080px, fit framing)")
             append(".")
-            append(" Apply photoreal realism: Preserve natural camera realism and avoid visibly generated or illustrated details.")
+            append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
             append(" The subject is A coffee cup on a wooden table.")
-            append(" Additional user notes: Focus on the coffee cup.")
+            append(" Preserve the subject's appearance.")
+            append(" Focus on the coffee cup.")
         }
         assertEquals(expected, prompt)
     }
@@ -58,6 +59,8 @@ class PhotoEditPromptAssemblerTest {
         assertFalse(prompt.contains("realismLevel:"))
         assertFalse(prompt.contains("qualityTier:"))
         assertFalse(prompt.contains("targetPlatform:"))
+        assertFalse(prompt.contains(" realism:"))
+        assertFalse(prompt.contains("Additional user notes:"))
     }
 
     @Test
@@ -68,7 +71,7 @@ class PhotoEditPromptAssemblerTest {
 
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
-        assertContains(prompt, "Additional user notes: Keep the background soft.")
+        assertContains(prompt, "Keep the background soft.")
     }
 
     @Test
@@ -77,11 +80,11 @@ class PhotoEditPromptAssemblerTest {
 
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
-        assertFalse(prompt.contains("Additional user notes"))
+        assertFalse(prompt.contains("Focus on the coffee cup"))
     }
 
     @Test
-    fun includesSubjectDescriptionWhenPresent() {
+    fun includesSubjectDescriptionWithPreservationInstruction() {
         val request = samplePhotoEditRequest(
             subjectDescription = "A red bicycle leaning against a wall",
         )
@@ -89,6 +92,7 @@ class PhotoEditPromptAssemblerTest {
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
         assertContains(prompt, "The subject is A red bicycle leaning against a wall.")
+        assertContains(prompt, "Preserve the subject's appearance.")
     }
 
     @Test
@@ -98,6 +102,7 @@ class PhotoEditPromptAssemblerTest {
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
         assertFalse(prompt.contains("The subject is"))
+        assertFalse(prompt.contains("Preserve the subject"))
     }
 
     @Test
@@ -142,8 +147,8 @@ class PhotoEditPromptAssemblerTest {
 
             val prompt = PhotoEditPromptAssembler.assemble(request)
 
-            assertContains(prompt, "Apply ${realism.wireValue} realism:")
-            assertContains(prompt, realism.promptIntent.trimEnd('.'))
+            assertContains(prompt, "Apply a ${realism.adjective} edit.")
+            assertContains(prompt, realism.promptIntent)
         }
     }
 
@@ -182,7 +187,7 @@ class PhotoEditPromptAssemblerTest {
 
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
-        assertContains(prompt, "Additional user notes: Crop tighter.")
+        assertContains(prompt, "Crop tighter.")
     }
 
     private fun samplePhotoEditRequest(

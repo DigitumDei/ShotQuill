@@ -72,18 +72,22 @@ enum class EditIntent(val wireValue: String) {
 enum class RealismLevel(
     val wireValue: String,
     val promptIntent: String,
+    val adjective: String,
 ) {
     Photoreal(
         wireValue = "photoreal",
         promptIntent = "Preserve natural camera realism and avoid visibly generated or illustrated details.",
+        adjective = "photorealistic",
     ),
     Polished(
         wireValue = "polished",
         promptIntent = "Keep the image believable while improving composition, lighting, and presentation.",
+        adjective = "polished",
     ),
     Stylized(
         wireValue = "stylized",
         promptIntent = "Allow a clearly art-directed look while retaining the user's subject and brand cues.",
+        adjective = "stylized",
     );
 
     companion object {
