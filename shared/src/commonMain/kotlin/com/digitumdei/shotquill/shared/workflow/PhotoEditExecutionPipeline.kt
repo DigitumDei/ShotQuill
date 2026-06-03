@@ -49,7 +49,6 @@ sealed class PhotoEditExecutionResult {
 sealed class PhotoEditExecutionError {
     data object DraftNotFound : PhotoEditExecutionError()
     data class InvalidDraftStatus(val status: DraftStatus) : PhotoEditExecutionError()
-    data object MissingApiKey : PhotoEditExecutionError()
     data class Provider(val error: AiError) : PhotoEditExecutionError()
     data class FailedToLoadSourceImage(val message: String) : PhotoEditExecutionError()
     data class FailedToSaveEditedImage(val message: String) : PhotoEditExecutionError()

@@ -131,21 +131,7 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
-    fun `MissingApiKey error is a distinct first-class data object`() {
-        val err = assertIs<PhotoEditExecutionError.MissingApiKey>(PhotoEditExecutionError.MissingApiKey)
-        assertIs<PhotoEditExecutionError>(err)
-    }
-
-    @Test
-    fun `MissingApiKey is distinct from Provider error`() {
-        val missingKey = PhotoEditExecutionError.MissingApiKey
-        val providerErr = PhotoEditExecutionError.Provider(AiError.InvalidApiKey())
-        assertIs<PhotoEditExecutionError.MissingApiKey>(missingKey)
-        assertIs<PhotoEditExecutionError.Provider>(providerErr)
-    }
-
-    @Test
-    fun `Provider error wraps any AiError variant`() {
+    fun `Provider error wraps any AiError variant including MissingApiKey`() {
         val exactMissing = PhotoEditExecutionError.Provider(AiError.MissingApiKey)
         val exactMissingAgain = PhotoEditExecutionError.Provider(AiError.MissingApiKey)
         assertEquals(exactMissing, exactMissingAgain)
@@ -153,6 +139,9 @@ class PhotoEditExecutionPipelineTest {
 
         val rateLimited = PhotoEditExecutionError.Provider(AiError.RateLimited())
         assertIs<AiError.RateLimited>((rateLimited as PhotoEditExecutionError.Provider).error)
+
+        val invalidKey = PhotoEditExecutionError.Provider(AiError.InvalidApiKey())
+        assertIs<AiError.InvalidApiKey>((invalidKey as PhotoEditExecutionError.Provider).error)
     }
 
     @Test
@@ -192,7 +181,7 @@ class PhotoEditExecutionPipelineTest {
         val causes = listOf<PhotoEditExecutionError>(
             PhotoEditExecutionError.DraftNotFound,
             PhotoEditExecutionError.InvalidDraftStatus(DraftStatus.Archived),
-            PhotoEditExecutionError.MissingApiKey,
+            PhotoEditExecutionError.Provider(AiError.MissingApiKey),
             PhotoEditExecutionError.Provider(AiError.QuotaExceeded()),
             PhotoEditExecutionError.FailedToLoadSourceImage("not found"),
             PhotoEditExecutionError.FailedToSaveEditedImage("no space"),
@@ -216,7 +205,7 @@ class PhotoEditExecutionPipelineTest {
             assembledPrompt = "prompt",
             promptHistoryEntry = samplePromptHistoryEntry(),
             updatedDraft = sampleDraft(),
-            cause = PhotoEditExecutionError.MissingApiKey,
+            cause = PhotoEditExecutionError.Provider(AiError.MissingApiKey),
         )
         assertIs<PhotoEditExecutionError>(err)
     }
