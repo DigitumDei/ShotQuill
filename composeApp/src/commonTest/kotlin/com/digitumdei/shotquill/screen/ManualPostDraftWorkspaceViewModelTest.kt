@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.CaptionDraft
@@ -13,6 +14,7 @@ import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
@@ -279,6 +281,13 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
         assertEquals("file://photo.jpg#edited-1700000500001", viewModel.state.editedPhotoUri)
         assertEquals(3, viewModel.state.promptHistory.size)
+        val photoEditEntry = viewModel.state.promptHistory.last()
+        assertEquals(AiOperationType.PhotoEdit, photoEditEntry.operationType)
+        val photoEditRequest = stored?.photoEditRequests?.last()
+        assertEquals(
+            PhotoEditPromptAssembler.assemble(photoEditRequest!!),
+            photoEditEntry.prompt,
+        )
     }
 
     @Test
@@ -328,6 +337,9 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(null, request?.subjectDescription)
         assertEquals(null, request?.userRefinement)
         assertEquals(null, request?.maskRegion)
+        val expectedPrompt = PhotoEditPromptAssembler.assemble(request!!)
+        assertEquals(expectedPrompt, viewModel.state.promptHistory.single().prompt)
+        assertEquals("Edited photo preview created", viewModel.state.statusMessage)
     }
 
     @Test
@@ -361,6 +373,10 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(QualityTier.Standard, request?.qualityTier)
         assertEquals(null, request?.userRefinement)
         assertEquals(null, request?.maskRegion)
+        assertEquals(
+            PhotoEditPromptAssembler.assemble(request!!),
+            viewModel.state.promptHistory.single().prompt,
+        )
     }
 
     @Test
@@ -381,6 +397,10 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(RealismLevel.Polished, request?.realismLevel)
         assertEquals(QualityTier.High, request?.qualityTier)
         assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
+        assertEquals(
+            PhotoEditPromptAssembler.assemble(request!!),
+            viewModel.state.promptHistory.single().prompt,
+        )
     }
 
     @Test
