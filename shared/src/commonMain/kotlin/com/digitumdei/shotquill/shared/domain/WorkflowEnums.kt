@@ -54,15 +54,15 @@ enum class MediaType(val wireValue: String) {
     }
 }
 
-enum class EditIntent(val wireValue: String) {
-    ImproveLighting("improve_lighting"),
-    AddLogoOverlay("add_logo_overlay"),
-    RemoveObject("remove_object"),
-    CropOrExtend("crop_or_extend"),
-    BackgroundAdjustment("background_adjustment"),
-    SubtleRetouch("subtle_retouch"),
-    StyleTransfer("style_transfer"),
-    Custom("custom");
+enum class EditIntent(val wireValue: String, val promptIntent: String) {
+    ImproveLighting("improve_lighting", "Improve the lighting and exposure of the image."),
+    AddLogoOverlay("add_logo_overlay", "Overlay a logo or watermark onto the image."),
+    RemoveObject("remove_object", "Remove the specified object or element from the image."),
+    CropOrExtend("crop_or_extend", "Crop or extend the image to the target dimensions."),
+    BackgroundAdjustment("background_adjustment", "Adjust or replace the background of the image."),
+    SubtleRetouch("subtle_retouch", "Apply subtle retouching to enhance the image while keeping it natural."),
+    StyleTransfer("style_transfer", "Apply a specific artistic style to the image."),
+    Custom("custom", "Follow the user's custom editing instructions.");
 
     companion object {
         fun fromWireValue(value: String): EditIntent? = entries.firstOrNull { it.wireValue == value }
@@ -72,18 +72,22 @@ enum class EditIntent(val wireValue: String) {
 enum class RealismLevel(
     val wireValue: String,
     val promptIntent: String,
+    val adjective: String,
 ) {
     Photoreal(
         wireValue = "photoreal",
         promptIntent = "Preserve natural camera realism and avoid visibly generated or illustrated details.",
+        adjective = "photorealistic",
     ),
     Polished(
         wireValue = "polished",
         promptIntent = "Keep the image believable while improving composition, lighting, and presentation.",
+        adjective = "polished",
     ),
     Stylized(
         wireValue = "stylized",
         promptIntent = "Allow a clearly art-directed look while retaining the user's subject and brand cues.",
+        adjective = "stylized",
     );
 
     companion object {

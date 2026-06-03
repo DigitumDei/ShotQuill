@@ -17,6 +17,7 @@ import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
@@ -330,6 +331,7 @@ class ManualPostDraftWorkspaceViewModel(
             maskRegion = null,
             createdAtEpochMillis = now,
         )
+        val assembledPrompt = PhotoEditPromptAssembler.assemble(request)
         val editedMedia = MediaAsset(
             id = MediaAssetId("edited-media-$idSuffix"),
             type = MediaType.EditedPhoto,
@@ -360,7 +362,7 @@ class ManualPostDraftWorkspaceViewModel(
                 id = PromptHistoryEntryId("prompt-photo-edit-$idSuffix"),
                 draftId = draft.id,
                 operationType = AiOperationType.PhotoEdit,
-                prompt = generated.prompt,
+                prompt = assembledPrompt,
                 responseSummary = generated.summary,
                 modelName = generated.modelName,
                 createdAtEpochMillis = now,
