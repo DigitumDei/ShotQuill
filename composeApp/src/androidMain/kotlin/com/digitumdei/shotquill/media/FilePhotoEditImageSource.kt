@@ -9,13 +9,11 @@ import java.io.File
 class FilePhotoEditImageSource : PhotoEditImageSource {
     override fun load(mediaAsset: MediaAsset): SourceImageResult {
         return try {
+            val bytes = MediaFileManager.readMediaAssetBytes(mediaAsset)
             val file = File(mediaAsset.uri.removePrefix("file://"))
-            if (!file.exists()) {
-                return SourceImageResult.Failure("Source file not found: ${file.absolutePath}")
-            }
             SourceImageResult.Success(
                 AiImageInput(
-                    bytes = file.readBytes(),
+                    bytes = bytes,
                     mimeType = mediaAsset.mimeType ?: MediaFileManager.guessMimeType(file.name),
                     fileName = file.name,
                 ),

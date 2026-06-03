@@ -1,7 +1,11 @@
 package com.digitumdei.shotquill.media
 
+import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.MediaType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -163,6 +167,42 @@ class MediaFileManagerTest {
         val result = mgr.handleCameraCapture(captureFile)
 
         assertTrue(result.createdAtEpochMillis in before..after || result.createdAtEpochMillis == captureFile.lastModified())
+    }
+
+    @Test
+    fun readMediaAssetBytesReturnsFileContents() {
+        val testFile = File(tmpDir, "test_photo.jpg")
+        val content = byteArrayOf(0x48, 0x65, 0x6C, 0x6C, 0x6F)
+        testFile.writeBytes(content)
+        val asset = MediaAsset(
+            id = MediaAssetId("test-1"),
+            type = MediaType.Photo,
+            uri = "file://${testFile.absolutePath}",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val result = MediaFileManager.readMediaAssetBytes(asset)
+        assertTrue(result.contentEquals(content))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForMissingFile() {
+        val missingFile = File(tmpDir, "nonexistent.jpg")
+        val asset = MediaAsset(
+            id = MediaAssetId("test-2"),
+            type = MediaType.Photo,
+            uri = "file://${missingFile.absolutePath}",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Source file not found"))
     }
 
 

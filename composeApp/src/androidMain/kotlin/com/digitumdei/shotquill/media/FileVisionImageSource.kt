@@ -7,9 +7,10 @@ import java.io.File
 
 class FileVisionImageSource : VisionImageSource {
     override fun load(mediaAsset: MediaAsset): AiImageInput {
+        val bytes = MediaFileManager.readMediaAssetBytes(mediaAsset)
         val file = File(mediaAsset.uri.removePrefix("file://"))
         return AiImageInput(
-            bytes = file.readBytes(),
+            bytes = bytes,
             mimeType = mediaAsset.mimeType ?: MediaFileManager.guessMimeType(file.name),
             fileName = file.name,
         )
