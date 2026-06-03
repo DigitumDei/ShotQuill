@@ -74,6 +74,14 @@ fun ManualPostDraftWorkspaceScreen(
         }
     }
 
+    fun refreshInMemory(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
+        coroutineScope.launch {
+            operationMutex.withLock {
+                viewModel.block()
+            }
+        }
+    }
+
     LaunchedEffect(viewModel) {
         operationMutex.withLock {
             withContext(Dispatchers.IO) {
@@ -87,10 +95,10 @@ fun ManualPostDraftWorkspaceScreen(
         onAnalyzeVision = { refresh { analyzeVisionDescription() } },
         onGeneratePostText = { refresh { generatePostText() } },
         onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
-        onCopyCaption = { refresh { markCaptionCopied() } },
-        onCopyAltText = { refresh { markAltTextCopied() } },
+        onCopyCaption = { refreshInMemory { markCaptionCopied() } },
+        onCopyAltText = { refreshInMemory { markAltTextCopied() } },
         onShareOrExport = { refresh { markShareOrExportStarted() } },
-        onTogglePromptHistory = { refresh { togglePromptHistory() } },
+        onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
         onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
         onUpdatePhotoEditRefinement = { viewModel.updatePhotoEditRefinement(it) },
