@@ -216,6 +216,16 @@ class PhotoEditPromptAssemblerTest {
     }
 
     @Test
+    fun omitsPromptTextWhenNormalizationRemovesAllCharacters() {
+        val request = samplePhotoEditRequest(prompt = "?!...")
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Edit this image: Improve the lighting and exposure of the image.")
+        assertFalse(prompt.contains(". ."))
+    }
+
+    @Test
     fun normalizesSubjectDescriptionEndingWithTerminalPunctuation() {
         val request = samplePhotoEditRequest(
             subjectDescription = "A cat on a sofa!",
@@ -228,6 +238,19 @@ class PhotoEditPromptAssemblerTest {
     }
 
     @Test
+    fun omitsSubjectDescriptionWhenNormalizationRemovesAllCharacters() {
+        val request = samplePhotoEditRequest(
+            subjectDescription = "?!...",
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertFalse(prompt.contains("The subject is"))
+        assertFalse(prompt.contains("Preserve the subject"))
+        assertFalse(prompt.contains(" is ."))
+    }
+
+    @Test
     fun normalizesUserRefinementEndingWithTerminalPunctuation() {
         val request = samplePhotoEditRequest(
             userRefinement = "Focus on the coffee cup?",
@@ -237,6 +260,18 @@ class PhotoEditPromptAssemblerTest {
 
         assertContains(prompt, "Focus on the coffee cup.")
         assertFalse(prompt.contains("?."))
+    }
+
+    @Test
+    fun omitsUserRefinementWhenNormalizationRemovesAllCharacters() {
+        val request = samplePhotoEditRequest(
+            userRefinement = "?!...",
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertFalse(prompt.contains(" ."))
+        assertFalse(prompt.endsWith(" "))
     }
 
     @Test

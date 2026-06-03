@@ -3,13 +3,23 @@ package com.digitumdei.shotquill.shared.domain
 object PhotoEditPromptAssembler {
     fun assemble(request: PhotoEditRequest): String {
         val preset = request.targetPlatform.platformPreset
+        val normalizedPrompt = normalize(request.prompt)
+        val normalizedSubject = request.subjectDescription?.let(::normalize).orEmpty()
+        val normalizedRefinement = request.userRefinement?.let(::normalize).orEmpty()
         return buildString {
-            append("Edit this image: ${request.intent.promptIntent} ${normalize(request.prompt)}.")
+            append("Edit this image: ${request.intent.promptIntent}")
+            if (normalizedPrompt.isNotEmpty()) {
+                append(" $normalizedPrompt.")
+            }
             append(" Apply a ${request.realismLevel.adjective} edit. ${request.realismLevel.promptIntent}")
             append(" Use ${request.qualityTier.wireValue} quality tier.")
             append(" Frame the result for ${preset.displayName}")
             if (preset.aspectRatio != null) {
-                append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}, ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px, and ${preset.defaultFramingBehavior.naturalDescription}")
+                append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}")
+                if (preset.recommendedWidthPx != null && preset.recommendedHeightPx != null) {
+                    append(", ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px")
+                }
+                append(", and ${preset.defaultFramingBehavior.naturalDescription}")
             } else {
                 append(" using ${preset.defaultFramingBehavior.naturalDescription}")
             }
@@ -33,12 +43,12 @@ object PhotoEditPromptAssembler {
                     }
                 }
             }
-            if (!request.subjectDescription.isNullOrBlank()) {
-                append(" The subject is ${normalize(request.subjectDescription)}.")
+            if (normalizedSubject.isNotEmpty()) {
+                append(" The subject is $normalizedSubject.")
                 append(" Preserve the subject's appearance.")
             }
-            if (!request.userRefinement.isNullOrBlank()) {
-                append(" ${normalize(request.userRefinement)}.")
+            if (normalizedRefinement.isNotEmpty()) {
+                append(" $normalizedRefinement.")
             }
         }
     }
