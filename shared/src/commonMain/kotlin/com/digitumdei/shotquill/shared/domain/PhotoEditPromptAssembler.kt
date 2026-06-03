@@ -47,4 +47,5 @@ object PhotoEditPromptAssembler {
         .trim()
         .replace(Regex("\\s+"), " ")
         .trimEnd('.')
+        .trimEnd()
 }
