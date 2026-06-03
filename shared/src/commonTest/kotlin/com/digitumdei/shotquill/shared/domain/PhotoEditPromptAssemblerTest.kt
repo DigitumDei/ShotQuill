@@ -196,6 +196,50 @@ class PhotoEditPromptAssemblerTest {
     }
 
     @Test
+    fun normalizesPromptEndingWithExclamation() {
+        val request = samplePhotoEditRequest(prompt = "Make it brighter!")
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Make it brighter.")
+        assertFalse(prompt.contains("!."))
+    }
+
+    @Test
+    fun normalizesPromptEndingWithQuestionMark() {
+        val request = samplePhotoEditRequest(prompt = "Crop tighter?")
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Crop tighter.")
+        assertFalse(prompt.contains("?."))
+    }
+
+    @Test
+    fun normalizesSubjectDescriptionEndingWithTerminalPunctuation() {
+        val request = samplePhotoEditRequest(
+            subjectDescription = "A cat on a sofa!",
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "The subject is A cat on a sofa.")
+        assertFalse(prompt.contains("!."))
+    }
+
+    @Test
+    fun normalizesUserRefinementEndingWithTerminalPunctuation() {
+        val request = samplePhotoEditRequest(
+            userRefinement = "Focus on the coffee cup?",
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Focus on the coffee cup.")
+        assertFalse(prompt.contains("?."))
+    }
+
+    @Test
     fun trimsSubjectDescriptionWhitespace() {
         val request = samplePhotoEditRequest(subjectDescription = "  A cat on a sofa  ")
 

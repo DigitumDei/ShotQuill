@@ -46,6 +46,6 @@ object PhotoEditPromptAssembler {
     private fun normalize(text: String): String = text
         .trim()
         .replace(Regex("\\s+"), " ")
-        .trimEnd('.')
+        .trimEnd('.', '!', '?')
         .trimEnd()
 }
