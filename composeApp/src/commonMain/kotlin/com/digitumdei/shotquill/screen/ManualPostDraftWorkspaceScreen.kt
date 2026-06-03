@@ -171,15 +171,8 @@ fun ManualPostDraftWorkspaceContent(
         ) {
             Text("Generate post text")
         }
-        state.photoEditForm.unsupportedModelWarning?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
         val form = state.photoEditForm
+        val formEnabled = form.operationState != PhotoEditFormOperationState.Loading
 
         EnumDropdown(
             label = "Edit intent",
@@ -187,6 +180,7 @@ fun ManualPostDraftWorkspaceContent(
             values = EditIntent.entries,
             display = { "${it.wireValue} — ${it.promptIntent}" },
             onSelected = onUpdatePhotoEditIntent,
+            enabled = formEnabled,
         )
 
         OutlinedTextField(
@@ -197,6 +191,7 @@ fun ManualPostDraftWorkspaceContent(
             singleLine = false,
             minLines = 1,
             maxLines = 3,
+            enabled = formEnabled,
         )
 
         EnumDropdown(
@@ -205,6 +200,7 @@ fun ManualPostDraftWorkspaceContent(
             values = RealismLevel.entries,
             display = { "${it.wireValue} — ${it.promptIntent}" },
             onSelected = onUpdatePhotoEditRealism,
+            enabled = formEnabled,
         )
 
         EnumDropdown(
@@ -216,6 +212,7 @@ fun ManualPostDraftWorkspaceContent(
                 "${preset.displayName} (${preset.defaultFramingBehavior.wireValue})"
             },
             onSelected = onUpdatePhotoEditTargetPlatform,
+            enabled = formEnabled,
         )
 
         EnumDropdown(
@@ -224,6 +221,7 @@ fun ManualPostDraftWorkspaceContent(
             values = QualityTier.entries,
             display = { it.wireValue },
             onSelected = onUpdatePhotoEditQualityTier,
+            enabled = formEnabled,
         )
 
         Text(
@@ -333,12 +331,13 @@ private fun <T> EnumDropdown(
     values: List<T>,
     display: (T) -> String,
     onSelected: (T) -> Unit,
+    enabled: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+        onExpandedChange = { if (enabled) expanded = !expanded },
         modifier = Modifier.fillMaxWidth(),
     ) {
         OutlinedTextField(
@@ -350,16 +349,19 @@ private fun <T> EnumDropdown(
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth(),
+            enabled = enabled,
         )
         ExposedDropdownMenu(
-            expanded = expanded,
+            expanded = enabled && expanded,
             onDismissRequest = { expanded = false },
         ) {
             values.forEach { value ->
                 DropdownMenuItem(
                     text = { Text(display(value)) },
                     onClick = {
-                        onSelected(value)
+                        if (enabled) {
+                            onSelected(value)
+                        }
                         expanded = false
                     },
                 )

@@ -56,7 +56,6 @@ data class PhotoEditFormState(
     val selectedQualityTier: QualityTier,
     val qualityTierModelNotes: String,
     val qualityTierCostNotes: String,
-    val unsupportedModelWarning: String?,
     val latestRequestId: PhotoEditRequestId?,
     val latestResultId: PhotoEditResultId?,
     val latestModelName: String?,
@@ -334,33 +333,37 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun updatePhotoEditIntent(intent: EditIntent) {
+        if (!canUpdatePhotoEditForm()) return
         state = state.copy(
             photoEditForm = state.photoEditForm.copy(
                 selectedIntent = intent,
-                unsupportedModelWarning = unsupportedModelWarningForIntent(intent),
             ),
         )
     }
 
     fun updatePhotoEditRefinement(refinement: String) {
+        if (!canUpdatePhotoEditForm()) return
         state = state.copy(
             photoEditForm = state.photoEditForm.copy(userRefinementText = refinement),
         )
     }
 
     fun updatePhotoEditRealism(realism: RealismLevel) {
+        if (!canUpdatePhotoEditForm()) return
         state = state.copy(
             photoEditForm = state.photoEditForm.copy(selectedRealismLevel = realism),
         )
     }
 
     fun updatePhotoEditTargetPlatform(platform: TargetPlatform) {
+        if (!canUpdatePhotoEditForm()) return
         state = state.copy(
             photoEditForm = state.photoEditForm.copy(selectedTargetPlatform = platform),
         )
     }
 
     fun updatePhotoEditQualityTier(quality: QualityTier) {
+        if (!canUpdatePhotoEditForm()) return
         state = state.copy(
             photoEditForm = state.photoEditForm.copy(
                 selectedQualityTier = quality,
@@ -452,9 +455,6 @@ class ManualPostDraftWorkspaceViewModel(
             )
             postDraftRepository.save(updated)
             state = updated.toState("Edited photo preview created", state.isPromptHistoryVisible)
-            state = state.copy(
-                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Idle),
-            )
         } catch (e: Exception) {
             state = state.copy(
                 statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
@@ -566,7 +566,6 @@ class ManualPostDraftWorkspaceViewModel(
                 latestResultId = latestResult?.id,
                 latestModelName = latestResult?.modelName,
                 latestSummary = latestResult?.summary,
-                unsupportedModelWarning = unsupportedModelWarningForIntent(latestRequest?.intent ?: EditIntent.ImproveLighting),
                 operationState = PhotoEditFormOperationState.Idle,
             ),
         )
@@ -602,7 +601,6 @@ class ManualPostDraftWorkspaceViewModel(
                 selectedQualityTier = defaultQualityTier,
                 qualityTierModelNotes = defaultQualityTier.modelMappingNote,
                 qualityTierCostNotes = defaultQualityTier.costNote,
-                unsupportedModelWarning = null,
                 latestRequestId = null,
                 latestResultId = null,
                 latestModelName = null,
@@ -622,9 +620,8 @@ class ManualPostDraftWorkspaceViewModel(
         return if (now >= draft.updatedAt) now else draft.updatedAt
     }
 
-    private fun unsupportedModelWarningForIntent(intent: EditIntent): String? {
-        return null
-    }
+    private fun canUpdatePhotoEditForm(): Boolean =
+        state.photoEditForm.operationState != PhotoEditFormOperationState.Loading
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence++}"

@@ -676,7 +676,6 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(QualityTier.Standard, form.selectedQualityTier)
         assertEquals(QualityTier.Standard.modelMappingNote, form.qualityTierModelNotes)
         assertEquals(QualityTier.Standard.costNote, form.qualityTierCostNotes)
-        assertEquals(null, form.unsupportedModelWarning)
         assertEquals(null, form.latestRequestId)
         assertEquals(null, form.latestResultId)
         assertEquals(null, form.latestModelName)
@@ -886,6 +885,40 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun preservesPhotoEditFormValuesWhenAiProviderThrows() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                throw RuntimeException("Provider failure")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = throwingProvider,
+        )
+        viewModel.load()
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Keep the mug handle intact")
+        viewModel.updatePhotoEditRealism(RealismLevel.Polished)
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+
+        viewModel.editPhotoWithAi()
+
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.RemoveObject, form.selectedIntent)
+        assertEquals("Keep the mug handle intact", form.userRefinementText)
+        assertEquals(RealismLevel.Polished, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.FacebookPost, form.selectedTargetPlatform)
+        assertEquals(QualityTier.High, form.selectedQualityTier)
+        assertEquals(PhotoEditFormOperationState.Error, form.operationState)
+    }
+
+    @Test
     fun exposesLoadingStateWhileEditingPhoto() {
         val repository = FakePostDraftRepository(sampleDraft())
         val capturedStates = mutableListOf<PhotoEditFormOperationState>()
@@ -917,6 +950,55 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun ignoresPhotoEditFormUpdatesWhileEditingPhotoIsLoading() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val provider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit {
+                val viewModel = viewModelRef[0]!!
+                viewModel.updatePhotoEditIntent(EditIntent.AddLogoOverlay)
+                viewModel.updatePhotoEditRefinement("This should be ignored")
+                viewModel.updatePhotoEditRealism(RealismLevel.Stylized)
+                viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+                viewModel.updatePhotoEditQualityTier(QualityTier.Standard)
+                return FakeManualDraftAiProvider().editPhoto(draft, formState, nowEpochMillis)
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = provider,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Remove the cup")
+        viewModel.updatePhotoEditRealism(RealismLevel.Polished)
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.RemoveObject, request?.intent)
+        assertEquals("Remove the cup", request?.userRefinement)
+        assertEquals(RealismLevel.Polished, request?.realismLevel)
+        assertEquals(TargetPlatform.BlueskyPost, request?.targetPlatform)
+        assertEquals(QualityTier.High, request?.qualityTier)
+        assertEquals(EditIntent.RemoveObject, form.selectedIntent)
+        assertEquals("Remove the cup", form.userRefinementText)
+        assertEquals(RealismLevel.Polished, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.BlueskyPost, form.selectedTargetPlatform)
+        assertEquals(QualityTier.High, form.selectedQualityTier)
+    }
+
+    @Test
     fun reRunningEditAppendsSecondRequestResultAndHistoryEntry() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -942,6 +1024,44 @@ class ManualPostDraftWorkspaceViewModelTest {
             storedAfterSecond?.photoEditRequests?.last()?.id,
         )
         assertEquals(DraftStatus.PhotoEdited, storedAfterSecond?.status)
+    }
+
+    @Test
+    fun rehydratesPhotoEditFormFromMostRecentRequestAfterSecondEdit() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = IncrementingClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Remove the mug")
+        viewModel.updatePhotoEditRealism(RealismLevel.Polished)
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+        viewModel.editPhotoWithAi()
+
+        viewModel.updatePhotoEditIntent(EditIntent.BackgroundAdjustment)
+        viewModel.updatePhotoEditRefinement("Warm the background")
+        viewModel.updatePhotoEditRealism(RealismLevel.Stylized)
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.Standard)
+        viewModel.editPhotoWithAi()
+
+        val stored = repository.get(draftId)
+        val latestRequest = stored?.photoEditRequests?.last()
+        val latestResult = stored?.photoEditResults?.last()
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.BackgroundAdjustment, form.selectedIntent)
+        assertEquals("Warm the background", form.userRefinementText)
+        assertEquals(RealismLevel.Stylized, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.FacebookPost, form.selectedTargetPlatform)
+        assertEquals(QualityTier.Standard, form.selectedQualityTier)
+        assertEquals(latestRequest?.id, form.latestRequestId)
+        assertEquals(latestResult?.id, form.latestResultId)
+        assertEquals(latestResult?.summary, form.latestSummary)
     }
 
     @Test
@@ -1062,7 +1182,6 @@ class ManualPostDraftWorkspaceViewModelTest {
             selectedQualityTier = QualityTier.High,
             qualityTierModelNotes = QualityTier.High.modelMappingNote,
             qualityTierCostNotes = QualityTier.High.costNote,
-            unsupportedModelWarning = null,
             latestRequestId = null,
             latestResultId = null,
             latestModelName = null,
