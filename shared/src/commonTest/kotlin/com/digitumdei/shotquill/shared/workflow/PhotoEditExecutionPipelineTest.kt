@@ -135,13 +135,13 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(draftId, persisted.photoEditRequest.draftId)
         assertNotNull(persisted.assembledPrompt)
         assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
-        assertEquals(null, persisted.promptHistoryEntry.responseSummary)
+        assertNotNull(persisted.promptHistoryEntry.responseSummary)
 
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(1, stored.photoEditRequests.size)
         assertEquals(0, stored.photoEditResults.size)
         assertEquals(1, stored.promptHistory.size)
-        assertEquals(null, stored.promptHistory.first().responseSummary)
+        assertNotNull(stored.promptHistory.first().responseSummary)
         assertEquals(DraftStatus.PhotoAdded, stored.status)
     }
 
@@ -210,7 +210,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.photoEditResults.size)
         assertEquals(2, stored.promptHistory.size)
         val historyFailure = stored.promptHistory.first()
-        assertEquals(null, historyFailure.responseSummary)
+        assertNotNull(historyFailure.responseSummary)
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
         assertEquals(DraftStatus.PhotoEdited, stored.status)
@@ -283,6 +283,82 @@ class PhotoEditExecutionPipelineTest {
         val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
         val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
         assertIs<PhotoEditExecutionError.FailedToSaveEditedImage>(persisted.cause)
+    }
+
+    @Test
+    fun `editing an already PhotoEdited draft preserves PhotoEdited status`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val existingRequest = samplePhotoEditRequest()
+        val existingResult = samplePhotoEditResult()
+        val draft = sampleDraftWithVisionDescription().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(existingRequest),
+            photoEditResults = listOf(existingResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+        assertEquals(2, stored.photoEditRequests.size)
+        assertEquals(2, stored.photoEditResults.size)
+    }
+
+    @Test
+    fun `editing a ReadyToShare draft preserves ReadyToShare status`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val existingRequest = samplePhotoEditRequest()
+        val existingResult = samplePhotoEditResult()
+        val draft = sampleDraftWithVisionDescription().copy(
+            status = DraftStatus.ReadyToShare,
+            photoEditRequests = listOf(existingRequest),
+            photoEditResults = listOf(existingResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(DraftStatus.ReadyToShare, stored.status)
+        assertEquals(2, stored.photoEditRequests.size)
+        assertEquals(2, stored.photoEditResults.size)
     }
 
     @Test

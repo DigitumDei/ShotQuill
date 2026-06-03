@@ -120,28 +120,37 @@ class PhotoEditExecutionPipeline(
             createdAtEpochMillis = now,
         )
         val assembledPrompt = PhotoEditPromptAssembler.assemble(editRequest)
-        val failurePromptHistoryEntry = PromptHistoryEntry(
-            id = PromptHistoryEntryId("prompt-photo-edit-failure-$idSuffix"),
-            draftId = draftId,
-            operationType = AiOperationType.PhotoEdit,
-            prompt = assembledPrompt,
-            responseSummary = null,
-            modelName = null,
-            createdAtEpochMillis = now,
-        )
+
+        fun failureSummary(cause: PhotoEditExecutionError): String = when (cause) {
+            is PhotoEditExecutionError.Provider -> cause.error.userMessage
+            is PhotoEditExecutionError.FailedToLoadSourceImage -> cause.message
+            is PhotoEditExecutionError.FailedToSaveEditedImage -> cause.message
+            is PhotoEditExecutionError.FailurePersisted -> "Previous attempt failed"
+            is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
+            is PhotoEditExecutionError.InvalidDraftStatus -> "Invalid draft status: ${cause.status.wireValue}"
+        }
 
         fun persistFailure(cause: PhotoEditExecutionError): PhotoEditExecutionResult.Failure {
+            val failureEntry = PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-photo-edit-failure-$idSuffix"),
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = assembledPrompt,
+                responseSummary = failureSummary(cause),
+                modelName = null,
+                createdAtEpochMillis = now,
+            )
             repository.savePhotoEditRequest(editRequest)
-            repository.savePromptHistoryEntry(failurePromptHistoryEntry)
+            repository.savePromptHistoryEntry(failureEntry)
             val persistedDraft = currentDraft.copy(
                 photoEditRequests = currentDraft.photoEditRequests + editRequest,
-                promptHistory = currentDraft.promptHistory + failurePromptHistoryEntry,
+                promptHistory = currentDraft.promptHistory + failureEntry,
             )
             return PhotoEditExecutionResult.Failure(
                 PhotoEditExecutionError.FailurePersisted(
                     photoEditRequest = editRequest,
                     assembledPrompt = assembledPrompt,
-                    promptHistoryEntry = failurePromptHistoryEntry,
+                    promptHistoryEntry = failureEntry,
                     updatedDraft = persistedDraft,
                     cause = cause,
                 ),
@@ -206,7 +215,7 @@ class PhotoEditExecutionPipeline(
         val currentBeforeSave = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
             PhotoEditExecutionError.DraftNotFound,
         )
-        val saveStatus = photoEditStatus(currentBeforeSave) ?: return PhotoEditExecutionResult.Failure(
+        val targetStatus = photoEditStatus(currentBeforeSave) ?: return PhotoEditExecutionResult.Failure(
             PhotoEditExecutionError.InvalidDraftStatus(currentBeforeSave.status),
         )
 
@@ -214,9 +223,16 @@ class PhotoEditExecutionPipeline(
         repository.savePhotoEditRequest(editRequest)
         repository.savePhotoEditResult(editResult)
         repository.savePromptHistoryEntry(promptHistoryEntry)
-        repository.updateStatus(draftId, saveStatus, operationUpdatedAt(currentBeforeSave, now))
+        if (targetStatus != currentBeforeSave.status) {
+            repository.updateStatus(draftId, targetStatus, operationUpdatedAt(currentBeforeSave, now))
+        }
 
-        val baseDraft = currentBeforeSave.transitionTo(saveStatus, operationUpdatedAt(currentBeforeSave, now))
+        val updatedAt = operationUpdatedAt(currentBeforeSave, now)
+        val baseDraft = if (targetStatus != currentBeforeSave.status) {
+            currentBeforeSave.transitionTo(targetStatus, updatedAt)
+        } else {
+            currentBeforeSave.copy(updatedAt = updatedAt)
+        }
         val updatedDraft = baseDraft.copy(
             photoEditRequests = currentBeforeSave.photoEditRequests + editRequest,
             photoEditResults = currentBeforeSave.photoEditResults + editResult,
