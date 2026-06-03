@@ -860,6 +860,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun preservesErrorOperationStateWhenAiProviderThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingProvider = object : ManualDraftAiProvider {
             override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
