@@ -25,7 +25,7 @@ class PhotoEditPromptAssemblerTest {
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
         val expected = buildString {
-            append("""Edit the photo as follows: "Make the image brighter while keeping it realistic.""")
+            append("Edit the photo as follows: \"Make the image brighter while keeping it realistic.\"")
             append(". The target platform is Instagram Feed Square")
             append(" (1:1, 1080x1080px, fit framing)")
             append(".")
@@ -179,7 +179,10 @@ class PhotoEditPromptAssemblerTest {
             EditIntent.Custom to "Follow the user's custom editing instructions",
         )
 
-        expectations.forEach { (intent, expectedSnippet) ->
+        assertEquals(expectations.keys, EditIntent.entries.toSet(), "expectations must cover every EditIntent")
+
+        for (intent in EditIntent.entries) {
+            val expectedSnippet = expectations.getValue(intent)
             val request = samplePhotoEditRequest(intent = intent)
             val prompt = PhotoEditPromptAssembler.assemble(request)
             assertContains(prompt, expectedSnippet, "EditIntent.${intent.name} should produce expected instruction")
