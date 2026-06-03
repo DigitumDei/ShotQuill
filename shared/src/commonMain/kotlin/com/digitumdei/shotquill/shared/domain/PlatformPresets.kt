@@ -10,11 +10,11 @@ data class AspectRatio(
     }
 }
 
-enum class FramingBehavior(val wireValue: String) {
-    Fit("fit"),
-    Fill("fill"),
-    Stretch("stretch"),
-    NoResize("no_resize");
+enum class FramingBehavior(val wireValue: String, val naturalDescription: String) {
+    Fit("fit", "fit the content to the frame"),
+    Fill("fill", "fill the frame entirely"),
+    Stretch("stretch", "stretch to fit the frame"),
+    NoResize("no_resize", "preserve the original dimensions without resizing");
 
     companion object {
         fun fromWireValue(value: String): FramingBehavior? = entries.firstOrNull { it.wireValue == value }

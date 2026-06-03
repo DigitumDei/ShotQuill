@@ -28,7 +28,7 @@ class PhotoEditPromptAssemblerTest {
             append("Edit this image: Improve the lighting and exposure of the image. Make the image brighter while keeping it realistic.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
-            append(" Frame the result for Instagram Feed Square at 1:1, 1080x1080px, using fit framing.")
+            append(" Frame the result for Instagram Feed Square at 1:1, 1080x1080px, and fit the content to the frame.")
             append(" The subject is A coffee cup on a wooden table.")
             append(" Preserve the subject's appearance.")
             append(" Focus on the coffee cup.")
@@ -114,7 +114,7 @@ class PhotoEditPromptAssemblerTest {
         assertContains(prompt, "Instagram Portrait")
         assertContains(prompt, "4:5")
         assertContains(prompt, "1080x1350px")
-        assertContains(prompt, "fit framing")
+        assertContains(prompt, "fit the content to the frame")
     }
 
     @Test
@@ -124,7 +124,7 @@ class PhotoEditPromptAssemblerTest {
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
         assertContains(prompt, "Original (no resize)")
-        assertContains(prompt, "no_resize framing")
+        assertContains(prompt, "preserve the original dimensions without resizing")
         assertFalse(prompt.contains("px"))
     }
 
@@ -136,7 +136,7 @@ class PhotoEditPromptAssemblerTest {
             val prompt = PhotoEditPromptAssembler.assemble(request)
 
             assertContains(prompt, platform.platformPreset.displayName)
-            assertContains(prompt, platform.platformPreset.defaultFramingBehavior.wireValue + " framing")
+            assertContains(prompt, platform.platformPreset.defaultFramingBehavior.naturalDescription)
         }
     }
 

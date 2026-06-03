@@ -9,9 +9,9 @@ object PhotoEditPromptAssembler {
             append(" Use ${request.qualityTier.wireValue} quality tier.")
             append(" Frame the result for ${preset.displayName}")
             if (preset.aspectRatio != null) {
-                append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}, ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px, using ${preset.defaultFramingBehavior.wireValue} framing")
+                append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}, ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px, and ${preset.defaultFramingBehavior.naturalDescription}")
             } else {
-                append(" using ${preset.defaultFramingBehavior.wireValue} framing")
+                append(" using ${preset.defaultFramingBehavior.naturalDescription}")
             }
             append(".")
             if (request.maskRegion != null) {
