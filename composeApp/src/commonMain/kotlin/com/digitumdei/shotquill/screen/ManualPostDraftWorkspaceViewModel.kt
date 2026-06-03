@@ -335,7 +335,10 @@ class ManualPostDraftWorkspaceViewModel(
 
     fun updatePhotoEditIntent(intent: EditIntent) {
         state = state.copy(
-            photoEditForm = state.photoEditForm.copy(selectedIntent = intent),
+            photoEditForm = state.photoEditForm.copy(
+                selectedIntent = intent,
+                unsupportedModelWarning = unsupportedModelWarningForIntent(intent),
+            ),
         )
     }
 
@@ -559,11 +562,11 @@ class ManualPostDraftWorkspaceViewModel(
                 selectedQualityTier = latestRequest?.qualityTier ?: defaultQualityTier,
                 qualityTierModelNotes = (latestRequest?.qualityTier ?: defaultQualityTier).modelMappingNote,
                 qualityTierCostNotes = (latestRequest?.qualityTier ?: defaultQualityTier).costNote,
-                unsupportedModelWarning = null,
                 latestRequestId = latestRequest?.id,
                 latestResultId = latestResult?.id,
                 latestModelName = latestResult?.modelName,
                 latestSummary = latestResult?.summary,
+                unsupportedModelWarning = unsupportedModelWarningForIntent(latestRequest?.intent ?: EditIntent.ImproveLighting),
                 operationState = PhotoEditFormOperationState.Idle,
             ),
         )
@@ -617,6 +620,10 @@ class ManualPostDraftWorkspaceViewModel(
     private fun operationUpdatedAt(draft: PostDraft, nowEpochMillis: Long): Instant {
         val now = Instant.fromEpochMilliseconds(nowEpochMillis)
         return if (now >= draft.updatedAt) now else draft.updatedAt
+    }
+
+    private fun unsupportedModelWarningForIntent(intent: EditIntent): String? {
+        return null
     }
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =

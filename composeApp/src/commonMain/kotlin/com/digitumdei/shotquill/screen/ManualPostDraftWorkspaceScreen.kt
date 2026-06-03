@@ -143,6 +143,12 @@ fun ManualPostDraftWorkspaceContent(
         ) {
             Text("Generate post text")
         }
+        state.photoEditForm.unsupportedModelWarning?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         OutlinedButton(
             onClick = onEditPhotoWithAi,
             modifier = Modifier.fillMaxWidth(),
