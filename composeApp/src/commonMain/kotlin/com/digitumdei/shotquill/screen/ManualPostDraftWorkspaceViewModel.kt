@@ -39,6 +39,28 @@ import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.datetime.Instant
 
+enum class PhotoEditFormOperationState {
+    Idle,
+    Loading,
+    Error,
+}
+
+data class PhotoEditFormState(
+    val selectedIntent: EditIntent,
+    val userRefinementText: String,
+    val selectedRealismLevel: RealismLevel,
+    val selectedTargetPlatform: TargetPlatform,
+    val selectedQualityTier: QualityTier,
+    val qualityTierModelNotes: String,
+    val qualityTierCostNotes: String,
+    val unsupportedModelWarning: String?,
+    val latestRequestId: PhotoEditRequestId?,
+    val latestResultId: PhotoEditResultId?,
+    val latestModelName: String?,
+    val latestSummary: String?,
+    val operationState: PhotoEditFormOperationState,
+)
+
 data class ManualPostDraftWorkspaceState(
     val draftId: PostDraftId,
     val originalPhotoUri: String?,
@@ -52,6 +74,7 @@ data class ManualPostDraftWorkspaceState(
     val actions: ManualPostDraftWorkspaceActions,
     val statusMessage: String?,
     val isPromptHistoryVisible: Boolean,
+    val photoEditForm: PhotoEditFormState,
 )
 
 data class ManualPostDraftWorkspaceActions(
@@ -438,6 +461,9 @@ class ManualPostDraftWorkspaceViewModel(
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
         val altText = altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
         val canMutateDraft = status in mutableDraftStatuses
+        val platform = preferredTargetPlatform() ?: defaultTargetPlatform
+        val latestRequest = photoEditRequests.maxByOrNull { it.createdAtEpochMillis }
+        val latestResult = photoEditResults.maxByOrNull { it.createdAtEpochMillis }
         return ManualPostDraftWorkspaceState(
             draftId = id,
             originalPhotoUri = originalPhoto?.uri,
@@ -445,7 +471,7 @@ class ManualPostDraftWorkspaceViewModel(
             visionDescription = visionDescription?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
-            targetPlatform = preferredTargetPlatform() ?: captionResults.lastOrNull()?.targetPlatform,
+            targetPlatform = platform,
             draftStatus = status,
             promptHistory = promptHistory,
             actions = ManualPostDraftWorkspaceActions(
@@ -459,6 +485,21 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
+            photoEditForm = PhotoEditFormState(
+                selectedIntent = latestRequest?.intent ?: EditIntent.ImproveLighting,
+                userRefinementText = latestRequest?.userRefinement ?: "",
+                selectedRealismLevel = latestRequest?.realismLevel ?: defaultRealismLevel,
+                selectedTargetPlatform = latestRequest?.targetPlatform ?: platform,
+                selectedQualityTier = latestRequest?.qualityTier ?: defaultQualityTier,
+                qualityTierModelNotes = (latestRequest?.qualityTier ?: defaultQualityTier).modelMappingNote,
+                qualityTierCostNotes = (latestRequest?.qualityTier ?: defaultQualityTier).costNote,
+                unsupportedModelWarning = null,
+                latestRequestId = latestRequest?.id,
+                latestResultId = latestResult?.id,
+                latestModelName = latestResult?.modelName,
+                latestSummary = latestResult?.summary,
+                operationState = PhotoEditFormOperationState.Idle,
+            ),
         )
     }
 
@@ -484,6 +525,21 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,
+            photoEditForm = PhotoEditFormState(
+                selectedIntent = EditIntent.ImproveLighting,
+                userRefinementText = "",
+                selectedRealismLevel = defaultRealismLevel,
+                selectedTargetPlatform = defaultTargetPlatform,
+                selectedQualityTier = defaultQualityTier,
+                qualityTierModelNotes = defaultQualityTier.modelMappingNote,
+                qualityTierCostNotes = defaultQualityTier.costNote,
+                unsupportedModelWarning = null,
+                latestRequestId = null,
+                latestResultId = null,
+                latestModelName = null,
+                latestSummary = null,
+                operationState = PhotoEditFormOperationState.Idle,
+            ),
         )
 
     private fun PostDraft.preferredTargetPlatform(): TargetPlatform? =
