@@ -536,6 +536,7 @@ class PostTextGenerationPipelineTest {
             return drafts[id]
         }
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean = false
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
