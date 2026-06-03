@@ -19,6 +19,7 @@ object PhotoEditPromptAssembler {
                 append(" (${preset.defaultFramingBehavior.wireValue} framing)")
             }
             append(".")
+            append(" ${request.intent.promptIntent}")
             append(" Apply a ${request.realismLevel.adjective} edit. ${request.realismLevel.promptIntent}")
             append(" Use ${request.qualityTier.wireValue} quality tier.")
             if (!request.subjectDescription.isNullOrBlank()) {

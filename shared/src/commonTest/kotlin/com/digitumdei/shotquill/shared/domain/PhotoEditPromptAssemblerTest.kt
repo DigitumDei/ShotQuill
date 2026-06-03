@@ -29,6 +29,7 @@ class PhotoEditPromptAssemblerTest {
             append(". The target platform is Instagram Feed Square")
             append(" (1:1, 1080x1080px, fit framing)")
             append(".")
+            append(" Improve the lighting and exposure of the image.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
             append(" The subject is A coffee cup on a wooden table.")
@@ -61,6 +62,8 @@ class PhotoEditPromptAssemblerTest {
         assertFalse(prompt.contains("targetPlatform:"))
         assertFalse(prompt.contains(" realism:"))
         assertFalse(prompt.contains("Additional user notes:"))
+        assertFalse(prompt.contains(" intent:"))
+        assertFalse(prompt.contains("EditIntent."))
     }
 
     @Test
@@ -160,6 +163,26 @@ class PhotoEditPromptAssemblerTest {
             val prompt = PhotoEditPromptAssembler.assemble(request)
 
             assertContains(prompt, "Use ${tier.wireValue} quality tier.")
+        }
+    }
+
+    @Test
+    fun everyEditIntentProducesDistinctNaturalLanguageInstruction() {
+        val expectations = mapOf(
+            EditIntent.ImproveLighting to "Improve the lighting and exposure of the image",
+            EditIntent.AddLogoOverlay to "Overlay a logo or watermark onto the image",
+            EditIntent.RemoveObject to "Remove the specified object or element from the image",
+            EditIntent.CropOrExtend to "Crop or extend the image to the target dimensions",
+            EditIntent.BackgroundAdjustment to "Adjust or replace the background of the image",
+            EditIntent.SubtleRetouch to "Apply subtle retouching to enhance the image while keeping it natural",
+            EditIntent.StyleTransfer to "Apply a specific artistic style to the image",
+            EditIntent.Custom to "Follow the user's custom editing instructions",
+        )
+
+        expectations.forEach { (intent, expectedSnippet) ->
+            val request = samplePhotoEditRequest(intent = intent)
+            val prompt = PhotoEditPromptAssembler.assemble(request)
+            assertContains(prompt, expectedSnippet, "EditIntent.${intent.name} should produce expected instruction")
         }
     }
 
