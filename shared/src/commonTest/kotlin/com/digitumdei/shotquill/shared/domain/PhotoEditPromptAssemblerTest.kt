@@ -216,6 +216,99 @@ class PhotoEditPromptAssemblerTest {
         assertContains(prompt, "Crop tighter.")
     }
 
+    @Test
+    fun includesMaskRegionWhenPresent() {
+        val request = samplePhotoEditRequest(
+            maskRegion = MaskRegion(MaskBounds.Normalized(0.25f, 0.1f, 0.5f, 0.5f)),
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "The edit is constrained to the region spanning")
+        assertContains(prompt, "0.25 to 0.75 horizontally")
+        assertContains(prompt, "0.1 to 0.6 vertically")
+        assertContains(prompt, "in normalized coordinates")
+    }
+
+    @Test
+    fun includesPixelMaskRegionWithNaturalCoordinates() {
+        val request = samplePhotoEditRequest(
+            maskRegion = MaskRegion(MaskBounds.Pixel(100, 200, 400, 400)),
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "The edit is constrained to the pixel region from (100, 200) to (500, 600).")
+    }
+
+    @Test
+    fun omitsMaskRegionWhenNull() {
+        val request = samplePhotoEditRequest(maskRegion = null)
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertFalse(prompt.contains("constrained to the region"))
+        assertFalse(prompt.contains("pixel region"))
+    }
+
+    @Test
+    fun includesLogoOverlayWordingForAddLogoOverlay() {
+        val request = samplePhotoEditRequest(
+            intent = EditIntent.AddLogoOverlay,
+            subjectDescription = "A storefront with a blank sign area",
+            userRefinement = "Place the logo in the top-right corner",
+            maskRegion = MaskRegion(MaskBounds.Normalized(0.7f, 0.0f, 0.3f, 0.2f)),
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Overlay a logo or watermark onto the image")
+        assertContains(prompt, "The subject is A storefront with a blank sign area.")
+        assertContains(prompt, "Preserve the subject's appearance.")
+        assertContains(prompt, "Place the logo in the top-right corner.")
+        assertContains(prompt, "The edit is constrained to the region spanning")
+    }
+
+    @Test
+    fun includesObjectRemovalWordingForRemoveObject() {
+        val request = samplePhotoEditRequest(
+            intent = EditIntent.RemoveObject,
+            subjectDescription = "A parked red car with a scratch on the door",
+            userRefinement = "Remove the scratch completely and fill naturally",
+            maskRegion = MaskRegion(MaskBounds.Pixel(300, 400, 150, 50)),
+        )
+
+        val prompt = PhotoEditPromptAssembler.assemble(request)
+
+        assertContains(prompt, "Remove the specified object or element from the image")
+        assertContains(prompt, "The subject is A parked red car with a scratch on the door.")
+        assertContains(prompt, "Preserve the subject's appearance.")
+        assertContains(prompt, "Remove the scratch completely and fill naturally.")
+        assertContains(prompt, "The edit is constrained to the pixel region from (300, 400) to (450, 450).")
+    }
+
+    @Test
+    fun maskRegionDescriptionIsNaturalProseNoColonLabels() {
+        val normalized = samplePhotoEditRequest(
+            maskRegion = MaskRegion(MaskBounds.Normalized(0.1f, 0.2f, 0.3f, 0.4f)),
+        )
+        val pixel = samplePhotoEditRequest(
+            maskRegion = MaskRegion(MaskBounds.Pixel(50, 60, 100, 200)),
+        )
+
+        val normalizedPrompt = PhotoEditPromptAssembler.assemble(normalized)
+        val pixelPrompt = PhotoEditPromptAssembler.assemble(pixel)
+
+        assertFalse(normalizedPrompt.contains("maskRegion:"))
+        assertFalse(normalizedPrompt.contains("MaskBounds."))
+        assertFalse(normalizedPrompt.contains("Normalized("))
+        assertFalse(normalizedPrompt.contains("left="))
+        assertFalse(pixelPrompt.contains("maskRegion:"))
+        assertFalse(pixelPrompt.contains("MaskBounds."))
+        assertFalse(pixelPrompt.contains("Pixel("))
+        assertFalse(pixelPrompt.contains("left="))
+    }
+
     private fun samplePhotoEditRequest(
         prompt: String = "Make the image brighter.",
         targetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
@@ -224,6 +317,7 @@ class PhotoEditPromptAssemblerTest {
         qualityTier: QualityTier = QualityTier.Standard,
         subjectDescription: String? = null,
         userRefinement: String? = null,
+        maskRegion: MaskRegion? = null,
     ): PhotoEditRequest = PhotoEditRequest(
         id = photoEditRequestId,
         draftId = draftId,
@@ -235,7 +329,7 @@ class PhotoEditPromptAssemblerTest {
         userRefinement = userRefinement,
         subjectDescription = subjectDescription,
         targetPlatform = targetPlatform,
-        maskRegion = null,
+        maskRegion = maskRegion,
         createdAtEpochMillis = createdAt,
     )
 }
