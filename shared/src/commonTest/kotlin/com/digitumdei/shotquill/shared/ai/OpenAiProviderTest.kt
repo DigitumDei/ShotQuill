@@ -105,11 +105,12 @@ class OpenAiProviderTest {
         assertTrue(request.url.endsWith("/images/edits"))
         assertTrue(request.headers.getValue("Content-Type").startsWith("multipart/form-data"))
         assertTrue(request.bodyText.contains("name=\"prompt\""))
+        assertTrue(request.bodyText.contains("Edit the photo as follows:"))
         assertTrue(request.bodyText.contains("Improve lighting while preserving the subject."))
-        assertTrue(request.bodyText.contains("Target platform: Original (no resize)"))
-        assertTrue(request.bodyText.contains("Framing behavior: no_resize"))
-        assertTrue(request.bodyText.contains("Realism: Preserve natural camera realism and avoid visibly generated or illustrated details."))
-        assertTrue(request.bodyText.contains("Quality tier: standard"))
+        assertTrue(request.bodyText.contains("The target platform is Original (no resize)"))
+        assertTrue(request.bodyText.contains("no_resize framing"))
+        assertTrue(request.bodyText.contains("Apply photoreal realism"))
+        assertTrue(request.bodyText.contains("standard quality tier"))
         assertTrue(request.bodyText.contains("name=\"image\"; filename=\"photo.png\""))
         assertFalse(request.bodyText.contains(apiKey))
     }
@@ -156,15 +157,13 @@ class OpenAiProviderTest {
         provider.editPhoto(request)
 
         val bodyText = transport.requests.single().bodyText
-        assertTrue(bodyText.contains("Target platform: Instagram Feed Square"))
-        assertTrue(bodyText.contains("Aspect ratio: 1:1"))
-        assertTrue(bodyText.contains("Recommended dimensions: 1080x1080px"))
-        assertTrue(bodyText.contains("Framing behavior: fit"))
-        assertTrue(bodyText.contains("Realism: Preserve natural camera realism"))
-        assertTrue(bodyText.contains("Quality tier: standard"))
-        assertTrue(bodyText.contains("Subject: A coffee cup on a wooden table"))
-        assertTrue(bodyText.contains("User notes: Keep the main subject centered"))
+        assertTrue(bodyText.contains("Edit the photo as follows:"))
         assertTrue(bodyText.contains("Crop to fit the platform."))
+        assertTrue(bodyText.contains("The target platform is Instagram Feed Square (1:1, 1080x1080px, fit framing)"))
+        assertTrue(bodyText.contains("Apply photoreal realism"))
+        assertTrue(bodyText.contains("standard quality tier"))
+        assertTrue(bodyText.contains("The subject is A coffee cup on a wooden table."))
+        assertTrue(bodyText.contains("Additional user notes: Keep the main subject centered."))
     }
 
     @Test

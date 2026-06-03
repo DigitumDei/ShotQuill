@@ -1,6 +1,6 @@
 package com.digitumdei.shotquill.shared.ai
 
-import com.digitumdei.shotquill.shared.domain.platformPreset
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlin.io.encoding.Base64
@@ -210,24 +210,8 @@ class OpenAiProvider(
         )
     }
 
-    private fun buildEditPrompt(request: PhotoEditGenerationRequest): String {
-        val edit = request.editRequest
-        val preset = edit.targetPlatform.platformPreset
-        return buildString {
-            append(edit.prompt)
-            append("\n\n---\n")
-            append("Target platform: ${preset.displayName}")
-            preset.aspectRatio?.let { append("\nAspect ratio: ${it.width}:${it.height}") }
-            if (preset.recommendedWidthPx != null && preset.recommendedHeightPx != null) {
-                append("\nRecommended dimensions: ${preset.recommendedWidthPx}x${preset.recommendedHeightPx}px")
-            }
-            append("\nFraming behavior: ${preset.defaultFramingBehavior.wireValue}")
-            append("\nRealism: ${edit.realismLevel.promptIntent}")
-            append("\nQuality tier: ${edit.qualityTier.wireValue}")
-            edit.subjectDescription?.let { append("\nSubject: $it") }
-            edit.userRefinement?.let { append("\nUser notes: $it") }
-        }
-    }
+    private fun buildEditPrompt(request: PhotoEditGenerationRequest): String =
+        PhotoEditPromptAssembler.assemble(request.editRequest)
 }
 
 data class OpenAiProviderConfig(

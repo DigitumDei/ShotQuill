@@ -1,5 +1,7 @@
 package com.digitumdei.shotquill.shared.ai
 
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
+
 class FakeAiProvider(
     private val modelName: String = "fake-ai-provider",
 ) : AiProvider {
@@ -31,16 +33,18 @@ class FakeAiProvider(
             ),
         )
 
-    override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
-        AiProviderResult.Success(
+    override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> {
+        val assembled = PhotoEditPromptAssembler.assemble(request.editRequest)
+        return AiProviderResult.Success(
             PhotoEditOutput(
                 imageBytes = ("fake-edit:${request.editRequest.id.value}:${request.editRequest.intent.wireValue}:${request.editRequest.targetPlatform.wireValue}")
                     .encodeToByteArray(),
                 mimeType = request.sourceImage.mimeType,
-                summary = "Fake ${request.editRequest.intent.wireValue} edit for ${request.editRequest.targetPlatform.wireValue}: ${stablePromptSummary(request.editRequest.prompt)}",
+                summary = "Fake ${request.editRequest.intent.wireValue} edit for ${request.editRequest.targetPlatform.wireValue}: ${stablePromptSummary(assembled)}",
                 modelName = modelName,
             ),
         )
+    }
 
     private fun stablePromptSummary(prompt: String): String =
         prompt
