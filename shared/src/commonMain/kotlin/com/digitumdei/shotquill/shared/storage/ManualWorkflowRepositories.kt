@@ -43,6 +43,7 @@ interface PostDraftRepository {
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean
     fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean
     fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean
+    fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean
 }
 
 interface VisionDescriptionRepository {

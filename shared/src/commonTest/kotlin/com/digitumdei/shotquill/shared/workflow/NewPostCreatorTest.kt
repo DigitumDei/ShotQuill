@@ -39,6 +39,9 @@ class NewPostCreatorTest {
 
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean =
             false
+
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: kotlinx.datetime.Instant): Boolean =
+            false
     }
 
     private fun getMediaAsset(id: MediaAssetId): MediaAsset? = savedMediaAssets[id]
@@ -210,6 +213,12 @@ class NewPostCreatorTest {
             override fun replaceMediaItems(
                 id: PostDraftId,
                 mediaItems: List<MediaAssetId>,
+            ): Boolean = false
+
+            override fun updateSelectedMediaAsset(
+                id: PostDraftId,
+                mediaAssetId: MediaAssetId,
+                updatedAt: kotlinx.datetime.Instant,
             ): Boolean = false
         }
         val creator = NewPostCreator(failingRepo)

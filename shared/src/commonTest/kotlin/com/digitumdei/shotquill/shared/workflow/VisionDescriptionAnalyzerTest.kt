@@ -219,6 +219,12 @@ class VisionDescriptionAnalyzerTest {
         override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean = false
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
+            return true
+        }
+
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) {
             val draft = drafts.getValue(visionDescription.draftId)

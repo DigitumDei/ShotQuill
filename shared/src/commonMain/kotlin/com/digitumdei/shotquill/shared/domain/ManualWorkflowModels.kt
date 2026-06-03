@@ -7,6 +7,7 @@ data class PostDraft(
     val format: PostFormat,
     val status: DraftStatus,
     val mediaItems: List<PostMediaItem>,
+    val selectedMediaAssetId: MediaAssetId? = null,
     val caption: CaptionDraft?,
     val targetPlatforms: Set<TargetPlatform>,
     val brandProfile: BrandProfile?,
@@ -45,9 +46,14 @@ data class PostDraft(
     }
 }
 
-fun PostDraft.primaryMediaAsset(): MediaAsset =
-    mediaItems.minByOrNull { it.order }?.mediaAsset
+fun PostDraft.primaryMediaAsset(): MediaAsset {
+    val selected = selectedMediaAssetId?.let { id ->
+        mediaItems.firstOrNull { it.mediaAsset.id == id }?.mediaAsset
+    }
+    return selected
+        ?: mediaItems.minByOrNull { it.order }?.mediaAsset
         ?: error("Post draft must include at least one media item")
+}
 
 data class PostMediaItem(
     val mediaAsset: MediaAsset,

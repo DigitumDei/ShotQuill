@@ -269,6 +269,81 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun returnsSelectedMediaAssetWhenSelectedMediaAssetIdIsSet() {
+        val original = sampleMediaAsset()
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val draft = samplePostDraft().copy(
+            mediaItems = listOf(
+                PostMediaItem(mediaAsset = original, order = 0),
+                PostMediaItem(mediaAsset = editedAsset, order = 1),
+            ),
+            format = PostFormat.Carousel,
+            selectedMediaAssetId = editedAsset.id,
+        )
+
+        assertEquals(editedAsset, draft.primaryMediaAsset())
+    }
+
+    @Test
+    fun fallsBackToLowestOrderWhenSelectedMediaAssetIdDoesNotMatch() {
+        val original = sampleMediaAsset()
+        val draft = samplePostDraft().copy(
+            selectedMediaAssetId = MediaAssetId("nonexistent"),
+        )
+
+        assertEquals(original, draft.primaryMediaAsset())
+    }
+
+    @Test
+    fun fallsBackToLowestOrderWhenSelectedMediaAssetIdIsNull() {
+        val original = sampleMediaAsset()
+        val draft = samplePostDraft()
+
+        assertEquals(original, draft.primaryMediaAsset())
+    }
+
+    @Test
+    fun singleImageInvariantAllowsSelectedMediaAssetId() {
+        val original = sampleMediaAsset()
+        val draft = samplePostDraft().copy(
+            mediaItems = listOf(PostMediaItem(mediaAsset = original, order = 0)),
+            selectedMediaAssetId = original.id,
+        )
+
+        assertEquals(original, draft.primaryMediaAsset())
+        assertEquals(PostFormat.SingleImage, draft.format)
+    }
+
+    @Test
+    fun draftCanSwitchFromOriginalToEditedAssetAndBack() {
+        val original = sampleMediaAsset()
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val draft = samplePostDraft().copy(
+            format = PostFormat.Carousel,
+            mediaItems = listOf(
+                PostMediaItem(mediaAsset = original, order = 0),
+                PostMediaItem(mediaAsset = editedAsset, order = 1),
+            ),
+        )
+
+        assertEquals(original, draft.primaryMediaAsset(), "Initially uses original")
+
+        val usingEdited = draft.copy(selectedMediaAssetId = editedAsset.id)
+        assertEquals(editedAsset, usingEdited.primaryMediaAsset(), "Switches to edited")
+
+        val backToOriginal = usingEdited.copy(selectedMediaAssetId = null)
+        assertEquals(original, backToOriginal.primaryMediaAsset(), "Reverts to original")
+    }
+
+    @Test
     fun rejectsSingleImagePostDraftWithMultipleMediaItems() {
         val failure = assertFailsWith<IllegalArgumentException> {
             samplePostDraft().copy(

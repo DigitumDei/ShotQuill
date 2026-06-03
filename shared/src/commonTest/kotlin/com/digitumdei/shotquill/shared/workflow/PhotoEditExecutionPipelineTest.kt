@@ -823,6 +823,12 @@ class PhotoEditExecutionPipelineTest {
             return true
         }
 
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
+            return true
+        }
+
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) = save(
             drafts.getValue(visionDescription.draftId).copy(visionDescription = visionDescription),

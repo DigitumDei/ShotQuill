@@ -17,6 +17,12 @@ class AndroidDatabaseDriverFactory(
                     super.onConfigure(db)
                     db.setForeignKeyConstraintsEnabled(true)
                 }
+
+                override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                    if (oldVersion < 2) {
+                        db.execSQL("ALTER TABLE post_drafts ADD COLUMN selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL")
+                    }
+                }
             },
         )
 }

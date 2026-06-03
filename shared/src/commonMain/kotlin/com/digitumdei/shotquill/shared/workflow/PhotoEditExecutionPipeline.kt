@@ -229,6 +229,7 @@ class PhotoEditExecutionPipeline(
         } else {
             repository.updateUpdatedAt(draftId, updatedAt)
         }
+        repository.updateSelectedMediaAsset(draftId, editedMediaAsset.id, updatedAt)
 
         val baseDraft = if (targetStatus != currentBeforeSave.status) {
             currentBeforeSave.transitionTo(targetStatus, updatedAt)
@@ -236,6 +237,7 @@ class PhotoEditExecutionPipeline(
             currentBeforeSave.copy(updatedAt = updatedAt)
         }
         val updatedDraft = baseDraft.copy(
+            selectedMediaAssetId = editedMediaAsset.id,
             photoEditRequests = currentBeforeSave.photoEditRequests + editRequest,
             photoEditResults = currentBeforeSave.photoEditResults + editResult,
             promptHistory = currentBeforeSave.promptHistory + promptHistoryEntry,

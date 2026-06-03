@@ -70,6 +70,7 @@ data class ManualPostDraftWorkspaceState(
     val draftId: PostDraftId,
     val originalPhotoUri: String?,
     val editedPhotoUri: String?,
+    val activePhotoUri: String?,
     val visionDescription: String?,
     val generatedCaption: String?,
     val generatedAltText: String?,
@@ -90,6 +91,7 @@ data class ManualPostDraftWorkspaceActions(
     val canCopyAltText: Boolean,
     val canShareOrExport: Boolean,
     val canViewPromptHistory: Boolean,
+    val canSelectEditedPhoto: Boolean,
 )
 
 interface ManualDraftAiProvider {
@@ -500,6 +502,40 @@ class ManualPostDraftWorkspaceViewModel(
         state = state.copy(isPromptHistoryVisible = !state.isPromptHistoryVisible)
     }
 
+    fun selectEditedPhoto() {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        val latestResult = draft.photoEditResults.maxByOrNull { it.createdAtEpochMillis } ?: run {
+            state = draft.toState("No edited photo available", state.isPromptHistoryVisible)
+            return
+        }
+        val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        val updated = draft.copy(
+            selectedMediaAssetId = latestResult.editedMediaAsset.id,
+            updatedAt = operationUpdatedAt,
+        )
+        postDraftRepository.save(updated)
+        state = updated.toState("Using edited photo", state.isPromptHistoryVisible)
+    }
+
+    fun selectOriginalPhoto() {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        val updated = draft.copy(
+            selectedMediaAssetId = null,
+            updatedAt = operationUpdatedAt,
+        )
+        postDraftRepository.save(updated)
+        state = updated.toState("Using original photo", state.isPromptHistoryVisible)
+    }
+
     private fun PostDraft.toState(
         statusMessage: String?,
         isPromptHistoryVisible: Boolean,
@@ -508,6 +544,10 @@ class ManualPostDraftWorkspaceViewModel(
             .firstOrNull { it.mediaAsset.type == MediaType.Photo }
             ?.mediaAsset
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
+        val activePhoto = selectedMediaAssetId?.let { id ->
+            mediaItems.firstOrNull { it.mediaAsset.id == id }?.mediaAsset
+                ?: photoEditResults.firstOrNull { it.editedMediaAsset.id == id }?.editedMediaAsset
+        }
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
         val altText = altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
         val canMutateDraft = status in mutableDraftStatuses
@@ -518,6 +558,7 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = id,
             originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
+            activePhotoUri = activePhoto?.uri,
             visionDescription = visionDescription?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
@@ -532,6 +573,7 @@ class ManualPostDraftWorkspaceViewModel(
                 canCopyAltText = !altText.isNullOrBlank(),
                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),
                 canViewPromptHistory = promptHistory.isNotEmpty(),
+                canSelectEditedPhoto = canMutateDraft && editedPhoto?.uri != null && editedPhoto?.uri != activePhoto?.uri,
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
@@ -557,6 +599,7 @@ class ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             originalPhotoUri = null,
             editedPhotoUri = null,
+            activePhotoUri = null,
             visionDescription = null,
             generatedCaption = null,
             generatedAltText = null,
@@ -571,6 +614,7 @@ class ManualPostDraftWorkspaceViewModel(
                 canCopyAltText = false,
                 canShareOrExport = false,
                 canViewPromptHistory = false,
+                canSelectEditedPhoto = false,
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,

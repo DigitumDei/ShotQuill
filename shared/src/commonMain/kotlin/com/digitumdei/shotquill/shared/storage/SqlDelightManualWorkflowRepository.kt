@@ -115,6 +115,7 @@ class SqlDelightManualWorkflowRepository(
                 status = postDraft.status.wireValue,
                 caption_text = postDraft.caption?.text,
                 brand_profile_id = postDraft.brandProfile?.id?.value,
+                selected_media_asset_id = postDraft.selectedMediaAssetId?.value,
                 created_at_epoch_millis = postDraft.createdAt.toEpochMilliseconds(),
                 updated_at_epoch_millis = postDraft.updatedAt.toEpochMilliseconds(),
             )
@@ -151,13 +152,14 @@ class SqlDelightManualWorkflowRepository(
     }
 
     override fun get(id: PostDraftId): PostDraft? {
-        val draft = queries.selectPostDraftById(id.value) { draftId, format, status, captionText, brandProfileId, createdAt, updatedAt ->
+        val draft = queries.selectPostDraftById(id.value) { draftId, format, status, captionText, brandProfileId, selectedMediaAssetId, createdAt, updatedAt ->
             DraftRow(
                 id = draftId,
                 format = format,
                 status = status,
                 captionText = captionText,
                 brandProfileId = brandProfileId,
+                selectedMediaAssetId = selectedMediaAssetId,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
             )
@@ -184,6 +186,7 @@ class SqlDelightManualWorkflowRepository(
             format = PostFormat.valueOf(draft.format),
             status = ManualWorkflowStorageMapper.enumFromWire(draft.status, DraftStatus::fromWireValue),
             mediaItems = mediaItems,
+            selectedMediaAssetId = draft.selectedMediaAssetId?.let(::MediaAssetId),
             caption = draft.captionText?.let {
                 CaptionDraft(it, queries.selectPostDraftCaptionHashtags(id.value).executeAsList())
             },
@@ -218,6 +221,16 @@ class SqlDelightManualWorkflowRepository(
     override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
         if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
         queries.updatePostDraftUpdatedAt(
+            updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+            id = id.value,
+        )
+        return true
+    }
+
+    override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean {
+        if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
+        queries.updatePostDraftSelectedMediaAsset(
+            selected_media_asset_id = mediaAssetId.value,
             updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
             id = id.value,
         )
@@ -750,6 +763,7 @@ private data class DraftRow(
     val status: String,
     val captionText: String?,
     val brandProfileId: String?,
+    val selectedMediaAssetId: String?,
     val createdAt: Long,
     val updatedAt: Long,
 )

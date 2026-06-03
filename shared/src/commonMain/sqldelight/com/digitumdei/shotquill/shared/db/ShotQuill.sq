@@ -48,6 +48,7 @@ CREATE TABLE post_drafts (
   status TEXT NOT NULL,
   caption_text TEXT,
   brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL,
+  selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
   created_at_epoch_millis INTEGER NOT NULL,
   updated_at_epoch_millis INTEGER NOT NULL
 );
@@ -254,14 +255,16 @@ INSERT INTO post_drafts(
   status,
   caption_text,
   brand_profile_id,
+  selected_media_asset_id,
   created_at_epoch_millis,
   updated_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   format = excluded.format,
   status = excluded.status,
   caption_text = excluded.caption_text,
   brand_profile_id = excluded.brand_profile_id,
+  selected_media_asset_id = excluded.selected_media_asset_id,
   created_at_epoch_millis = excluded.created_at_epoch_millis,
   updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
@@ -283,6 +286,12 @@ UPDATE post_drafts
 SET status = ?,
     caption_text = ?,
     brand_profile_id = ?,
+    updated_at_epoch_millis = ?
+WHERE id = ?;
+
+updatePostDraftSelectedMediaAsset:
+UPDATE post_drafts
+SET selected_media_asset_id = ?,
     updated_at_epoch_millis = ?
 WHERE id = ?;
 

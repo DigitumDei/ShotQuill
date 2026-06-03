@@ -603,8 +603,8 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
-    fun hasMigrationScaffoldForVersionOne() {
-        assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
+    fun hasMigrationScaffoldForVersionTwo() {
+        assertEquals(2, ShotQuillDatabase.Schema.version.toInt())
     }
 
     @Test
