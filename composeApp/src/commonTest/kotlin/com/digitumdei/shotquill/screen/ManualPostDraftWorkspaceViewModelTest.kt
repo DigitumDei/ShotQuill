@@ -839,6 +839,30 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(null, request?.userRefinement)
     }
 
+    @Test
+    fun preservesErrorOperationStateWhenAiProviderThrows() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit =
+                throw RuntimeException("Provider failure")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = throwingProvider,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: Provider failure", viewModel.state.statusMessage)
+    }
+
     private class RecordingPostTextGenerator(
         private val draft: PostDraft,
     ) : PostTextGenerator {

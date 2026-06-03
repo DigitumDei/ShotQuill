@@ -378,12 +378,12 @@ class ManualPostDraftWorkspaceViewModel(
         val generated = try {
             aiProvider.editPhoto(draft, now)
         } catch (e: Exception) {
-            state = state.copy(
-                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
-            )
             state = draft.toState(
                 statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
                 isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            state = state.copy(
+                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
             )
             return
         }
