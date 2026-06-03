@@ -132,7 +132,7 @@ class PhotoEditExecutionPipelineTest {
         val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
         assertIs<PhotoEditExecutionError.Provider>(persisted.cause)
         assertEquals(AiError.RateLimited(), (persisted.cause as PhotoEditExecutionError.Provider).error)
-        assertEquals(1, persisted.photoEditRequest.draftId.value)
+        assertEquals(draftId, persisted.photoEditRequest.draftId)
         assertNotNull(persisted.assembledPrompt)
         assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
         assertEquals(null, persisted.promptHistoryEntry.responseSummary)
@@ -227,7 +227,7 @@ class PhotoEditExecutionPipelineTest {
             aiProvider = FakeAiProvider(),
             settingsRepository = settingsRepository,
             imageSource = PhotoEditImageSource { _ -> SourceImageResult.Failure("File not found") },
-            mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
             visionImageSource = VisionImageSource { sampleAiImageInput() },
             clock = clock,
         )
@@ -263,7 +263,7 @@ class PhotoEditExecutionPipelineTest {
             aiProvider = FakeAiProvider(),
             settingsRepository = settingsRepository,
             imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
-            mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") },
             visionImageSource = VisionImageSource { sampleAiImageInput() },
             clock = clock,
         )
@@ -370,11 +370,12 @@ class PhotoEditExecutionPipelineTest {
             uri = "file://edited/result.jpg",
             createdAtEpochMillis = baseEpoch + 1000,
         )
-        val saver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Success(newAsset) }
+        val saver = PhotoEditMediaSaver { _, _, original, id, createdAt -> SaveEditedImageResult.Success(newAsset) }
         val result = saver.save(
             bytes = byteArrayOf(0, 1, 2),
             mimeType = "image/jpeg",
             originalMediaAsset = original,
+            mediaAssetId = MediaAssetId("media-edited-1"),
             createdAtEpochMillis = baseEpoch + 1000,
         )
         val success = assertIs<SaveEditedImageResult.Success>(result)
@@ -384,11 +385,12 @@ class PhotoEditExecutionPipelineTest {
 
     @Test
     fun `PhotoEditMediaSaver save returns Failure with message`() {
-        val saver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") }
+        val saver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") }
         val result = saver.save(
             bytes = byteArrayOf(0),
             mimeType = "image/jpeg",
             originalMediaAsset = sampleMediaAsset(),
+            mediaAssetId = MediaAssetId("media-edited-1"),
             createdAtEpochMillis = baseEpoch,
         )
         val failure = assertIs<SaveEditedImageResult.Failure>(result)
@@ -551,7 +553,19 @@ class PhotoEditExecutionPipelineTest {
         aiProvider = aiProvider,
         settingsRepository = settingsRepository,
         imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
-        mediaSaver = PhotoEditMediaSaver { _, _, _, _ -> SaveEditedImageResult.Success(sampleEditedMediaAsset()) },
+        mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+            SaveEditedImageResult.Success(
+                MediaAsset(
+                    id = id,
+                    type = MediaType.EditedPhoto,
+                    uri = "file://edited/output.jpg",
+                    mimeType = "image/jpeg",
+                    widthPx = original.widthPx,
+                    heightPx = original.heightPx,
+                    createdAtEpochMillis = createdAt,
+                ),
+            )
+        },
         visionImageSource = VisionImageSource { sampleAiImageInput() },
         clock = clock,
     )
@@ -679,7 +693,12 @@ class PhotoEditExecutionPipelineTest {
 
         override fun get(id: PostDraftId): PostDraft? = drafts[id]
 
-        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
+        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            if (!draft.status.canTransitionTo(status)) return false
+            drafts[id] = draft.copy(status = status, updatedAt = updatedAt)
+            return true
+        }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)

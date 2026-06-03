@@ -11,6 +11,7 @@ import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
@@ -168,10 +169,12 @@ class PhotoEditExecutionPipeline(
             is AiProviderResult.Success -> result.value
         }
 
+        val editedMediaAssetId = MediaAssetId("photo-edited-$idSuffix")
         val saveResult = mediaSaver.save(
             bytes = editOutput.imageBytes,
             mimeType = editOutput.mimeType,
             originalMediaAsset = sourceMediaAsset,
+            mediaAssetId = editedMediaAssetId,
             createdAtEpochMillis = now,
         )
         if (saveResult is SaveEditedImageResult.Failure) {
@@ -265,6 +268,7 @@ fun interface PhotoEditMediaSaver {
         bytes: ByteArray,
         mimeType: String,
         originalMediaAsset: MediaAsset,
+        mediaAssetId: MediaAssetId,
         createdAtEpochMillis: Long,
     ): SaveEditedImageResult
 }
