@@ -25,13 +25,10 @@ class PhotoEditPromptAssemblerTest {
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
         val expected = buildString {
-            append("Edit the photo as follows: \"Make the image brighter while keeping it realistic.\"")
-            append(". The target platform is Instagram Feed Square")
-            append(" (1:1, 1080x1080px, fit framing)")
-            append(".")
-            append(" Improve the lighting and exposure of the image.")
+            append("Edit this image: Improve the lighting and exposure of the image. Make the image brighter while keeping it realistic.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
+            append(" Target platform: Instagram Feed Square — 1:1, 1080x1080px, fit framing.")
             append(" The subject is A coffee cup on a wooden table.")
             append(" Preserve the subject's appearance.")
             append(" Focus on the coffee cup.")
@@ -195,7 +192,7 @@ class PhotoEditPromptAssemblerTest {
 
         val prompt = PhotoEditPromptAssembler.assemble(request)
 
-        assertContains(prompt, """Edit the photo as follows: "Make it brighter".""")
+        assertContains(prompt, "Make it brighter.")
     }
 
     @Test
