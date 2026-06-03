@@ -13,7 +13,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -229,7 +228,7 @@ fun ManualPostDraftWorkspaceContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading,
         ) {
-            Text(if (form.latestResultId != null) "Re-run photo edit" else "Run photo edit")
+            Text(if (state.editedPhotoUri != null) "Re-run photo edit" else "Run photo edit")
         }
 
         if (form.operationState == PhotoEditFormOperationState.Loading) {
