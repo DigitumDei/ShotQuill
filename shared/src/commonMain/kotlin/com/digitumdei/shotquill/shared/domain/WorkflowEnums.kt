@@ -121,11 +121,11 @@ enum class QualityTier(
     }
 }
 
-enum class AiOperationType(val wireValue: String) {
-    VisionDescription("vision_description"),
-    CaptionGeneration("caption_generation"),
-    AltTextGeneration("alt_text_generation"),
-    PhotoEdit("photo_edit");
+enum class AiOperationType(val wireValue: String, val displayName: String) {
+    VisionDescription("vision_description", "Vision Description"),
+    CaptionGeneration("caption_generation", "Caption Generation"),
+    AltTextGeneration("alt_text_generation", "Alt Text Generation"),
+    PhotoEdit("photo_edit", "Photo Edit");
 
     companion object {
         fun fromWireValue(value: String): AiOperationType? = entries.firstOrNull { it.wireValue == value }

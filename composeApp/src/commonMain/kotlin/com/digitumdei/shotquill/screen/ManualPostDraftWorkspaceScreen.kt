@@ -285,12 +285,29 @@ fun ManualPostDraftWorkspaceContent(
         }
 
         if (state.isPromptHistoryVisible) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 state.promptHistory.forEach { entry ->
-                    Text(
-                        text = "${entry.operationType.wireValue}: ${entry.prompt}",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = entry.operationType.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = entry.prompt,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val details = buildList {
+                            entry.modelName?.let { add("Model: $it") }
+                            entry.responseSummary?.let { add("Response: $it") }
+                        }
+                        if (details.isNotEmpty()) {
+                            Text(
+                                text = details.joinToString(" — "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }

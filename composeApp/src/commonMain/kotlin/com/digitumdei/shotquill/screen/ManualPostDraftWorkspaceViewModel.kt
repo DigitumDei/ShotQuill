@@ -542,7 +542,7 @@ class ManualPostDraftWorkspaceViewModel(
             generatedAltText = altText,
             targetPlatform = platform,
             draftStatus = status,
-            promptHistory = promptHistory,
+            promptHistory = promptHistory.sortedByDescending { it.createdAtEpochMillis },
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,

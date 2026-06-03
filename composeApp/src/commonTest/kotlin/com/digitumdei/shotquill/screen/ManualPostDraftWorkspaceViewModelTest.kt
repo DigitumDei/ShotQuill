@@ -281,7 +281,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
         assertEquals("file://photo.jpg#edited-1700000500001", viewModel.state.editedPhotoUri)
         assertEquals(3, viewModel.state.promptHistory.size)
-        val photoEditEntry = viewModel.state.promptHistory.last()
+        val photoEditEntry = viewModel.state.promptHistory.first()
         assertEquals(AiOperationType.PhotoEdit, photoEditEntry.operationType)
         val photoEditRequest = stored?.photoEditRequests?.last()
         assertEquals(
