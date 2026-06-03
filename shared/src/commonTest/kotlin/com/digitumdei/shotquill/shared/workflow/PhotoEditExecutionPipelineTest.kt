@@ -321,6 +321,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(DraftStatus.PhotoEdited, stored.status)
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
     }
 
     @Test
@@ -359,6 +360,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(DraftStatus.ReadyToShare, stored.status)
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(2, stored.photoEditResults.size)
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance even when status is unchanged")
     }
 
     @Test
@@ -773,6 +775,12 @@ class PhotoEditExecutionPipelineTest {
             val draft = drafts[id] ?: return false
             if (!draft.status.canTransitionTo(status)) return false
             drafts[id] = draft.copy(status = status, updatedAt = updatedAt)
+            return true
+        }
+
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(updatedAt = updatedAt)
             return true
         }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false

@@ -854,4 +854,18 @@ class SqlDelightManualWorkflowRepositoryTest {
         maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
+
+    @Test fun `updateUpdatedAt advances timestamp without changing status`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateUpdatedAt(PostDraftId("draft-1"), newUpdatedAt))
+        assertFalse(repository.updateUpdatedAt(PostDraftId("missing"), newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(original.status, stored.status)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
 }

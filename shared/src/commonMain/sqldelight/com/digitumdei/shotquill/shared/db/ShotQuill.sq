@@ -273,6 +273,11 @@ UPDATE post_drafts
 SET status = ?, updated_at_epoch_millis = ?
 WHERE id = ?;
 
+updatePostDraftUpdatedAt:
+UPDATE post_drafts
+SET updated_at_epoch_millis = ?
+WHERE id = ?;
+
 updatePostDraftGeneratedText:
 UPDATE post_drafts
 SET status = ?,

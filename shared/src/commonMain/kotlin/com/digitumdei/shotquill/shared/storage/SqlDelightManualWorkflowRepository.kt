@@ -215,6 +215,15 @@ class SqlDelightManualWorkflowRepository(
         return true
     }
 
+    override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+        if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
+        queries.updatePostDraftUpdatedAt(
+            updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+            id = id.value,
+        )
+        return true
+    }
+
     override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean {
         if (mediaItems.isEmpty() || queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) {
             return false

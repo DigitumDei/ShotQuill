@@ -223,11 +223,13 @@ class PhotoEditExecutionPipeline(
         repository.savePhotoEditRequest(editRequest)
         repository.savePhotoEditResult(editResult)
         repository.savePromptHistoryEntry(promptHistoryEntry)
+        val updatedAt = operationUpdatedAt(currentBeforeSave, now)
         if (targetStatus != currentBeforeSave.status) {
-            repository.updateStatus(draftId, targetStatus, operationUpdatedAt(currentBeforeSave, now))
+            repository.updateStatus(draftId, targetStatus, updatedAt)
+        } else {
+            repository.updateUpdatedAt(draftId, updatedAt)
         }
 
-        val updatedAt = operationUpdatedAt(currentBeforeSave, now)
         val baseDraft = if (targetStatus != currentBeforeSave.status) {
             currentBeforeSave.transitionTo(targetStatus, updatedAt)
         } else {

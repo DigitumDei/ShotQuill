@@ -41,6 +41,7 @@ interface PostDraftRepository {
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean
+    fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean
     fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean
 }
 
