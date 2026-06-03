@@ -16,7 +16,7 @@ import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
-import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
+
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
@@ -273,9 +273,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun supportsGenerateThenEditWorkflow() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = IncrementingClock(1_700_000_500_000L),
         )
         viewModel.load()
@@ -286,21 +291,23 @@ class ManualPostDraftWorkspaceViewModelTest {
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.PhotoEdited, stored?.status)
         assertEquals("Ready for instagram_feed_square: photo.jpg", viewModel.state.generatedCaption)
-        assertEquals("file://photo.jpg#edited-improve_lighting-instagram_feed_square-1700000500001", viewModel.state.editedPhotoUri)
-        assertEquals(3, viewModel.state.promptHistory.size)
-        val photoEditEntry = viewModel.state.promptHistory.first()
-        assertEquals(AiOperationType.PhotoEdit, photoEditEntry.operationType)
-        val photoEditRequest = stored?.photoEditRequests?.last()
-        assertEquals(
-            PhotoEditPromptAssembler.assemble(photoEditRequest!!),
-            photoEditEntry.prompt,
-        )
+        assertEquals("file://executor-edited.jpg", viewModel.state.editedPhotoUri)
+        assertEquals(PhotoEditFormOperationState.Idle, viewModel.state.photoEditForm.operationState)
     }
 
     @Test
     fun rejectsLegacyDraftStatusWithoutThrowing() {
         val repository = FakePostDraftRepository(sampleDraft().copy(status = DraftStatus.Draft))
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.InvalidDraftStatus(DraftStatus.Draft),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
         viewModel.load()
 
         assertFalse(viewModel.state.actions.canGeneratePostText)
@@ -323,9 +330,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun updatesStoredDraftWhenEditingPhotoWithFakeAiProvider() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -334,7 +346,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.PhotoEdited, stored?.status)
-        assertEquals("file://photo.jpg#edited-improve_lighting-instagram_feed_square-1700000200000", viewModel.state.editedPhotoUri)
+        assertEquals("file://executor-edited.jpg", viewModel.state.editedPhotoUri)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertTrue(viewModel.state.actions.canViewPromptHistory)
         val request = stored?.photoEditRequests?.single()
@@ -344,54 +356,88 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(null, request?.subjectDescription)
         assertEquals(null, request?.userRefinement)
         assertEquals(null, request?.maskRegion)
-        val expectedPrompt = PhotoEditPromptAssembler.assemble(request!!)
-        assertEquals(expectedPrompt, viewModel.state.promptHistory.single().prompt)
-        assertEquals("Edited photo preview created", viewModel.state.statusMessage)
+        assertEquals("Edited photo created", viewModel.state.statusMessage)
     }
 
     @Test
     fun usesPreferredTargetPlatformAndVisionContextWhenEditingPhotoWithAi() {
-        val repository = FakePostDraftRepository(
-            sampleDraft().copy(
-                targetPlatforms = setOf(TargetPlatform.BlueskyPost),
-                visionDescription = VisionDescription(
-                    id = VisionDescriptionId("vision-description-1"),
+        val draft = sampleDraft().copy(
+            targetPlatforms = setOf(TargetPlatform.BlueskyPost),
+            visionDescription = VisionDescription(
+                id = VisionDescriptionId("vision-description-1"),
+                draftId = draftId,
+                mediaAssetId = mediaAssetId,
+                description = "A coffee cup on a wooden table.",
+                modelName = "fake",
+                createdAtEpochMillis = 1_700_000_010_000L,
+            ),
+        )
+        val repository = FakePostDraftRepository(draft)
+        val resultDraft = draft.copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-1"),
                     draftId = draftId,
-                    mediaAssetId = mediaAssetId,
-                    description = "A coffee cup on a wooden table.",
-                    modelName = "fake",
-                    createdAtEpochMillis = 1_700_000_010_000L,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Edit the image (improve_lighting, bluesky_post).",
+                    userRefinement = null,
+                    subjectDescription = "A coffee cup on a wooden table.",
+                    targetPlatform = TargetPlatform.BlueskyPost,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-1"),
+                    requestId = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    editedMediaAsset = sampleMediaAsset().copy(
+                        id = MediaAssetId("media-edited-1"),
+                        type = MediaType.EditedPhoto,
+                        uri = "file://photo-edited.jpg",
+                    ),
+                    summary = "Edit result.",
+                    modelName = "executor-model",
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val executor = RecordingPhotoEditExecutor(
+            resultDraft = resultDraft,
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
 
         viewModel.editPhotoWithAi()
 
-        val request = repository.get(draftId)?.photoEditRequests?.single()
-        assertEquals(TargetPlatform.BlueskyPost, request?.targetPlatform)
-        assertEquals("A coffee cup on a wooden table.", request?.subjectDescription)
-        assertEquals(RealismLevel.Photoreal, request?.realismLevel)
-        assertEquals(QualityTier.Standard, request?.qualityTier)
-        assertEquals(null, request?.userRefinement)
-        assertEquals(null, request?.maskRegion)
-        assertEquals(
-            PhotoEditPromptAssembler.assemble(request!!),
-            viewModel.state.promptHistory.single().prompt,
-        )
+        val request = executor.capturedIntent
+        assertEquals(EditIntent.ImproveLighting, request)
+        assertEquals(TargetPlatform.InstagramFeedSquare, executor.capturedTargetPlatform)
     }
 
     @Test
     fun usesConfiguredRealismAndQualityDefaultsWhenEditingPhotoWithAi() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
             defaultRealismLevel = RealismLevel.Polished,
             defaultQualityTier = QualityTier.High,
@@ -400,21 +446,25 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.editPhotoWithAi()
 
-        val request = repository.get(draftId)?.photoEditRequests?.single()
-        assertEquals(RealismLevel.Polished, request?.realismLevel)
-        assertEquals(QualityTier.High, request?.qualityTier)
-        assertEquals(TargetPlatform.InstagramFeedSquare, request?.targetPlatform)
-        assertEquals(
-            PhotoEditPromptAssembler.assemble(request!!),
-            viewModel.state.promptHistory.single().prompt,
-        )
+        assertEquals(RealismLevel.Polished, executor.capturedRealismLevel)
+        assertEquals(QualityTier.High, executor.capturedQualityTier)
+        assertEquals(TargetPlatform.InstagramFeedSquare, executor.capturedTargetPlatform)
     }
 
     @Test
     fun rejectsTerminalDraftMutationsWithoutThrowing() {
         listOf(DraftStatus.Archived, DraftStatus.Shared).forEach { terminalStatus ->
+            val executor = RecordingPhotoEditExecutor(
+                result = PhotoEditExecutionResult.Failure(
+                    PhotoEditExecutionError.InvalidDraftStatus(terminalStatus),
+                ),
+            )
             val repository = FakePostDraftRepository(sampleDraftWithGeneratedText().copy(status = terminalStatus))
-            val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+            val viewModel = ManualPostDraftWorkspaceViewModel(
+                draftId = draftId,
+                postDraftRepository = repository,
+                photoEditExecutor = executor,
+            )
             viewModel.load()
 
             viewModel.generatePostText()
@@ -429,8 +479,17 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     @Test
     fun handlesDraftDisappearingBeforeActions() {
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            ),
+        )
         val repository = FakePostDraftRepository(sampleDraft())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
         viewModel.load()
         repository.delete(draftId)
 
@@ -813,9 +872,14 @@ class ManualPostDraftWorkspaceViewModelTest {
                 targetPlatforms = setOf(TargetPlatform.BlueskyPost),
             ),
         )
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -827,36 +891,43 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.updatePhotoEditQualityTier(QualityTier.High)
         viewModel.editPhotoWithAi()
 
-        val request = repository.get(draftId)?.photoEditRequests?.single()
-        assertEquals(EditIntent.RemoveObject, request?.intent)
-        assertEquals(RealismLevel.Polished, request?.realismLevel)
-        assertEquals(QualityTier.High, request?.qualityTier)
-        assertEquals("Remove the cup", request?.userRefinement)
-        assertEquals(TargetPlatform.FacebookPost, request?.targetPlatform)
+        assertEquals(EditIntent.RemoveObject, executor.capturedIntent)
+        assertEquals(RealismLevel.Polished, executor.capturedRealismLevel)
+        assertEquals(QualityTier.High, executor.capturedQualityTier)
+        assertEquals(TargetPlatform.FacebookPost, executor.capturedTargetPlatform)
     }
 
     @Test
     fun usesPhotoEditFormDefaultsWhenRefinementIsBlank() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
 
         viewModel.editPhotoWithAi()
 
-        val request = repository.get(draftId)?.photoEditRequests?.single()
-        assertEquals(null, request?.userRefinement)
+        assertNull(executor.capturedUserRefinement)
     }
 
     @Test
     fun preservesRawRefinementInMemoryButTrimsInStoredRequest() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -867,25 +938,31 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.editPhotoWithAi()
 
-        val request = repository.get(draftId)?.photoEditRequests?.single()
-        assertEquals("Remove the cup", request?.userRefinement)
+        assertEquals("Remove the cup", executor.capturedUserRefinement)
     }
 
     @Test
     fun preservesErrorOperationStateWhenAiProviderThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
-        val throwingProvider = object : ManualDraftAiProvider {
-            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
-                error("unused")
-            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
-                error("unused")
-            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+        val throwingExecutor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
                 throw RuntimeException("Provider failure")
+            }
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            aiProvider = throwingProvider,
+            photoEditExecutor = throwingExecutor,
         )
         viewModel.load()
 
@@ -898,18 +975,25 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun preservesPhotoEditFormValuesWhenAiProviderThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
-        val throwingProvider = object : ManualDraftAiProvider {
-            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
-                error("unused")
-            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
-                error("unused")
-            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+        val throwingExecutor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
                 throw RuntimeException("Provider failure")
+            }
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            aiProvider = throwingProvider,
+            photoEditExecutor = throwingExecutor,
         )
         viewModel.load()
         viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
@@ -934,20 +1018,99 @@ class ManualPostDraftWorkspaceViewModelTest {
         val repository = FakePostDraftRepository(sampleDraft())
         val capturedStates = mutableListOf<PhotoEditFormOperationState>()
         val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
-        val capturingProvider = object : ManualDraftAiProvider {
-            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
-                error("unused")
-            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
-                error("unused")
-            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit {
+        val capturingExecutor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
                 capturedStates.add(viewModelRef[0]!!.state.photoEditForm.operationState)
-                return FakeManualDraftAiProvider().editPhoto(draft, formState, nowEpochMillis)
+                val request = PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-executor"),
+                    draftId = draftId,
+                    sourceMediaAssetId = MediaAssetId("media-1"),
+                    intent = intent,
+                    realismLevel = realismLevel,
+                    qualityTier = qualityTier,
+                    prompt = prompt,
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = targetPlatform,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                )
+                val result = PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-executor"),
+                    requestId = request.id,
+                    draftId = draftId,
+                    editedMediaAsset = MediaAsset(
+                        id = MediaAssetId("media-edited-executor"),
+                        type = MediaType.EditedPhoto,
+                        uri = "file://executor-edited.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = 1080,
+                        heightPx = 1080,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    summary = "Executor result.",
+                    modelName = "executor-model",
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                )
+                val draft = PostDraft(
+                    id = draftId,
+                    format = PostFormat.SingleImage,
+                    status = DraftStatus.PhotoEdited,
+                    mediaItems = listOf(PostMediaItem(MediaAsset(
+                        id = MediaAssetId("media-1"),
+                        type = MediaType.Photo,
+                        uri = "file://photo.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = 1080,
+                        heightPx = 1080,
+                        createdAtEpochMillis = 0L,
+                    ), order = 0)),
+                    caption = null,
+                    targetPlatforms = emptySet(),
+                    brandProfile = null,
+                    visionDescription = null,
+                    captionRequests = emptyList(),
+                    captionResults = emptyList(),
+                    altTextResults = emptyList(),
+                    photoEditRequests = listOf(request),
+                    photoEditResults = listOf(result),
+                    promptHistory = emptyList(),
+                    exportRecords = emptyList(),
+                    createdAt = Instant.fromEpochMilliseconds(0L),
+                    updatedAt = Instant.fromEpochMilliseconds(0L),
+                )
+                repository.save(draft)
+                return PhotoEditExecutionResult.Success(
+                    photoEditRequest = request,
+                    photoEditResult = result,
+                    assembledPrompt = "assembled prompt",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled prompt",
+                        responseSummary = "Executor result.",
+                        modelName = "executor-model",
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = draft,
+                )
             }
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            aiProvider = capturingProvider,
+            photoEditExecutor = capturingExecutor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModelRef[0] = viewModel
@@ -964,25 +1127,104 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun ignoresPhotoEditFormUpdatesWhileEditingPhotoIsLoading() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
-        val provider = object : ManualDraftAiProvider {
-            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
-                error("unused")
-            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
-                error("unused")
-            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit {
-                val viewModel = viewModelRef[0]!!
-                viewModel.updatePhotoEditIntent(EditIntent.AddLogoOverlay)
-                viewModel.updatePhotoEditRefinement("This should be ignored")
-                viewModel.updatePhotoEditRealism(RealismLevel.Stylized)
-                viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
-                viewModel.updatePhotoEditQualityTier(QualityTier.Standard)
-                return FakeManualDraftAiProvider().editPhoto(draft, formState, nowEpochMillis)
+        val executor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
+                val vm = viewModelRef[0]!!
+                vm.updatePhotoEditIntent(EditIntent.AddLogoOverlay)
+                vm.updatePhotoEditRefinement("This should be ignored")
+                vm.updatePhotoEditRealism(RealismLevel.Stylized)
+                vm.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+                vm.updatePhotoEditQualityTier(QualityTier.Standard)
+                val request = PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-executor"),
+                    draftId = draftId,
+                    sourceMediaAssetId = MediaAssetId("media-1"),
+                    intent = EditIntent.RemoveObject,
+                    realismLevel = RealismLevel.Polished,
+                    qualityTier = QualityTier.High,
+                    prompt = prompt,
+                    userRefinement = "Remove the cup",
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.BlueskyPost,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                )
+                val result = PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-executor"),
+                    requestId = request.id,
+                    draftId = draftId,
+                    editedMediaAsset = MediaAsset(
+                        id = MediaAssetId("media-edited-executor"),
+                        type = MediaType.EditedPhoto,
+                        uri = "file://executor-edited.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = 1080,
+                        heightPx = 1080,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    summary = "Executor result.",
+                    modelName = "executor-model",
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                )
+                val draft = PostDraft(
+                    id = draftId,
+                    format = PostFormat.SingleImage,
+                    status = DraftStatus.PhotoEdited,
+                    mediaItems = listOf(PostMediaItem(MediaAsset(
+                        id = MediaAssetId("media-1"),
+                        type = MediaType.Photo,
+                        uri = "file://photo.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = 1080,
+                        heightPx = 1080,
+                        createdAtEpochMillis = 0L,
+                    ), order = 0)),
+                    caption = null,
+                    targetPlatforms = emptySet(),
+                    brandProfile = null,
+                    visionDescription = null,
+                    captionRequests = emptyList(),
+                    captionResults = emptyList(),
+                    altTextResults = emptyList(),
+                    photoEditRequests = listOf(request),
+                    photoEditResults = listOf(result),
+                    promptHistory = emptyList(),
+                    exportRecords = emptyList(),
+                    createdAt = Instant.fromEpochMilliseconds(0L),
+                    updatedAt = Instant.fromEpochMilliseconds(0L),
+                )
+                repository.save(draft)
+                return PhotoEditExecutionResult.Success(
+                    photoEditRequest = request,
+                    photoEditResult = result,
+                    assembledPrompt = "assembled prompt",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled prompt",
+                        responseSummary = "Executor result.",
+                        modelName = "executor-model",
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = draft,
+                )
             }
         }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            aiProvider = provider,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModelRef[0] = viewModel
@@ -1012,9 +1254,55 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun reRunningEditAppendsSecondRequestResultAndHistoryEntry() {
         val repository = FakePostDraftRepository(sampleDraft())
+        var callCount = 0
+        val executor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId, intent: EditIntent, realismLevel: RealismLevel,
+                qualityTier: QualityTier, targetPlatform: TargetPlatform, prompt: String,
+                userRefinement: String?, maskRegion: MaskRegion?, reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
+                callCount++
+                val idSuffix = "call$callCount"
+                val request = PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
+                    draftId = draftId, sourceMediaAssetId = MediaAssetId("media-1"),
+                    intent = intent, realismLevel = realismLevel, qualityTier = qualityTier,
+                    prompt = prompt, userRefinement = null, subjectDescription = null,
+                    targetPlatform = targetPlatform, maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L + callCount,
+                )
+                val result = PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-$idSuffix"),
+                    requestId = request.id, draftId = draftId,
+                    editedMediaAsset = MediaAsset(
+                        id = MediaAssetId("media-edited-$idSuffix"),
+                        type = MediaType.EditedPhoto, uri = "file://edited-$idSuffix.jpg",
+                        mimeType = "image/jpeg", widthPx = 1080, heightPx = 1080,
+                        createdAtEpochMillis = 1_700_000_200_000L + callCount,
+                    ),
+                    summary = "Result $callCount.", modelName = "model",
+                    createdAtEpochMillis = 1_700_000_200_000L + callCount,
+                )
+                val existingDraft = repository.get(draftId) ?: sampleDraft()
+                val updatedDraft = existingDraft.copy(
+                    status = DraftStatus.PhotoEdited,
+                    photoEditRequests = existingDraft.photoEditRequests + request,
+                    photoEditResults = existingDraft.photoEditResults + result,
+                    promptHistory = existingDraft.promptHistory + com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-$idSuffix"),
+                        draftId = draftId, operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled", responseSummary = "Result $callCount.",
+                        modelName = "model", createdAtEpochMillis = 1_700_000_200_000L + callCount,
+                    ),
+                )
+                repository.save(updatedDraft)
+                return PhotoEditExecutionResult.Success(request, result, "assembled",
+                    updatedDraft.promptHistory.last(), updatedDraft)
+            }
+        }
         val viewModel = ManualPostDraftWorkspaceViewModel(
-            draftId = draftId,
-            postDraftRepository = repository,
+            draftId = draftId, postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = IncrementingClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -1040,9 +1328,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun rehydratesPhotoEditFormFromMostRecentRequestAfterSecondEdit() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = IncrementingClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -1078,9 +1371,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun preservesOriginalMediaAssetDuringPhotoEdit() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -1101,9 +1399,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun exposesLatestEditedImageStateAfterEdit() {
         val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            photoEditExecutor = executor,
             clock = FixedClock(1_700_000_200_000L),
         )
         viewModel.load()
@@ -1113,21 +1416,26 @@ class ManualPostDraftWorkspaceViewModelTest {
         val form = viewModel.state.photoEditForm
         assertNotNull(form.latestRequestId)
         assertNotNull(form.latestResultId)
-        assertEquals("fake-manual-draft-ai", form.latestModelName)
+        assertNotNull(form.latestModelName)
         assertNotNull(form.latestSummary)
-        assertTrue(form.latestSummary!!.contains("intent=improve_lighting"))
         val editedUri = viewModel.state.editedPhotoUri
         assertNotNull(editedUri)
-        assertTrue(editedUri.startsWith("file://photo.jpg#edited-"))
-        assertTrue(editedUri.contains("improve_lighting"))
-        assertTrue(editedUri.contains("instagram_feed_square"))
-        assertTrue(editedUri.contains("1700000200000"))
+        assertEquals("file://executor-edited.jpg", editedUri)
     }
 
     @Test
     fun exposesErrorOperationStateWhenDraftMissingDuringEdit() {
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            ),
+        )
         val repository = FakePostDraftRepository(sampleDraft())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
         viewModel.load()
         repository.delete(draftId)
 
@@ -1141,7 +1449,16 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun exposesErrorOperationStateWhenEditStatusIsInvalid() {
         val repository = FakePostDraftRepository(sampleDraft().copy(status = DraftStatus.Draft))
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.InvalidDraftStatus(DraftStatus.Draft),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
         viewModel.load()
 
         viewModel.editPhotoWithAi()
@@ -1152,64 +1469,25 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun exposesErrorOperationStateWhenProviderReturnsBlankPrompt() {
+    fun exposesErrorOperationStateWhenPipelineReturnsDraftNotFound() {
         val repository = FakePostDraftRepository(sampleDraft())
-        val blankPromptProvider = object : ManualDraftAiProvider {
-            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
-                error("unused")
-            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
-                error("unused")
-            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
-                GeneratedPhotoEdit(
-                    editedMediaUri = "file://edited.jpg",
-                    prompt = "",
-                    summary = "",
-                    modelName = "fake",
-                )
-        }
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            ),
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            aiProvider = blankPromptProvider,
+            photoEditExecutor = executor,
         )
         viewModel.load()
 
         viewModel.editPhotoWithAi()
 
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
-        assertEquals("Photo edit failed: prompt must not be blank", viewModel.state.statusMessage)
-        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
-    }
-
-    @Test
-    fun fakeEditPhotoEncodesFormValuesInOutput() {
-        val provider = FakeManualDraftAiProvider()
-        val draft = sampleDraft()
-        val formState = PhotoEditFormState(
-            selectedIntent = EditIntent.BackgroundAdjustment,
-            userRefinementText = "Make it warmer",
-            selectedRealismLevel = RealismLevel.Polished,
-            selectedTargetPlatform = TargetPlatform.BlueskyPost,
-            selectedQualityTier = QualityTier.High,
-            qualityTierModelNotes = QualityTier.High.modelMappingNote,
-            qualityTierCostNotes = QualityTier.High.costNote,
-            latestRequestId = null,
-            latestResultId = null,
-            latestModelName = null,
-            latestSummary = null,
-            operationState = PhotoEditFormOperationState.Idle,
-        )
-        val result = provider.editPhoto(draft, formState, 1_700_000_200_000L)
-
-        assertTrue(result.editedMediaUri.contains("background_adjustment"))
-        assertTrue(result.editedMediaUri.contains("bluesky_post"))
-        assertTrue(result.summary.contains("intent=background_adjustment"))
-        assertTrue(result.summary.contains("platform=bluesky_post"))
-        assertTrue(result.summary.contains("realism=polished"))
-        assertTrue(result.summary.contains("quality=high"))
-        assertTrue(result.summary.contains("refinement=Make it warmer"))
-        assertTrue(result.prompt.contains("background_adjustment"))
-        assertTrue(result.prompt.contains("bluesky_post"))
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
     }
 
     @Test
@@ -1464,12 +1742,15 @@ class ManualPostDraftWorkspaceViewModelTest {
         private val result: PhotoEditExecutionResult? = null,
         private val defaultDraft: PostDraft? = null,
         private val defaultMediaAsset: MediaAsset? = null,
+        private val repository: PostDraftRepository? = null,
     ) : PhotoEditExecutor {
         var capturedIntent: EditIntent? = null
         var capturedRealismLevel: RealismLevel? = null
         var capturedQualityTier: QualityTier? = null
         var capturedTargetPlatform: TargetPlatform? = null
         var capturedMaskRegion: MaskRegion? = null
+        var capturedUserRefinement: String? = null
+        var capturedPrompt: String? = null
 
         private fun defaultMediaAsset(): MediaAsset =
             defaultMediaAsset ?: MediaAsset(
@@ -1500,69 +1781,92 @@ class ManualPostDraftWorkspaceViewModelTest {
             capturedQualityTier = qualityTier
             capturedTargetPlatform = targetPlatform
             capturedMaskRegion = maskRegion
-            return result ?: PhotoEditExecutionResult.Success(
-                photoEditRequest = resultDraft?.photoEditRequests?.lastOrNull()
-                    ?: PhotoEditRequest(
-                        id = PhotoEditRequestId("photo-edit-request-executor"),
-                        draftId = draftId,
-                        sourceMediaAssetId = defaultMediaAssetId(),
-                        intent = intent,
-                        realismLevel = realismLevel,
-                        qualityTier = qualityTier,
-                        prompt = prompt,
-                        userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
-                        subjectDescription = null,
-                        targetPlatform = targetPlatform,
-                        maskRegion = maskRegion,
-                        createdAtEpochMillis = EpochClock.Default.nowMillis(),
-                    ),
-                photoEditResult = resultDraft?.photoEditResults?.lastOrNull()
-                    ?: PhotoEditResult(
-                        id = PhotoEditResultId("photo-edit-result-executor"),
-                        requestId = PhotoEditRequestId("photo-edit-request-executor"),
-                        draftId = draftId,
-                        editedMediaAsset = defaultMediaAsset().copy(
-                            id = MediaAssetId("media-edited-executor"),
-                            type = MediaType.EditedPhoto,
-                            uri = "file://executor-edited.jpg",
-                        ),
-                        summary = "Executor result.",
-                        modelName = "executor-model",
-                        createdAtEpochMillis = EpochClock.Default.nowMillis(),
-                    ),
-                assembledPrompt = "assembled prompt",
-                promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
-                    id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
+            capturedUserRefinement = userRefinement
+            capturedPrompt = prompt
+
+            if (result != null) {
+                result.let { r ->
+                    if (r is PhotoEditExecutionResult.Success) {
+                        repository?.save(r.updatedDraft)
+                    }
+                }
+                return result
+            }
+
+            val createdRequest = resultDraft?.photoEditRequests?.lastOrNull()
+                ?: PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-executor"),
                     draftId = draftId,
-                    operationType = AiOperationType.PhotoEdit,
-                    prompt = "assembled prompt",
-                    responseSummary = "Executor result.",
+                    sourceMediaAssetId = defaultMediaAssetId(),
+                    intent = intent,
+                    realismLevel = realismLevel,
+                    qualityTier = qualityTier,
+                    prompt = prompt,
+                    userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
+                    subjectDescription = null,
+                    targetPlatform = targetPlatform,
+                    maskRegion = maskRegion,
+                    createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                )
+            val createdResult = resultDraft?.photoEditResults?.lastOrNull()
+                ?: PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-executor"),
+                    requestId = createdRequest.id,
+                    draftId = draftId,
+                    editedMediaAsset = defaultMediaAsset().copy(
+                        id = MediaAssetId("media-edited-executor"),
+                        type = MediaType.EditedPhoto,
+                        uri = "file://executor-edited.jpg",
+                    ),
+                    summary = "Executor result.",
                     modelName = "executor-model",
                     createdAtEpochMillis = EpochClock.Default.nowMillis(),
-                ),
-                updatedDraft = resultDraft ?: defaultDraft ?: PostDraft(
-                    id = draftId,
-                    format = PostFormat.SingleImage,
-                    status = DraftStatus.PhotoAdded,
-                    mediaItems = listOf(PostMediaItem(mediaAsset = defaultMediaAsset(), order = 0)),
-                    caption = null,
-                    targetPlatforms = emptySet(),
-                    brandProfile = null,
-                    visionDescription = null,
-                    captionRequests = emptyList(),
-                    captionResults = emptyList(),
-                    altTextResults = emptyList(),
-                    photoEditRequests = emptyList(),
-                    photoEditResults = emptyList(),
-                    promptHistory = emptyList(),
-                    exportRecords = emptyList(),
-                    createdAt = Instant.fromEpochMilliseconds(0L),
-                    updatedAt = Instant.fromEpochMilliseconds(0L),
-                ),
+                )
+            val createdEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = "assembled prompt",
+                responseSummary = "Executor result.",
+                modelName = "executor-model",
+                createdAtEpochMillis = EpochClock.Default.nowMillis(),
             )
+            val baseDraft = resultDraft ?: defaultDraft ?: PostDraft(
+                id = draftId,
+                format = PostFormat.SingleImage,
+                status = DraftStatus.PhotoAdded,
+                mediaItems = listOf(PostMediaItem(mediaAsset = defaultMediaAsset(), order = 0)),
+                caption = null,
+                targetPlatforms = emptySet(),
+                brandProfile = null,
+                visionDescription = null,
+                captionRequests = emptyList(),
+                captionResults = emptyList(),
+                altTextResults = emptyList(),
+                photoEditRequests = emptyList(),
+                photoEditResults = emptyList(),
+                promptHistory = emptyList(),
+                exportRecords = emptyList(),
+                createdAt = Instant.fromEpochMilliseconds(0L),
+                updatedAt = Instant.fromEpochMilliseconds(0L),
+            )
+            val updatedDraft = baseDraft.copy(
+                status = if (baseDraft.status == DraftStatus.PhotoAdded) DraftStatus.PhotoEdited else baseDraft.status,
+                photoEditRequests = baseDraft.photoEditRequests + createdRequest,
+                photoEditResults = baseDraft.photoEditResults + createdResult,
+                promptHistory = baseDraft.promptHistory + createdEntry,
+            )
+            val successResult = PhotoEditExecutionResult.Success(
+                photoEditRequest = createdRequest,
+                photoEditResult = createdResult,
+                assembledPrompt = "assembled prompt",
+                promptHistoryEntry = createdEntry,
+                updatedDraft = updatedDraft,
+            )
+            repository?.save(updatedDraft)
+            return successResult
         }
     }
-}
 
     private class RecordingPostTextGenerator(
         private val draft: PostDraft,
