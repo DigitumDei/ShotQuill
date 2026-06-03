@@ -510,13 +510,30 @@ class ManualPostDraftWorkspaceViewModel(
                     is PhotoEditExecutionError.Provider -> "Unable to edit photo: ${cause.error.userMessage}"
                     is PhotoEditExecutionError.FailedToLoadSourceImage -> cause.message
                     is PhotoEditExecutionError.FailedToSaveEditedImage -> cause.message
-                    is PhotoEditExecutionError.FailurePersisted -> cause.cause.message?.let { "Photo edit failed: $it" } ?: "Photo edit failed"
+                    is PhotoEditExecutionError.FailurePersisted -> {
+                        val innerMsg = when (val inner = cause.cause) {
+                            is PhotoEditExecutionError.Provider -> inner.error.userMessage
+                            is PhotoEditExecutionError.FailedToLoadSourceImage -> inner.message
+                            is PhotoEditExecutionError.FailedToSaveEditedImage -> inner.message
+                            else -> null
+                        }
+                        innerMsg?.let { "Photo edit failed: $it" } ?: "Photo edit failed"
+                    }
                 }
-                state = state.copy(
-                    statusMessage = msg,
-                    photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
-                    actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
-                )
+                if (cause is PhotoEditExecutionError.FailurePersisted) {
+                    val baseState = cause.updatedDraft.toState(msg, state.isPromptHistoryVisible)
+                    state = baseState.copy(
+                        photoEditForm = baseState.photoEditForm.copy(
+                            operationState = PhotoEditFormOperationState.Error,
+                        ),
+                    )
+                } else {
+                    state = state.copy(
+                        statusMessage = msg,
+                        photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
+                        actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
+                    )
+                }
             }
         }
     }

@@ -7,10 +7,12 @@ import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
+import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportStatus
+import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -29,6 +31,9 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.datetime.Instant
@@ -651,6 +656,12 @@ class ManualPostDraftWorkspaceViewModelTest {
             return true
         }
 
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val current = drafts[id] ?: return false
+            drafts[id] = current.copy(updatedAt = updatedAt)
+            return true
+        }
+
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
     }
 
@@ -1200,6 +1211,358 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(result.prompt.contains("background_adjustment"))
         assertTrue(result.prompt.contains("bluesky_post"))
     }
+
+    @Test
+    fun usesConfiguredPhotoEditExecutorWhenEditingPhoto() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor()
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(TargetPlatform.InstagramFeedSquare, executor.capturedTargetPlatform)
+        assertEquals(EditIntent.ImproveLighting, executor.capturedIntent)
+        assertEquals(RealismLevel.Photoreal, executor.capturedRealismLevel)
+        assertEquals(QualityTier.Standard, executor.capturedQualityTier)
+        assertNull(executor.capturedMaskRegion)
+    }
+
+    @Test
+    fun usesUpdatedDraftFromSuccessfulPipelineResult() {
+        val editedDraft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-pipeline"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Pipeline prompt",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-pipeline"),
+                    requestId = PhotoEditRequestId("photo-edit-request-pipeline"),
+                    draftId = draftId,
+                    editedMediaAsset = sampleMediaAsset().copy(
+                        id = MediaAssetId("media-edited-pipeline"),
+                        type = MediaType.EditedPhoto,
+                        uri = "file://pipeline-edited.jpg",
+                    ),
+                    summary = "Pipeline edit summary.",
+                    modelName = "pipeline-model",
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(resultDraft = editedDraft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("file://pipeline-edited.jpg", viewModel.state.editedPhotoUri)
+        assertEquals("Edited photo created", viewModel.state.statusMessage)
+        assertEquals(PhotoEditFormOperationState.Idle, viewModel.state.photoEditForm.operationState)
+        assertEquals("Pipeline edit summary.", viewModel.state.photoEditForm.latestSummary)
+        assertEquals("pipeline-model", viewModel.state.photoEditForm.latestModelName)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun exposesErrorStateWhenPipelineReturnsProviderFailure() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.Provider(AiError.RateLimited()),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Unable to edit photo: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun exposesErrorStateWhenPipelineReturnsFailurePersisted() {
+        val persistedDraft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-failed"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Failing request",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = persistedDraft.photoEditRequests.first(),
+                    assembledPrompt = "assembled",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-failed"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled",
+                        responseSummary = "Provider error",
+                        modelName = null,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = persistedDraft,
+                    cause = PhotoEditExecutionError.Provider(AiError.RateLimited()),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun failurePersistedRebuildsDraftStateIncludingEditedUriAndRequestForm() {
+        val persistedDraft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-failed"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.RemoveObject,
+                    realismLevel = RealismLevel.Polished,
+                    qualityTier = QualityTier.High,
+                    prompt = "Remove object",
+                    userRefinement = "Be careful",
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.BlueskyPost,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = persistedDraft.photoEditRequests.first(),
+                    assembledPrompt = "assembled",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-failed"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled",
+                        responseSummary = "Provider error",
+                        modelName = null,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = persistedDraft,
+                    cause = PhotoEditExecutionError.Provider(AiError.RateLimited()),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        val form = viewModel.state.photoEditForm
+        assertEquals(EditIntent.RemoveObject, form.selectedIntent)
+        assertEquals("Be careful", form.userRefinementText)
+        assertEquals(RealismLevel.Polished, form.selectedRealismLevel)
+        assertEquals(TargetPlatform.BlueskyPost, form.selectedTargetPlatform)
+        assertEquals(QualityTier.High, form.selectedQualityTier)
+        assertEquals(PhotoEditFormOperationState.Error, form.operationState)
+    }
+
+    @Test
+    fun disablesEditFormDuringPipelineExecution() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val capturedStates = mutableListOf<PhotoEditFormOperationState>()
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val executor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
+                capturedStates.add(viewModelRef[0]!!.state.photoEditForm.operationState)
+                return PhotoEditExecutionResult.Failure(PhotoEditExecutionError.DraftNotFound)
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(1, capturedStates.size)
+        assertEquals(PhotoEditFormOperationState.Loading, capturedStates.single())
+    }
+
+    private class RecordingPhotoEditExecutor(
+        private val resultDraft: PostDraft? = null,
+        private val result: PhotoEditExecutionResult? = null,
+        private val defaultDraft: PostDraft? = null,
+        private val defaultMediaAsset: MediaAsset? = null,
+    ) : PhotoEditExecutor {
+        var capturedIntent: EditIntent? = null
+        var capturedRealismLevel: RealismLevel? = null
+        var capturedQualityTier: QualityTier? = null
+        var capturedTargetPlatform: TargetPlatform? = null
+        var capturedMaskRegion: MaskRegion? = null
+
+        private fun defaultMediaAsset(): MediaAsset =
+            defaultMediaAsset ?: MediaAsset(
+                id = MediaAssetId("media-1"),
+                type = MediaType.Photo,
+                uri = "file://photo.jpg",
+                mimeType = "image/jpeg",
+                widthPx = 1080,
+                heightPx = 1080,
+                createdAtEpochMillis = 0L,
+            )
+
+        private fun defaultMediaAssetId(): MediaAssetId = defaultMediaAsset().id
+
+        override fun execute(
+            draftId: PostDraftId,
+            intent: EditIntent,
+            realismLevel: RealismLevel,
+            qualityTier: QualityTier,
+            targetPlatform: TargetPlatform,
+            prompt: String,
+            userRefinement: String?,
+            maskRegion: MaskRegion?,
+            reuseVisionDescription: Boolean,
+        ): PhotoEditExecutionResult {
+            capturedIntent = intent
+            capturedRealismLevel = realismLevel
+            capturedQualityTier = qualityTier
+            capturedTargetPlatform = targetPlatform
+            capturedMaskRegion = maskRegion
+            return result ?: PhotoEditExecutionResult.Success(
+                photoEditRequest = resultDraft?.photoEditRequests?.lastOrNull()
+                    ?: PhotoEditRequest(
+                        id = PhotoEditRequestId("photo-edit-request-executor"),
+                        draftId = draftId,
+                        sourceMediaAssetId = defaultMediaAssetId(),
+                        intent = intent,
+                        realismLevel = realismLevel,
+                        qualityTier = qualityTier,
+                        prompt = prompt,
+                        userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
+                        subjectDescription = null,
+                        targetPlatform = targetPlatform,
+                        maskRegion = maskRegion,
+                        createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                    ),
+                photoEditResult = resultDraft?.photoEditResults?.lastOrNull()
+                    ?: PhotoEditResult(
+                        id = PhotoEditResultId("photo-edit-result-executor"),
+                        requestId = PhotoEditRequestId("photo-edit-request-executor"),
+                        draftId = draftId,
+                        editedMediaAsset = defaultMediaAsset().copy(
+                            id = MediaAssetId("media-edited-executor"),
+                            type = MediaType.EditedPhoto,
+                            uri = "file://executor-edited.jpg",
+                        ),
+                        summary = "Executor result.",
+                        modelName = "executor-model",
+                        createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                    ),
+                assembledPrompt = "assembled prompt",
+                promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                    id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
+                    draftId = draftId,
+                    operationType = AiOperationType.PhotoEdit,
+                    prompt = "assembled prompt",
+                    responseSummary = "Executor result.",
+                    modelName = "executor-model",
+                    createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                ),
+                updatedDraft = resultDraft ?: defaultDraft ?: PostDraft(
+                    id = draftId,
+                    format = PostFormat.SingleImage,
+                    status = DraftStatus.PhotoAdded,
+                    mediaItems = listOf(PostMediaItem(mediaAsset = defaultMediaAsset(), order = 0)),
+                    caption = null,
+                    targetPlatforms = emptySet(),
+                    brandProfile = null,
+                    visionDescription = null,
+                    captionRequests = emptyList(),
+                    captionResults = emptyList(),
+                    altTextResults = emptyList(),
+                    photoEditRequests = emptyList(),
+                    photoEditResults = emptyList(),
+                    promptHistory = emptyList(),
+                    exportRecords = emptyList(),
+                    createdAt = Instant.fromEpochMilliseconds(0L),
+                    updatedAt = Instant.fromEpochMilliseconds(0L),
+                ),
+            )
+        }
+    }
+}
 
     private class RecordingPostTextGenerator(
         private val draft: PostDraft,
