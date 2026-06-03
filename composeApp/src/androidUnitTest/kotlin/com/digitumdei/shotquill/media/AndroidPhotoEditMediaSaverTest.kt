@@ -6,6 +6,7 @@ import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.workflow.SaveEditedImageResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import java.io.File
@@ -165,5 +166,50 @@ class AndroidPhotoEditMediaSaverTest {
         val success = assertIs<SaveEditedImageResult.Success>(result)
         val savedFile = File(success.mediaAsset.uri.removePrefix("file://"))
         assertEquals("photo-edited-unique-filename.jpg", savedFile.name)
+    }
+
+    @Test
+    fun `save fails when destination file already exists`() {
+        val editedId = MediaAssetId("photo-edited-existing-dest")
+        val destDir = File(tmpDir, "media/edited")
+        destDir.mkdirs()
+        val destFile = File(destDir, "${editedId.value}.jpg")
+        destFile.writeBytes(byteArrayOf(9, 9, 9))
+        val originalBytes = destFile.readBytes()
+
+        val result = saver.save(
+            bytes = byteArrayOf(1, 2, 3),
+            mimeType = "image/jpeg",
+            originalMediaAsset = originalMediaAsset,
+            mediaAssetId = editedId,
+            createdAtEpochMillis = 1_000_000_900_000L,
+        )
+
+        assertIs<SaveEditedImageResult.Failure>(result)
+        // Existing file must be untouched
+        assertTrue(destFile.exists())
+        assertTrue(destFile.readBytes().contentEquals(originalBytes))
+    }
+
+    @Test
+    fun `save fails when original source uri matches destination path`() {
+        val editedId = MediaAssetId("photo-edited-self-collision")
+        val destDir = File(tmpDir, "media/edited")
+        destDir.mkdirs()
+        val destFile = File(destDir, "${editedId.value}.jpg")
+        // The original asset points to the exact path the saver would write to
+        val collidingAsset = originalMediaAsset.copy(uri = "file://${destFile.absolutePath}")
+
+        val result = saver.save(
+            bytes = byteArrayOf(4, 5, 6),
+            mimeType = "image/jpeg",
+            originalMediaAsset = collidingAsset,
+            mediaAssetId = editedId,
+            createdAtEpochMillis = 1_000_000_950_000L,
+        )
+
+        assertIs<SaveEditedImageResult.Failure>(result)
+        // No file should have been created
+        assertFalse(destFile.exists())
     }
 }

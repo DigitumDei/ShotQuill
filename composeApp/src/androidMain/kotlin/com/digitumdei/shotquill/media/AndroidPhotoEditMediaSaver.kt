@@ -25,6 +25,14 @@ class AndroidPhotoEditMediaSaver(
         }
         val fileName = "${mediaAssetId.value}$extension"
         val destFile = File(destDir, fileName)
+
+        if (originalMediaAsset.uri == "file://${destFile.absolutePath}") {
+            return SaveEditedImageResult.Failure("Destination path matches original source file URI")
+        }
+        if (destFile.exists()) {
+            return SaveEditedImageResult.Failure("Destination file already exists: $destFile")
+        }
+
         return try {
             FileOutputStream(destFile).use { output ->
                 output.write(bytes)
