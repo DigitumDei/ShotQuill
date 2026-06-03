@@ -914,6 +914,63 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(PhotoEditFormOperationState.Idle, viewModel.state.photoEditForm.operationState)
     }
 
+    @Test
+    fun exposesErrorOperationStateWhenDraftMissingDuringEdit() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+        repository.delete(draftId)
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun exposesErrorOperationStateWhenEditStatusIsInvalid() {
+        val repository = FakePostDraftRepository(sampleDraft().copy(status = DraftStatus.Draft))
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Cannot edit photo while status is draft", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun exposesErrorOperationStateWhenProviderReturnsBlankPrompt() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val blankPromptProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, nowEpochMillis: Long): GeneratedPhotoEdit =
+                GeneratedPhotoEdit(
+                    editedMediaUri = "file://edited.jpg",
+                    prompt = "",
+                    summary = "",
+                    modelName = "fake",
+                )
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = blankPromptProvider,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: prompt must not be blank", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
     private class RecordingPostTextGenerator(
         private val draft: PostDraft,
     ) : PostTextGenerator {
