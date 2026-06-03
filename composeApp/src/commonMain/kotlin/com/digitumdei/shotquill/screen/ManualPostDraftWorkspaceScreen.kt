@@ -151,7 +151,7 @@ fun ManualPostDraftWorkspaceContent(
         OutlinedButton(
             onClick = onEditPhotoWithAi,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canEditPhotoWithAi,
+            enabled = state.actions.canEditPhotoWithAi && state.photoEditForm.operationState != PhotoEditFormOperationState.Loading,
         ) {
             Text("Edit photo with AI")
         }
