@@ -840,7 +840,26 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun preservesErrorOperationStateWhenAiProviderThrows() {
+    fun preservesRawRefinementInMemoryButTrimsInStoredRequest() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.updatePhotoEditRefinement("  Remove the cup  ")
+
+        assertEquals("  Remove the cup  ", viewModel.state.photoEditForm.userRefinementText)
+
+        viewModel.editPhotoWithAi()
+
+        val request = repository.get(draftId)?.photoEditRequests?.single()
+        assertEquals("Remove the cup", request?.userRefinement)
+    }
+
+    @Test
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingProvider = object : ManualDraftAiProvider {
             override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =

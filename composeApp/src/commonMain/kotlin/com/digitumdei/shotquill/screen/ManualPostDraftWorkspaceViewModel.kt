@@ -397,7 +397,7 @@ class ManualPostDraftWorkspaceViewModel(
             realismLevel = form.selectedRealismLevel,
             qualityTier = form.selectedQualityTier,
             prompt = generated.prompt,
-            userRefinement = form.userRefinementText.ifBlank { null },
+            userRefinement = form.userRefinementText.trim().takeIf { it.isNotEmpty() },
             subjectDescription = draft.visionDescription?.description,
             targetPlatform = form.selectedTargetPlatform,
             maskRegion = null,
