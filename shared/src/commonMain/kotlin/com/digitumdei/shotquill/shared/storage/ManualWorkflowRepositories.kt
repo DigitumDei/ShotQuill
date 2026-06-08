@@ -106,6 +106,15 @@ interface ManualWorkflowRepository :
     fun savePhotoEditResult(photoEditResult: PhotoEditResult)
     fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry)
     fun saveExportRecord(exportRecord: ExportRecord)
+    fun savePhotoEditSuccess(
+        draftId: PostDraftId,
+        editedMediaAsset: MediaAsset,
+        editRequest: PhotoEditRequest,
+        editResult: PhotoEditResult,
+        promptHistoryEntry: PromptHistoryEntry,
+        targetStatus: DraftStatus,
+        updatedAt: Instant,
+    ): PostDraft?
     fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,

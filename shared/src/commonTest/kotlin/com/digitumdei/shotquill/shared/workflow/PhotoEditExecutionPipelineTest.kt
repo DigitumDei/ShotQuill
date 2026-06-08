@@ -1111,6 +1111,28 @@ class PhotoEditExecutionPipelineTest {
         override fun listExportRecordsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: com.digitumdei.shotquill.shared.domain.ExportRecord) = Unit
 
+        override fun savePhotoEditSuccess(
+            draftId: PostDraftId,
+            editedMediaAsset: MediaAsset,
+            editRequest: PhotoEditRequest,
+            editResult: PhotoEditResult,
+            promptHistoryEntry: PromptHistoryEntry,
+            targetStatus: DraftStatus,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val currentDraft = drafts[draftId] ?: return null
+            mediaAssets[editedMediaAsset.id] = editedMediaAsset
+            drafts[draftId] = currentDraft.copy(
+                status = targetStatus,
+                updatedAt = updatedAt,
+                selectedMediaAssetId = editedMediaAsset.id,
+                photoEditRequests = currentDraft.photoEditRequests + editRequest,
+                photoEditResults = currentDraft.photoEditResults + editResult,
+                promptHistory = currentDraft.promptHistory + promptHistoryEntry,
+            )
+            return drafts[draftId]
+        }
+
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,

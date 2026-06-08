@@ -450,6 +450,45 @@ class SqlDelightManualWorkflowRepository(
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
+    override fun savePhotoEditSuccess(
+        draftId: PostDraftId,
+        editedMediaAsset: MediaAsset,
+        editRequest: PhotoEditRequest,
+        editResult: PhotoEditResult,
+        promptHistoryEntry: PromptHistoryEntry,
+        targetStatus: DraftStatus,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
+            save(editedMediaAsset)
+            savePhotoEditRequest(editRequest)
+            savePhotoEditResult(editResult)
+            savePromptHistoryEntry(promptHistoryEntry)
+            if (targetStatus != currentDraft.status) {
+                currentDraft.transitionTo(targetStatus, updatedAt)
+                queries.updatePostDraftStatus(
+                    status = targetStatus.wireValue,
+                    updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                    id = draftId.value,
+                )
+            } else {
+                queries.updatePostDraftUpdatedAt(
+                    updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                    id = draftId.value,
+                )
+            }
+            queries.updatePostDraftSelectedMediaAsset(
+                selected_media_asset_id = editedMediaAsset.id.value,
+                updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
+
     override fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,

@@ -235,28 +235,17 @@ class PhotoEditExecutionPipeline(
             PhotoEditExecutionError.InvalidDraftStatus(currentBeforeSave.status),
         )
 
-        repository.save(editedMediaAsset)
-        repository.savePhotoEditRequest(editRequest)
-        repository.savePhotoEditResult(editResult)
-        repository.savePromptHistoryEntry(promptHistoryEntry)
         val updatedAt = operationUpdatedAt(currentBeforeSave, now)
-        if (targetStatus != currentBeforeSave.status) {
-            repository.updateStatus(draftId, targetStatus, updatedAt)
-        } else {
-            repository.updateUpdatedAt(draftId, updatedAt)
-        }
-        repository.updateSelectedMediaAsset(draftId, editedMediaAsset.id, updatedAt)
-
-        val baseDraft = if (targetStatus != currentBeforeSave.status) {
-            currentBeforeSave.transitionTo(targetStatus, updatedAt)
-        } else {
-            currentBeforeSave.copy(updatedAt = updatedAt)
-        }
-        val updatedDraft = baseDraft.copy(
-            selectedMediaAssetId = editedMediaAsset.id,
-            photoEditRequests = currentBeforeSave.photoEditRequests + editRequest,
-            photoEditResults = currentBeforeSave.photoEditResults + editResult,
-            promptHistory = currentBeforeSave.promptHistory + promptHistoryEntry,
+        val persistedDraft = repository.savePhotoEditSuccess(
+            draftId = draftId,
+            editedMediaAsset = editedMediaAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = targetStatus,
+            updatedAt = updatedAt,
+        ) ?: return PhotoEditExecutionResult.Failure(
+            PhotoEditExecutionError.DraftNotFound,
         )
 
         return PhotoEditExecutionResult.Success(
@@ -264,7 +253,7 @@ class PhotoEditExecutionPipeline(
             photoEditResult = editResult,
             assembledPrompt = assembledPrompt,
             promptHistoryEntry = promptHistoryEntry,
-            updatedDraft = updatedDraft,
+            updatedDraft = persistedDraft,
         )
     }
 

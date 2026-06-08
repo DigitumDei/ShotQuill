@@ -724,6 +724,26 @@ class PostTextGenerationPipelineTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun savePhotoEditSuccess(
+            draftId: PostDraftId,
+            editedMediaAsset: MediaAsset,
+            editRequest: PhotoEditRequest,
+            editResult: PhotoEditResult,
+            promptHistoryEntry: PromptHistoryEntry,
+            targetStatus: DraftStatus,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            drafts[draftId] = draft.copy(
+                status = targetStatus,
+                updatedAt = updatedAt,
+                selectedMediaAssetId = editedMediaAsset.id,
+                photoEditRequests = draft.photoEditRequests + editRequest,
+                photoEditResults = draft.photoEditResults + editResult,
+                promptHistory = draft.promptHistory + promptHistoryEntry,
+            )
+            return drafts[draftId]
+        }
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,
