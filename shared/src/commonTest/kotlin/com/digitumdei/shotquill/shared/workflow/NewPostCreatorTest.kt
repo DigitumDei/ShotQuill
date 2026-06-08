@@ -40,7 +40,7 @@ class NewPostCreatorTest {
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean =
             false
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: kotlinx.datetime.Instant): Boolean =
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: kotlinx.datetime.Instant): Boolean =
             false
     }
 
@@ -217,7 +217,7 @@ class NewPostCreatorTest {
 
             override fun updateSelectedMediaAsset(
                 id: PostDraftId,
-                mediaAssetId: MediaAssetId,
+                mediaAssetId: MediaAssetId?,
                 updatedAt: kotlinx.datetime.Instant,
             ): Boolean = false
         }

@@ -529,11 +529,11 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
+        postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)
         val updated = draft.copy(
             selectedMediaAssetId = null,
             updatedAt = operationUpdatedAt,
         )
-        postDraftRepository.save(updated)
         state = updated.toState("Using original photo", state.isPromptHistoryVisible)
     }
 

@@ -227,10 +227,10 @@ class SqlDelightManualWorkflowRepository(
         return true
     }
 
-    override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean {
+    override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
         if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
         queries.updatePostDraftSelectedMediaAsset(
-            selected_media_asset_id = mediaAssetId.value,
+            selected_media_asset_id = mediaAssetId?.value,
             updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
             id = id.value,
         )

@@ -793,7 +793,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId, updatedAt: Instant): Boolean {
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
             val current = drafts[id] ?: return false
             drafts[id] = current.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
             return true
