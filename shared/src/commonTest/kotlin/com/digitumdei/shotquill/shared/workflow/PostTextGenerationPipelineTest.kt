@@ -605,13 +605,19 @@ class PostTextGenerationPipelineTest {
 
     private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        private val mediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
         var deleteBeforeDraftGetNumber: Int? = null
         private var draftGetCount = 0
 
-        override fun save(mediaAsset: MediaAsset) = Unit
-        override fun get(id: MediaAssetId): MediaAsset? = drafts.values
-            .flatMap { draft -> draft.mediaItems.map { it.mediaAsset } }
-            .firstOrNull { it.id == id }
+        init {
+            initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+        }
+
+        override fun save(mediaAsset: MediaAsset) {
+            mediaAssets[mediaAsset.id] = mediaAsset
+        }
+
+        override fun get(id: MediaAssetId): MediaAsset? = mediaAssets[id]
 
         override fun save(brandProfile: BrandProfile) = Unit
         override fun get(id: BrandProfileId): BrandProfile? = null
@@ -734,6 +740,7 @@ class PostTextGenerationPipelineTest {
             updatedAt: Instant,
         ): PostDraft? {
             val draft = drafts[draftId] ?: return null
+            mediaAssets[editedMediaAsset.id] = editedMediaAsset
             drafts[draftId] = draft.copy(
                 status = targetStatus,
                 updatedAt = updatedAt,
@@ -773,7 +780,10 @@ class PostTextGenerationPipelineTest {
             return drafts[draftId]
         }
 
-        override fun clearAll() = drafts.clear()
+        override fun clearAll() {
+            drafts.clear()
+            mediaAssets.clear()
+        }
 
         private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
             when {
