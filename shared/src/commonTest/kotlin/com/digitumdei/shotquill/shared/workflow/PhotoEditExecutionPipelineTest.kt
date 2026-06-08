@@ -842,6 +842,200 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `failed edit persists request and history entries in repository and advances updatedAt`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(expectedPrompt, stored.photoEditRequests.first().prompt,
+            "Stored request prompt must match assembled prompt on failure")
+        assertEquals(1, stored.promptHistory.size)
+        assertEquals(expectedPrompt, stored.promptHistory.first().prompt,
+            "Stored prompt history entry prompt must match assembled prompt on failure")
+        assertNotNull(stored.promptHistory.first().responseSummary,
+            "Failure prompt history entry must have a response summary")
+        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.first().operationType)
+
+        val baseInstant = Instant.fromEpochMilliseconds(baseEpoch)
+        assertTrue(stored.updatedAt > baseInstant,
+            "Stored draft updatedAt must advance beyond base on failure")
+        assertEquals(stored.updatedAt, persisted.updatedDraft.updatedAt,
+            "Stored and FailurePersisted updatedAt must match")
+
+        assertEquals(0, stored.photoEditResults.size,
+            "No results must be stored on failure")
+    }
+
+    @Test
+    fun `successful edit persists selectedMediaAssetId atomically with results in repository`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val editedAssetId = success.photoEditResult.editedMediaAsset.id
+        val stored = assertNotNull(repository.get(draftId))
+
+        assertEquals(editedAssetId, stored.selectedMediaAssetId,
+            "selectedMediaAssetId must be atomically set to the newly edited asset in the stored draft")
+        assertTrue(stored.photoEditResults.any { it.editedMediaAsset.id == editedAssetId },
+            "Edited asset must be present in stored photoEditResults")
+        assertEquals(1, stored.photoEditResults.size)
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(1, stored.promptHistory.size)
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+
+        assertEquals(editedAssetId, success.updatedDraft.selectedMediaAssetId,
+            "Returned updatedDraft must also have selectedMediaAssetId set to the edited asset")
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch),
+            "Stored draft updatedAt must advance on success")
+    }
+
+    @Test
+    fun `rehydrated draft selectedMediaAssetId is used as source for downstream pipeline edit`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val firstResult = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make it brighter",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+        val firstSuccess = assertIs<PhotoEditExecutionResult.Success>(firstResult)
+        val firstEditedAssetId = firstSuccess.photoEditResult.editedMediaAsset.id
+
+        val rehydratedDraft = assertNotNull(repository.get(draftId))
+        assertEquals(firstEditedAssetId, rehydratedDraft.selectedMediaAssetId,
+            "Rehydrated draft must have selectedMediaAssetId set to the first edited asset")
+
+        clock.now = 1_700_000_200_000L
+        var capturedSourceId: MediaAssetId? = null
+        val capturingImageSource = PhotoEditImageSource { asset ->
+            capturedSourceId = asset.id
+            SourceImageResult.Success(sampleAiImageInput())
+        }
+        val secondPipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = settingsRepository,
+            imageSource = capturingImageSource,
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/re-edit.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            clock = clock,
+        )
+
+        val secondResult = secondPipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Make further adjustments",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val secondSuccess = assertIs<PhotoEditExecutionResult.Success>(secondResult)
+
+        assertEquals(firstEditedAssetId, capturedSourceId,
+            "Downstream pipeline must use the selected edited asset from the rehydrated draft as source")
+        assertEquals(firstEditedAssetId, secondSuccess.photoEditRequest.sourceMediaAssetId,
+            "Second edit request source must be the first edited asset")
+
+        val finalStored = assertNotNull(repository.get(draftId))
+        assertEquals(2, finalStored.photoEditResults.size,
+            "Both edits must be recorded in photoEditResults")
+        assertEquals(2, finalStored.photoEditRequests.size,
+            "Both requests must be recorded in photoEditRequests")
+        assertEquals(2, finalStored.promptHistory.size,
+            "Both prompt history entries must be recorded")
+        assertEquals(DraftStatus.PhotoEdited, finalStored.status)
+        assertTrue(finalStored.updatedAt > Instant.fromEpochMilliseconds(1_700_000_100_000L),
+            "updatedAt must advance on second edit")
+    }
+
+    @Test
     fun `PhotoEditExecutionResult Success and Failure are sealed subtypes`() {
         assertIs<PhotoEditExecutionResult>(PhotoEditExecutionResult.Success(
             photoEditRequest = samplePhotoEditRequest(),
