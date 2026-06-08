@@ -621,38 +621,38 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
         driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'InstagramFeedSquare')", 0)
 
-        driver.execute(null, "ALTER TABLE post_drafts ADD COLUMN selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL", 0)
+        Migrations.migrateV1ToV2 { sql -> driver.execute(null, sql, 0) }
 
-        val cursor = driver.executeQuery(null, "SELECT selected_media_asset_id FROM post_drafts WHERE id = 'draft-1'", 0)
-        assertTrue(cursor.next())
-        assertNull(cursor.getString(0))
-        assertFalse(cursor.next())
-        cursor.close()
+        val repository = SqlDelightManualWorkflowRepository(driver)
 
-        val cursor2 = driver.executeQuery(null, "SELECT selected_media_asset_id FROM post_drafts WHERE id = 'draft-2'", 0)
-        assertTrue(cursor2.next())
-        assertNull(cursor2.getString(0))
-        cursor2.close()
+        val draft1 = repository.get(PostDraftId("draft-1"))
+        assertNotNull(draft1)
+        assertEquals(PostFormat.SingleImage, draft1.format)
+        assertEquals(DraftStatus.PhotoAdded, draft1.status)
+        assertNull(draft1.caption)
+        assertEquals(1, draft1.mediaItems.size)
+        assertEquals(MediaAssetId("media-1"), draft1.mediaItems[0].mediaAsset.id)
+        assertTrue(draft1.targetPlatforms.contains(TargetPlatform.InstagramFeedSquare))
+        assertNull(draft1.selectedMediaAssetId)
 
-        driver.execute(null, "UPDATE post_drafts SET selected_media_asset_id = 'media-1' WHERE id = 'draft-1'", 0)
-        val cursor3 = driver.executeQuery(null, "SELECT selected_media_asset_id FROM post_drafts WHERE id = 'draft-1'", 0)
-        assertTrue(cursor3.next())
-        assertEquals("media-1", cursor3.getString(0))
-        cursor3.close()
+        val draft2 = repository.get(PostDraftId("draft-2"))
+        assertNotNull(draft2)
+        assertEquals(PostFormat.SingleImage, draft2.format)
+        assertEquals(DraftStatus.Draft, draft2.status)
+        assertEquals("existing caption", draft2.caption?.text)
+        assertNull(draft2.selectedMediaAssetId)
+
+        repository.updateSelectedMediaAsset(
+            id = PostDraftId("draft-1"),
+            mediaAssetId = MediaAssetId("media-1"),
+            updatedAt = Instant.fromEpochMilliseconds(1_700_000_070_000L),
+        )
+        val withSelection = repository.get(PostDraftId("draft-1"))
+        assertEquals(MediaAssetId("media-1"), withSelection?.selectedMediaAssetId)
 
         driver.execute(null, "DELETE FROM media_assets WHERE id = 'media-1'", 0)
-        val cursor4 = driver.executeQuery(null, "SELECT selected_media_asset_id FROM post_drafts WHERE id = 'draft-1'", 0)
-        assertTrue(cursor4.next())
-        assertNull(cursor4.getString(0))
-        cursor4.close()
-
-        val cursor5 = driver.executeQuery(null, "SELECT id, format, status, caption_text FROM post_drafts WHERE id = 'draft-2'", 0)
-        assertTrue(cursor5.next())
-        assertEquals("draft-2", cursor5.getString(0))
-        assertEquals("SingleImage", cursor5.getString(1))
-        assertEquals("Draft", cursor5.getString(2))
-        assertEquals("existing caption", cursor5.getString(3))
-        cursor5.close()
+        val afterCascade = repository.get(PostDraftId("draft-1"))
+        assertNull(afterCascade?.selectedMediaAssetId)
 
         driver.close()
     }
