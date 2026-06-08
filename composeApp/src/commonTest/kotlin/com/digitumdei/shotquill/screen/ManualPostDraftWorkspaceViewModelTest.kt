@@ -115,7 +115,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
 
-        assertNull(viewModel.state.activePhotoUri, "Active photo should be original when no selection made")
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri, "Active photo defaults to original when no selection made")
         assertTrue(viewModel.state.actions.canSelectEditedPhoto)
 
         viewModel.selectEditedPhoto()

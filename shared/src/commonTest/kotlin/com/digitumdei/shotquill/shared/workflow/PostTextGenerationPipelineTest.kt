@@ -357,6 +357,47 @@ class PostTextGenerationPipelineTest {
         assertEquals(3, stored.promptHistory.size)
     }
 
+    @Test
+    fun usesEditedAssetForVisionAndAltTextWhenSelected() {
+        val editedMediaAssetId = MediaAssetId("media-edited-1")
+        val editedMediaAsset = MediaAsset(
+            id = editedMediaAssetId,
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080,
+            heightPx = 1350,
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = editedMediaAssetId,
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-1"),
+                    requestId = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    editedMediaAsset = editedMediaAsset,
+                    summary = "Adjusted brightness.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(editedMediaAssetId, success.visionDescription.mediaAssetId)
+        assertEquals(editedMediaAssetId, success.altTextResult.mediaAssetId)
+    }
+
     private fun pipeline(
         repository: ManualWorkflowRepository,
         settingsRepository: InMemoryLocalSettingsRepository,

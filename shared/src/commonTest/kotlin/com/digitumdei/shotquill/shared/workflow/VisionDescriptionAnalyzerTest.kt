@@ -133,6 +133,48 @@ class VisionDescriptionAnalyzerTest {
         assertEquals(1, repository.get(draftId)?.promptHistory?.size)
     }
 
+    @Test
+    fun analyzesEditedAssetWhenSelected() {
+        val editedMediaAssetId = MediaAssetId("media-edited-1")
+        val editedMediaAsset = MediaAsset(
+            id = editedMediaAssetId,
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080,
+            heightPx = 1350,
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = editedMediaAssetId,
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-1"),
+                    requestId = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    editedMediaAsset = editedMediaAsset,
+                    summary = "Adjusted brightness.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = FakeAiProvider(modelName = "fake-vision"),
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
+        assertEquals(editedMediaAssetId, success.visionDescription.mediaAssetId)
+        assertTrue(success.visionDescription.description.startsWith("Fake vision for media-edited-1"))
+    }
+
     private fun sampleDraft(): PostDraft =
         PostDraft(
             id = draftId,
