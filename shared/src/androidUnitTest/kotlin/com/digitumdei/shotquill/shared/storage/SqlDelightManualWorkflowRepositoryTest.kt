@@ -868,4 +868,20 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(newUpdatedAt, stored.updatedAt)
         driver.close()
     }
+
+    @Test fun `updateSelectedMediaAsset with null clears selection and advances timestamp`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val editedId = MediaAssetId("media-edited-1")
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = editedId))
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, original.selectedMediaAssetId)
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), null, newUpdatedAt))
+        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("missing"), null, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
 }

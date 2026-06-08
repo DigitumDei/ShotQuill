@@ -514,11 +514,14 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
+        if (!postDraftRepository.updateSelectedMediaAsset(draftId, latestResult.editedMediaAsset.id, operationUpdatedAt)) {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
         val updated = draft.copy(
             selectedMediaAssetId = latestResult.editedMediaAsset.id,
             updatedAt = operationUpdatedAt,
         )
-        postDraftRepository.save(updated)
         state = updated.toState("Using edited photo", state.isPromptHistoryVisible)
     }
 
@@ -529,7 +532,10 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
-        postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)
+        if (!postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)) {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
         val updated = draft.copy(
             selectedMediaAssetId = null,
             updatedAt = operationUpdatedAt,
