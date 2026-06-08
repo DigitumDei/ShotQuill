@@ -232,6 +232,157 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun activePhotoUriDerivesFromOriginalWhenNoSelectionMade() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertNull(viewModel.state.editedPhotoUri)
+    }
+
+    @Test
+    fun activePhotoUriDerivesFromEditedAfterSelectEditedPhoto() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+        viewModel.selectEditedPhoto()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        val stored = repository.get(draftId)
+        assertEquals(MediaAssetId("media-edited-1"), stored?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun activePhotoUriRevertsToOriginalAfterSelectOriginalPhoto() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        val stored = repository.get(draftId)
+        assertNull(stored?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun canSelectEditedPhotoIsFalseWhenNoEditedResultsExist() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+    }
+
+    @Test
+    fun canSelectOriginalPhotoIsFalseWhenOriginalIsActive() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+    }
+
+    @Test
+    fun selectionActionFlagsAreFalseForArchivedDraft() {
+        val repository = FakePostDraftRepository(
+            sampleDraftWithEditedMedia().copy(status = DraftStatus.Archived),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+    }
+
+    @Test
+    fun selectEditedPhotoPersistsSelectedMediaAssetIdInRepository() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertNull(repository.get(draftId)?.selectedMediaAssetId)
+
+        viewModel.selectEditedPhoto()
+
+        val stored = repository.get(draftId)
+        assertEquals(MediaAssetId("media-edited-1"), stored?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun selectOriginalPhotoPersistsNullSelectedMediaAssetIdInRepository() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals(editedMediaId, repository.get(draftId)?.selectedMediaAssetId)
+
+        viewModel.selectOriginalPhoto()
+
+        assertNull(repository.get(draftId)?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun activePhotoUriCanSwitchBackAndForthBetweenOriginalAndEdited() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+
+        viewModel.selectEditedPhoto()
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertEquals(MediaAssetId("media-edited-1"), repository.get(draftId)?.selectedMediaAssetId)
+
+        viewModel.selectOriginalPhoto()
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertNull(repository.get(draftId)?.selectedMediaAssetId)
+
+        viewModel.selectEditedPhoto()
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertEquals(MediaAssetId("media-edited-1"), repository.get(draftId)?.selectedMediaAssetId)
+
+        viewModel.selectOriginalPhoto()
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertNull(repository.get(draftId)?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun selectEditedPhotoHandlesRepositoryUpdateReturningFalse() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+        repository.delete(draftId)
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertNull(viewModel.state.activePhotoUri)
+    }
+
+    @Test
+    fun selectOriginalPhotoHandlesRepositoryUpdateReturningFalse() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+        repository.delete(draftId)
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertNull(viewModel.state.activePhotoUri)
+    }
+
+    @Test
     fun reportsDraftNotFoundWhenLoadingMissingDraft() {
         val repository = FakePostDraftRepository()
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
