@@ -92,6 +92,7 @@ data class ManualPostDraftWorkspaceActions(
     val canShareOrExport: Boolean,
     val canViewPromptHistory: Boolean,
     val canSelectEditedPhoto: Boolean,
+    val canSelectOriginalPhoto: Boolean,
 )
 
 interface ManualDraftAiProvider {
@@ -544,9 +545,10 @@ class ManualPostDraftWorkspaceViewModel(
             .firstOrNull { it.mediaAsset.type == MediaType.Photo }
             ?.mediaAsset
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
-        val activePhoto = selectedMediaAssetId?.let { id ->
-            mediaItems.firstOrNull { it.mediaAsset.id == id }?.mediaAsset
-                ?: photoEditResults.firstOrNull { it.editedMediaAsset.id == id }?.editedMediaAsset
+        val activePhoto = try {
+            primaryMediaAsset()
+        } catch (_: IllegalStateException) {
+            null
         }
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
         val altText = altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
@@ -573,7 +575,8 @@ class ManualPostDraftWorkspaceViewModel(
                 canCopyAltText = !altText.isNullOrBlank(),
                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),
                 canViewPromptHistory = promptHistory.isNotEmpty(),
-                canSelectEditedPhoto = canMutateDraft && editedPhoto?.uri != null && editedPhoto?.uri != activePhoto?.uri,
+                canSelectEditedPhoto = canMutateDraft && editedPhoto != null && editedPhoto.id != activePhoto?.id,
+                canSelectOriginalPhoto = canMutateDraft && activePhoto != null && activePhoto.id != originalPhoto?.id,
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
@@ -615,6 +618,7 @@ class ManualPostDraftWorkspaceViewModel(
                 canShareOrExport = false,
                 canViewPromptHistory = false,
                 canSelectEditedPhoto = false,
+                canSelectOriginalPhoto = false,
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,

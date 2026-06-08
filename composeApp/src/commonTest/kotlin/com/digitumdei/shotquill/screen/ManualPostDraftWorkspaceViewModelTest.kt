@@ -110,6 +110,75 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun selectEditedPhotoSetsActivePhotoToLatestEditedAsset() {
+        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertNull(viewModel.state.activePhotoUri, "Active photo should be original when no selection made")
+        assertTrue(viewModel.state.actions.canSelectEditedPhoto)
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertEquals("Using edited photo", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto, "Should be able to switch back to original")
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto, "Edited already selected, should not be selectable")
+    }
+
+    @Test
+    fun selectOriginalPhotoClearsSelectionAndRestoresActivePhoto() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            selectedMediaAssetId = editedMediaId,
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto)
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertEquals("Using original photo", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto, "Original is active, should not be selectable")
+        assertTrue(viewModel.state.actions.canSelectEditedPhoto, "Should be able to select edited")
+    }
+
+    @Test
+    fun selectEditedPhotoHandlesMissingDraft() {
+        val repository = FakePostDraftRepository()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun selectEditedPhotoHandlesNoEditedResults() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("No edited photo available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun selectOriginalPhotoHandlesMissingDraft() {
+        val repository = FakePostDraftRepository()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+    }
+
+    @Test
     fun reportsDraftNotFoundWhenLoadingMissingDraft() {
         val repository = FakePostDraftRepository()
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)

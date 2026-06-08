@@ -51,6 +51,7 @@ class PhotoEditExecutionPipelineTest {
     private val requestId = PhotoEditRequestId("edit-req-1")
     private val resultId = PhotoEditResultId("edit-result-1")
     private val baseEpoch = 1_700_000_000_000L
+    private val editedMediaAssetId = MediaAssetId("media-edited-existing")
 
     @Test
     fun `happy path with fake provider preserves original media and links edited image to draft`() {
@@ -635,6 +636,92 @@ class PhotoEditExecutionPipelineTest {
     fun `SaveEditedImageResult Success and Failure are sealed subtypes`() {
         assertIs<SaveEditedImageResult>(SaveEditedImageResult.Success(sampleMediaAsset()))
         assertIs<SaveEditedImageResult>(SaveEditedImageResult.Failure("err"))
+    }
+
+    @Test
+    fun `re-edit uses selected edited asset from photoEditResults as source`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val existingEditedAsset = MediaAsset(
+            id = editedMediaAssetId,
+            type = MediaType.EditedPhoto,
+            uri = "file://edited/existing.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1920,
+            heightPx = 1080,
+            createdAtEpochMillis = baseEpoch + 1000,
+        )
+        val existingResult = PhotoEditResult(
+            id = PhotoEditResultId("edit-result-existing"),
+            requestId = PhotoEditRequestId("edit-req-existing"),
+            draftId = draftId,
+            editedMediaAsset = existingEditedAsset,
+            summary = "Previous edit.",
+            modelName = "dall-e-3",
+            createdAtEpochMillis = baseEpoch + 1000,
+        )
+        val existingRequest = PhotoEditRequest(
+            id = PhotoEditRequestId("edit-req-existing"),
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.Standard,
+            prompt = "First edit",
+            userRefinement = null,
+            subjectDescription = "A handmade ceramic mug beside a notebook.",
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            maskRegion = null,
+            createdAtEpochMillis = baseEpoch + 1000,
+        )
+        val draftWithSelection = sampleDraftWithVisionDescription().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = editedMediaAssetId,
+            photoEditRequests = listOf(existingRequest),
+            photoEditResults = listOf(existingResult),
+        )
+        var capturedSourceId: MediaAssetId? = null
+        val capturingImageSource = PhotoEditImageSource { asset ->
+            capturedSourceId = asset.id
+            SourceImageResult.Success(sampleAiImageInput())
+        }
+        val repository = FakeManualWorkflowRepository(draftWithSelection)
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = capturingImageSource,
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/re-edit.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.BackgroundAdjustment,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.Standard,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Re-edit the photo",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        assertEquals(editedMediaAssetId, capturedSourceId, "Pipeline must use the selected edited asset as source")
+        assertEquals(editedMediaAssetId, success.photoEditRequest.sourceMediaAssetId, "Edit request source must be the selected edited asset")
     }
 
     @Test

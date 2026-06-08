@@ -142,7 +142,10 @@ class PhotoEditExecutionPipeline(
             )
             repository.savePhotoEditRequest(editRequest)
             repository.savePromptHistoryEntry(failureEntry)
+            val updatedAt = operationUpdatedAt(currentDraft, now)
+            repository.updateUpdatedAt(draftId, updatedAt)
             val persistedDraft = currentDraft.copy(
+                updatedAt = updatedAt,
                 photoEditRequests = currentDraft.photoEditRequests + editRequest,
                 promptHistory = currentDraft.promptHistory + failureEntry,
             )
