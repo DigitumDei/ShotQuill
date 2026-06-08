@@ -209,7 +209,6 @@ class OpenAiProvider(
         )
     }
 }
-}
 
 data class OpenAiProviderConfig(
     val baseUrl: String = "https://api.openai.com/v1",

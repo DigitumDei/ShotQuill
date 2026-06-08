@@ -1,17 +1,6 @@
 package com.digitumdei.shotquill.shared.domain
 
 object PhotoEditPromptAssembler {
-    fun assemble(request: PhotoEditRequest): String = buildPrompt(
-        intent = request.intent,
-        userPrompt = request.prompt,
-        realismLevel = request.realismLevel,
-        qualityTier = request.qualityTier,
-        targetPlatform = request.targetPlatform,
-        maskRegion = request.maskRegion,
-        subjectDescription = request.subjectDescription,
-        userRefinement = request.userRefinement,
-    )
-
     fun buildPrompt(
         intent: EditIntent,
         userPrompt: String,
