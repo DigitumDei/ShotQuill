@@ -160,6 +160,10 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.promptHistory.size)
         assertNotNull(stored.promptHistory.first().responseSummary)
         assertEquals(DraftStatus.PhotoAdded, stored.status)
+        val persistedUpdatedAt = persisted.updatedDraft.updatedAt
+        assertTrue(persistedUpdatedAt > Instant.fromEpochMilliseconds(baseEpoch), "FailurePersisted.updatedDraft.updatedAt must advance on failure")
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "stored draft updatedAt must advance on failure")
+        assertEquals(stored.updatedAt, persistedUpdatedAt, "stored and FailurePersisted updatedAt must match")
     }
 
     @Test
@@ -230,6 +234,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(1, stored.photoEditResults.size)
         assertEquals(2, stored.promptHistory.size)
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance after retry")
         val historyFailure = stored.promptHistory.first()
         assertNotNull(historyFailure.responseSummary)
         assertEquals(expectedPrompt, historyFailure.prompt, "stored failure promptHistoryEntry.prompt must match the assembled prompt")
@@ -285,6 +290,8 @@ class PhotoEditExecutionPipelineTest {
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(1, stored.photoEditRequests.size)
         assertEquals(1, stored.promptHistory.size)
+        assertTrue(persisted.updatedDraft.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "source image failure updatedDraft.updatedAt must advance")
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "source image failure stored updatedAt must advance")
     }
 
     @Test
@@ -322,6 +329,9 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "media saver failure persisted.photoEditRequest.prompt must match the assembled prompt")
         assertEquals(expectedPrompt, persisted.promptHistoryEntry.prompt, "media saver failure persisted.promptHistoryEntry.prompt must match the assembled prompt")
         assertIs<PhotoEditExecutionError.FailedToSaveEditedImage>(persisted.cause)
+        assertTrue(persisted.updatedDraft.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "media saver failure updatedDraft.updatedAt must advance")
+        val stored = assertNotNull(repository.get(draftId))
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "media saver failure stored updatedAt must advance")
     }
 
     @Test
