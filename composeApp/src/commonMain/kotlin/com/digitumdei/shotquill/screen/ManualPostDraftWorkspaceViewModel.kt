@@ -582,7 +582,7 @@ class ManualPostDraftWorkspaceViewModel(
                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),
                 canViewPromptHistory = promptHistory.isNotEmpty(),
                 canSelectEditedPhoto = canMutateDraft && editedPhoto != null && editedPhoto.id != activePhoto?.id,
-                canSelectOriginalPhoto = canMutateDraft && activePhoto != null && activePhoto.id != originalPhoto?.id,
+                canSelectOriginalPhoto = canMutateDraft && originalPhoto != null && (activePhoto == null || activePhoto.id != originalPhoto.id),
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
