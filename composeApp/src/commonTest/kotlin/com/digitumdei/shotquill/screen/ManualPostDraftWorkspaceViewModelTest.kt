@@ -356,10 +356,12 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     @Test
     fun selectEditedPhotoHandlesRepositoryUpdateReturningFalse() {
-        val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
+        val repository = FakePostDraftRepository(
+            sampleDraftWithEditedMedia(),
+            failUpdateSelectedMediaAsset = true,
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
-        repository.delete(draftId)
 
         viewModel.selectEditedPhoto()
 
@@ -371,10 +373,12 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun selectOriginalPhotoHandlesRepositoryUpdateReturningFalse() {
         val editedMediaId = MediaAssetId("media-edited-1")
         val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
-        val repository = FakePostDraftRepository(draft)
+        val repository = FakePostDraftRepository(
+            draft,
+            failUpdateSelectedMediaAsset = true,
+        )
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
-        repository.delete(draftId)
 
         viewModel.selectOriginalPhoto()
 
@@ -969,7 +973,10 @@ class ManualPostDraftWorkspaceViewModelTest {
             createdAtEpochMillis = 1_700_000_000_000L,
         )
 
-    private class FakePostDraftRepository(initialDraft: PostDraft? = null) : PostDraftRepository {
+    private class FakePostDraftRepository(
+        initialDraft: PostDraft? = null,
+        private val failUpdateSelectedMediaAsset: Boolean = false,
+    ) : PostDraftRepository {
         private val drafts: MutableMap<PostDraftId, PostDraft> =
             initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
 
@@ -998,6 +1005,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
         override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
+            if (failUpdateSelectedMediaAsset) return false
             val current = drafts[id] ?: return false
             drafts[id] = current.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
             return true
