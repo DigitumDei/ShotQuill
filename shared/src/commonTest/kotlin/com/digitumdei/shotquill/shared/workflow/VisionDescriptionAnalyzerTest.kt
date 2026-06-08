@@ -247,6 +247,7 @@ class VisionDescriptionAnalyzerTest {
 
         init {
             initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            initialDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun save(mediaAsset: MediaAsset) {
@@ -260,11 +261,17 @@ class VisionDescriptionAnalyzerTest {
 
         override fun save(postDraft: PostDraft) {
             drafts[postDraft.id] = postDraft
+            postDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            postDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun get(id: PostDraftId): PostDraft? = drafts[id]
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
-        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean = false
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(updatedAt = updatedAt)
+            return true
+        }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
         override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
@@ -321,6 +328,7 @@ class VisionDescriptionAnalyzerTest {
             drafts[id]?.photoEditResults.orEmpty()
 
         override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
+            mediaAssets[photoEditResult.editedMediaAsset.id] = photoEditResult.editedMediaAsset
             val draft = drafts.getValue(photoEditResult.draftId)
             drafts[photoEditResult.draftId] = draft.copy(photoEditResults = draft.photoEditResults + photoEditResult)
         }

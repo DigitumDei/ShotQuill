@@ -611,6 +611,7 @@ class PostTextGenerationPipelineTest {
 
         init {
             initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            initialDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun save(mediaAsset: MediaAsset) {
@@ -624,6 +625,8 @@ class PostTextGenerationPipelineTest {
 
         override fun save(postDraft: PostDraft) {
             drafts[postDraft.id] = postDraft
+            postDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            postDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun get(id: PostDraftId): PostDraft? {
@@ -634,7 +637,11 @@ class PostTextGenerationPipelineTest {
             return drafts[id]
         }
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
-        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean = false
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(updatedAt = updatedAt)
+            return true
+        }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
         override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
@@ -710,9 +717,12 @@ class PostTextGenerationPipelineTest {
         override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
             drafts[id]?.photoEditResults.orEmpty()
 
-        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = save(
-            drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
-        )
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
+            mediaAssets[photoEditResult.editedMediaAsset.id] = photoEditResult.editedMediaAsset
+            save(
+                drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
+            )
+        }
 
         override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = drafts.values
