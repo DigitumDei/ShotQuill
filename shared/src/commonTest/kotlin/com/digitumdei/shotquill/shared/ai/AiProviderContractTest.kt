@@ -33,7 +33,7 @@ class AiProviderContractTest {
         val provider = FakeAiProvider()
         val request = sampleEditGenerationRequest()
 
-        val rawPrompt = request.editRequest.prompt
+        val assembledPrompt = request.editRequest.prompt
 
         val result = provider.editPhoto(request)
         val success = assertIs<AiProviderResult.Success<PhotoEditOutput>>(result)
@@ -41,8 +41,8 @@ class AiProviderContractTest {
         assertNotNull(summary)
 
         assertTrue(
-            summary.contains(rawPrompt.take(50)),
-            "FakeAiProvider summary should be derived from editRequest.prompt. " +
+            summary.contains(assembledPrompt.take(50)),
+            "FakeAiProvider summary should be derived from editRequest.prompt (the assembled prompt). " +
                 "Expected prompt text in summary but got: $summary",
         )
         assertTrue(
@@ -133,7 +133,7 @@ internal fun sampleEditGenerationRequest(): PhotoEditGenerationRequest =
             intent = EditIntent.ImproveLighting,
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.Standard,
-            prompt = "Improve lighting while preserving the subject.",
+            prompt = "Edit this image: Improve the lighting and exposure of the image. Improve lighting while preserving the subject. Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details. Use standard quality tier. Frame the result for Original (no resize) using preserve the original dimensions without resizing.",
             userRefinement = null,
             subjectDescription = null,
             targetPlatform = TargetPlatform.Original,

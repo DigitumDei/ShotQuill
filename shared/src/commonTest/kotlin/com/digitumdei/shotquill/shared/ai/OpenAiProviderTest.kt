@@ -96,8 +96,26 @@ class OpenAiProviderTest {
     fun buildsMultipartImageEditRequestAndReadsReturnedImageBytes() {
         val transport = SuccessfulOpenAiTransport()
         val provider = configuredProvider(transport)
+        val assembledPrompt = "Edit this image: Improve the lighting and exposure of the image. Improve lighting while preserving the subject. Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details. Use standard quality tier. Frame the result for Original (no resize) using preserve the original dimensions without resizing."
+        val request = PhotoEditGenerationRequest(
+            editRequest = PhotoEditRequest(
+                id = PhotoEditRequestId("edit-request-1"),
+                draftId = PostDraftId("draft-1"),
+                sourceMediaAssetId = MediaAssetId("media-1"),
+                intent = EditIntent.ImproveLighting,
+                realismLevel = RealismLevel.Photoreal,
+                qualityTier = QualityTier.Standard,
+                prompt = assembledPrompt,
+                userRefinement = null,
+                subjectDescription = null,
+                targetPlatform = TargetPlatform.Original,
+                maskRegion = null,
+                createdAtEpochMillis = 1_700_000_000_000L,
+            ),
+            sourceImage = sampleImageInput(),
+        )
 
-        val result = provider.editPhoto(sampleEditGenerationRequest())
+        val result = provider.editPhoto(request)
 
         val success = assertIs<AiProviderResult.Success<PhotoEditOutput>>(result)
         assertEquals("edited-image", success.value.imageBytes.decodeToString())
@@ -140,6 +158,7 @@ class OpenAiProviderTest {
     fun enrichedEditPromptIncludesTargetPlatformPresetDetails() {
         val transport = SuccessfulOpenAiTransport()
         val provider = configuredProvider(transport)
+        val assembledPrompt = "Edit this image: Crop or extend the image to the target dimensions. Crop to fit the platform. Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details. Use standard quality tier. Frame the result for Instagram Feed Square at 1:1, 1080x1080px, and fit the content to the frame. The subject is A coffee cup on a wooden table. Preserve the subject's appearance. Keep the main subject centered."
 
         val request = PhotoEditGenerationRequest(
             editRequest = PhotoEditRequest(
@@ -149,7 +168,7 @@ class OpenAiProviderTest {
                 intent = EditIntent.CropOrExtend,
                 realismLevel = RealismLevel.Photoreal,
                 qualityTier = QualityTier.Standard,
-                prompt = "Crop to fit the platform.",
+                prompt = assembledPrompt,
                 userRefinement = "Keep the main subject centered",
                 subjectDescription = "A coffee cup on a wooden table",
                 targetPlatform = TargetPlatform.InstagramFeedSquare,

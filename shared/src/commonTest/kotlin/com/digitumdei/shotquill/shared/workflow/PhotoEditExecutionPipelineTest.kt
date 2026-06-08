@@ -20,6 +20,7 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
+import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PhotoEditResult
@@ -79,6 +80,10 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, success.assembledPrompt, "assembledPrompt must match the expected assembled prompt")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "promptHistoryEntry.prompt must match the assembled prompt")
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(DraftStatus.PhotoEdited, stored.status)
 
@@ -138,6 +143,10 @@ class PhotoEditExecutionPipelineTest {
 
         val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
         val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, persisted.assembledPrompt, "FailurePersisted.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "FailurePersisted.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, persisted.promptHistoryEntry.prompt, "FailurePersisted.promptHistoryEntry.prompt must match the assembled prompt")
         assertIs<PhotoEditExecutionError.Provider>(persisted.cause)
         assertEquals(AiError.RateLimited(), (persisted.cause as PhotoEditExecutionError.Provider).error)
         assertEquals(draftId, persisted.photoEditRequest.draftId)
@@ -187,6 +196,7 @@ class PhotoEditExecutionPipelineTest {
             clock = clock,
         )
 
+        val expectedPrompt = expectedAssembledPrompt()
         pipeline.execute(
             draftId = draftId,
             intent = EditIntent.ImproveLighting,
@@ -213,14 +223,19 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        assertEquals(expectedPrompt, success.assembledPrompt, "retry success.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "retry success.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "retry success.promptHistoryEntry.prompt must match the assembled prompt")
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(2, stored.photoEditRequests.size)
         assertEquals(1, stored.photoEditResults.size)
         assertEquals(2, stored.promptHistory.size)
         val historyFailure = stored.promptHistory.first()
         assertNotNull(historyFailure.responseSummary)
+        assertEquals(expectedPrompt, historyFailure.prompt, "stored failure promptHistoryEntry.prompt must match the assembled prompt")
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
+        assertEquals(expectedPrompt, historySuccess.prompt, "stored success promptHistoryEntry.prompt must match the assembled prompt")
         assertEquals(DraftStatus.PhotoEdited, stored.status)
         assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified after retry success")
         assertEquals(
@@ -262,6 +277,10 @@ class PhotoEditExecutionPipelineTest {
 
         val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
         val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, persisted.assembledPrompt, "FailedToLoadSourceImage persisted.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "FailedToLoadSourceImage persisted.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, persisted.promptHistoryEntry.prompt, "FailedToLoadSourceImage persisted.promptHistoryEntry.prompt must match the assembled prompt")
         assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(persisted.cause)
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(1, stored.photoEditRequests.size)
@@ -298,6 +317,10 @@ class PhotoEditExecutionPipelineTest {
 
         val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
         val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, persisted.assembledPrompt, "media saver failure persisted.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "media saver failure persisted.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, persisted.promptHistoryEntry.prompt, "media saver failure persisted.promptHistoryEntry.prompt must match the assembled prompt")
         assertIs<PhotoEditExecutionError.FailedToSaveEditedImage>(persisted.cause)
     }
 
@@ -333,6 +356,10 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, success.assembledPrompt, "PhotoEdited preserves status: assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "PhotoEdited preserves status: photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "PhotoEdited preserves status: promptHistoryEntry.prompt must match the assembled prompt")
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(DraftStatus.PhotoEdited, stored.status)
         assertEquals(2, stored.photoEditRequests.size)
@@ -379,6 +406,10 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, success.assembledPrompt, "ReadyToShare preserves status: assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "ReadyToShare preserves status: photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "ReadyToShare preserves status: promptHistoryEntry.prompt must match the assembled prompt")
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(DraftStatus.ReadyToShare, stored.status)
         assertEquals(2, stored.photoEditRequests.size)
@@ -720,6 +751,14 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt(
+            intent = EditIntent.BackgroundAdjustment,
+            prompt = "Re-edit the photo",
+            qualityTier = QualityTier.Standard,
+        )
+        assertEquals(expectedPrompt, success.assembledPrompt, "re-edit success.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "re-edit success.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "re-edit success.promptHistoryEntry.prompt must match the assembled prompt")
         assertEquals(editedMediaAssetId, capturedSourceId, "Pipeline must use the selected edited asset as source")
         assertEquals(editedMediaAssetId, success.photoEditRequest.sourceMediaAssetId, "Edit request source must be the selected edited asset")
     }
@@ -782,6 +821,13 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt(
+            prompt = "Edit the photo",
+            qualityTier = QualityTier.Standard,
+        )
+        assertEquals(expectedPrompt, success.assembledPrompt, "selection-change success.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "selection-change success.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "selection-change success.promptHistoryEntry.prompt must match the assembled prompt")
         assertEquals(mediaAssetId, capturedSource, "Source asset must match the vision asset, not the changed selection")
     }
 
@@ -920,6 +966,25 @@ class PhotoEditExecutionPipelineTest {
         responseSummary = "Brightened the image",
         modelName = "dall-e-3",
         createdAtEpochMillis = baseEpoch + 2000,
+    )
+
+    private fun expectedAssembledPrompt(
+        intent: EditIntent = EditIntent.ImproveLighting,
+        prompt: String = "Make it brighter",
+        realismLevel: RealismLevel = RealismLevel.Photoreal,
+        qualityTier: QualityTier = QualityTier.High,
+        targetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
+        subjectDescription: String? = "A handmade ceramic mug beside a notebook.",
+        userRefinement: String? = null,
+    ): String = PhotoEditPromptAssembler.buildPrompt(
+        intent = intent,
+        userPrompt = prompt,
+        realismLevel = realismLevel,
+        qualityTier = qualityTier,
+        targetPlatform = targetPlatform,
+        maskRegion = null,
+        subjectDescription = subjectDescription,
+        userRefinement = userRefinement,
     )
 
     private class MutableClock(var now: Long) : EpochClock {
