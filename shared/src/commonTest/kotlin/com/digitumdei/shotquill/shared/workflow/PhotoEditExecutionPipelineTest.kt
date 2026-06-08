@@ -1201,6 +1201,7 @@ class PhotoEditExecutionPipelineTest {
 
         init {
             initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            initialDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun save(mediaAsset: MediaAsset) {
@@ -1213,6 +1214,8 @@ class PhotoEditExecutionPipelineTest {
         override fun get(id: com.digitumdei.shotquill.shared.domain.BrandProfileId): com.digitumdei.shotquill.shared.domain.BrandProfile? = null
 
         override fun save(postDraft: PostDraft) {
+            postDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            postDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
             drafts[postDraft.id] = postDraft
         }
 
@@ -1286,9 +1289,12 @@ class PhotoEditExecutionPipelineTest {
             .firstOrNull { it.id == id }
         override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
             drafts[id]?.photoEditResults.orEmpty()
-        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = save(
-            drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
-        )
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
+            mediaAssets[photoEditResult.editedMediaAsset.id] = photoEditResult.editedMediaAsset
+            save(
+                drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
+            )
+        }
 
         override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = drafts.values
