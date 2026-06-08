@@ -855,6 +855,67 @@ class SqlDelightManualWorkflowRepositoryTest {
         createdAtEpochMillis = createdAt,
     )
 
+    @Test fun `saveToGetRoundTrip preserves selectedMediaAssetId`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val editedId = MediaAssetId("media-edited-1")
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = editedId))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `saveToGetRoundTrip defaults selectedMediaAssetId to null`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        assertNull(repository.get(PostDraftId("draft-1"))?.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset sets non-null value and advances timestamp`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `selectionChangeDoesNotDisturbUnrelatedDraftState`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt)
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(original.format, stored.format)
+        assertEquals(original.status, stored.status)
+        assertEquals(original.caption, stored.caption)
+        assertEquals(original.mediaItems, stored.mediaItems)
+        assertEquals(original.targetPlatforms, stored.targetPlatforms)
+        assertEquals(original.brandProfile, stored.brandProfile)
+        assertEquals(original.visionDescription, stored.visionDescription)
+        assertEquals(original.captionRequests, stored.captionRequests)
+        assertEquals(original.captionResults, stored.captionResults)
+        assertEquals(original.altTextResults, stored.altTextResults)
+        assertEquals(original.photoEditRequests, stored.photoEditRequests)
+        assertEquals(original.photoEditResults, stored.photoEditResults)
+        assertEquals(original.promptHistory, stored.promptHistory)
+        assertEquals(original.exportRecords, stored.exportRecords)
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
     @Test fun `updateUpdatedAt advances timestamp without changing status`() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
