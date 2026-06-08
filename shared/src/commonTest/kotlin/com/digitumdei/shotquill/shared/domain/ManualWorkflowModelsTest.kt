@@ -299,6 +299,36 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun resolvesSelectedAssetFromPhotoEditResults() {
+        val original = sampleMediaAsset()
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val draft = samplePostDraft().copy(
+            format = PostFormat.Carousel,
+            mediaItems = listOf(
+                PostMediaItem(mediaAsset = original, order = 0),
+            ),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("edit-result-1"),
+                    requestId = photoEditRequestId,
+                    draftId = draftId,
+                    editedMediaAsset = editedAsset,
+                    summary = "Edited photo",
+                    modelName = "edit-model",
+                    createdAtEpochMillis = createdAt,
+                ),
+            ),
+            selectedMediaAssetId = editedAsset.id,
+        )
+
+        assertEquals(editedAsset, draft.primaryMediaAsset())
+    }
+
+    @Test
     fun fallsBackToLowestOrderWhenSelectedMediaAssetIdIsNull() {
         val original = sampleMediaAsset()
         val draft = samplePostDraft()
@@ -330,7 +360,17 @@ class ManualWorkflowModelsTest {
             format = PostFormat.Carousel,
             mediaItems = listOf(
                 PostMediaItem(mediaAsset = original, order = 0),
-                PostMediaItem(mediaAsset = editedAsset, order = 1),
+            ),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("edit-result-1"),
+                    requestId = photoEditRequestId,
+                    draftId = draftId,
+                    editedMediaAsset = editedAsset,
+                    summary = "Edited photo",
+                    modelName = "edit-model",
+                    createdAtEpochMillis = createdAt,
+                ),
             ),
         )
 

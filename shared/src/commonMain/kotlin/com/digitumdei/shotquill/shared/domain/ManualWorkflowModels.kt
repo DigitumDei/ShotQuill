@@ -49,6 +49,7 @@ data class PostDraft(
 fun PostDraft.primaryMediaAsset(): MediaAsset {
     val selected = selectedMediaAssetId?.let { id ->
         mediaItems.firstOrNull { it.mediaAsset.id == id }?.mediaAsset
+            ?: photoEditResults.firstOrNull { it.editedMediaAsset.id == id }?.editedMediaAsset
     }
     return selected
         ?: mediaItems.minByOrNull { it.order }?.mediaAsset
