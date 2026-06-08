@@ -1,18 +1,38 @@
 package com.digitumdei.shotquill.shared.domain
 
 object PhotoEditPromptAssembler {
-    fun assemble(request: PhotoEditRequest): String {
-        val preset = request.targetPlatform.platformPreset
-        val normalizedPrompt = normalize(request.prompt)
-        val normalizedSubject = request.subjectDescription?.let(::normalize).orEmpty()
-        val normalizedRefinement = request.userRefinement?.let(::normalize).orEmpty()
+    fun assemble(request: PhotoEditRequest): String = buildPrompt(
+        intent = request.intent,
+        userPrompt = request.prompt,
+        realismLevel = request.realismLevel,
+        qualityTier = request.qualityTier,
+        targetPlatform = request.targetPlatform,
+        maskRegion = request.maskRegion,
+        subjectDescription = request.subjectDescription,
+        userRefinement = request.userRefinement,
+    )
+
+    fun buildPrompt(
+        intent: EditIntent,
+        userPrompt: String,
+        realismLevel: RealismLevel,
+        qualityTier: QualityTier,
+        targetPlatform: TargetPlatform,
+        maskRegion: MaskRegion?,
+        subjectDescription: String?,
+        userRefinement: String?,
+    ): String {
+        val preset = targetPlatform.platformPreset
+        val normalizedPrompt = normalize(userPrompt)
+        val normalizedSubject = subjectDescription?.let(::normalize).orEmpty()
+        val normalizedRefinement = userRefinement?.let(::normalize).orEmpty()
         return buildString {
-            append("Edit this image: ${request.intent.promptIntent}")
+            append("Edit this image: ${intent.promptIntent}")
             if (normalizedPrompt.isNotEmpty()) {
                 append(" $normalizedPrompt.")
             }
-            append(" Apply a ${request.realismLevel.adjective} edit. ${request.realismLevel.promptIntent}")
-            append(" Use ${request.qualityTier.wireValue} quality tier.")
+            append(" Apply a ${realismLevel.adjective} edit. ${realismLevel.promptIntent}")
+            append(" Use ${qualityTier.wireValue} quality tier.")
             append(" Frame the result for ${preset.displayName}")
             if (preset.aspectRatio != null) {
                 append(" at ${preset.aspectRatio.width}:${preset.aspectRatio.height}")
@@ -24,8 +44,8 @@ object PhotoEditPromptAssembler {
                 append(" using ${preset.defaultFramingBehavior.naturalDescription}")
             }
             append(".")
-            if (request.maskRegion != null) {
-                val bounds = request.maskRegion.bounds
+            if (maskRegion != null) {
+                val bounds = maskRegion.bounds
                 when (bounds) {
                     is MaskBounds.Normalized -> {
                         val right = bounds.left + bounds.width

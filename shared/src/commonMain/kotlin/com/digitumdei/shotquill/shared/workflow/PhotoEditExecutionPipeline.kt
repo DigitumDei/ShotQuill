@@ -108,6 +108,17 @@ class PhotoEditExecutionPipeline(
 
         val now = clock.nowMillis()
         val idSuffix = nextIdSuffix(now)
+        val cleanedUserRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() }
+        val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
+            intent = intent,
+            userPrompt = prompt,
+            realismLevel = realismLevel,
+            qualityTier = qualityTier,
+            targetPlatform = targetPlatform,
+            maskRegion = maskRegion,
+            subjectDescription = visionDescription.description,
+            userRefinement = cleanedUserRefinement,
+        )
         val editRequest = PhotoEditRequest(
             id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
             draftId = draftId,
@@ -115,14 +126,13 @@ class PhotoEditExecutionPipeline(
             intent = intent,
             realismLevel = realismLevel,
             qualityTier = qualityTier,
-            prompt = prompt,
-            userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
+            prompt = assembledPrompt,
+            userRefinement = cleanedUserRefinement,
             subjectDescription = visionDescription.description,
             targetPlatform = targetPlatform,
             maskRegion = maskRegion,
             createdAtEpochMillis = now,
         )
-        val assembledPrompt = PhotoEditPromptAssembler.assemble(editRequest)
 
         fun failureSummary(cause: PhotoEditExecutionError): String = when (cause) {
             is PhotoEditExecutionError.Provider -> cause.error.userMessage
