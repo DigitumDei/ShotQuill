@@ -384,6 +384,63 @@ class ManualWorkflowModelsTest {
     }
 
     @Test
+    fun resolvesEditedAssetForSingleImageFromPhotoEditResults() {
+        val original = sampleMediaAsset()
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val draft = samplePostDraft().copy(
+            mediaItems = listOf(PostMediaItem(mediaAsset = original, order = 0)),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("edit-result-1"),
+                    requestId = photoEditRequestId,
+                    draftId = draftId,
+                    editedMediaAsset = editedAsset,
+                    summary = "Edited photo",
+                    modelName = "edit-model",
+                    createdAtEpochMillis = createdAt,
+                ),
+            ),
+            selectedMediaAssetId = editedAsset.id,
+        )
+
+        assertEquals(editedAsset, draft.primaryMediaAsset())
+    }
+
+    @Test
+    fun fallsBackToOriginalWhenEditedAssetSelectionClearedForSingleImage() {
+        val original = sampleMediaAsset()
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val draft = samplePostDraft().copy(
+            mediaItems = listOf(PostMediaItem(mediaAsset = original, order = 0)),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("edit-result-1"),
+                    requestId = photoEditRequestId,
+                    draftId = draftId,
+                    editedMediaAsset = editedAsset,
+                    summary = "Edited photo",
+                    modelName = "edit-model",
+                    createdAtEpochMillis = createdAt,
+                ),
+            ),
+            selectedMediaAssetId = editedAsset.id,
+        )
+
+        assertEquals(editedAsset, draft.primaryMediaAsset(), "Initially shows edited asset")
+
+        val fallback = draft.copy(selectedMediaAssetId = null)
+        assertEquals(original, fallback.primaryMediaAsset(), "Falls back to original after clearing selection")
+    }
+
+    @Test
     fun rejectsSingleImagePostDraftWithMultipleMediaItems() {
         val failure = assertFailsWith<IllegalArgumentException> {
             samplePostDraft().copy(
