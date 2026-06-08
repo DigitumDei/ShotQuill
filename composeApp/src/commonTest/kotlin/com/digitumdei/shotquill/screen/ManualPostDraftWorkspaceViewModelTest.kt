@@ -179,6 +179,59 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun selectionUsesIdComparisonWhenUrisAreIdentical() {
+        val sameUri = "file://photo.jpg"
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-uri-test"),
+            type = MediaType.EditedPhoto,
+            uri = sameUri,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-uri-test"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Brighten the image",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_025_000L,
+                ),
+            ),
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-uri-test"),
+                    requestId = PhotoEditRequestId("photo-edit-request-uri-test"),
+                    draftId = draftId,
+                    editedMediaAsset = editedAsset,
+                    summary = "Adjusted brightness.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals(sameUri, viewModel.state.originalPhotoUri)
+        assertEquals(sameUri, viewModel.state.editedPhotoUri, "Both photos share the same URI to test ID-based logic")
+        assertEquals(sameUri, viewModel.state.activePhotoUri, "Defaults to original when no selection made")
+        assertTrue(viewModel.state.actions.canSelectEditedPhoto, "Edited differs by ID, should be selectable despite same URI")
+
+        viewModel.selectEditedPhoto()
+
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto, "Active is edited, should be able to switch back to original")
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto, "Edited is active, should not be selectable")
+    }
+
+    @Test
     fun reportsDraftNotFoundWhenLoadingMissingDraft() {
         val repository = FakePostDraftRepository()
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
