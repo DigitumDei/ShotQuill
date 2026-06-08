@@ -358,6 +358,57 @@ class PostTextGenerationPipelineTest {
     }
 
     @Test
+    fun usesVisionAssetForAltTextWhenSelectionChangesMidExecution() {
+        val editedMediaAsset = MediaAsset(
+            id = MediaAssetId("media-edited-mid"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited-mid.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080,
+            heightPx = 1350,
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = mediaAssetId,
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-mid"),
+                    requestId = PhotoEditRequestId("photo-edit-request-mid"),
+                    draftId = draftId,
+                    editedMediaAsset = editedMediaAsset,
+                    summary = "Mid-execution edit.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            private var getCount2 = 0
+            override fun get(id: PostDraftId): PostDraft? {
+                getCount2++
+                val fetched = super.get(id) ?: return null
+                if (getCount2 == 2) {
+                    return fetched.copy(selectedMediaAssetId = editedMediaAsset.id)
+                }
+                return fetched
+            }
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(mediaAssetId, success.visionDescription.mediaAssetId)
+        assertEquals(mediaAssetId, success.altTextResult.mediaAssetId,
+            "Alt-text asset must match vision asset even when selection changes mid-execution")
+    }
+
+    @Test
     fun usesEditedAssetForVisionAndAltTextWhenSelected() {
         val editedMediaAssetId = MediaAssetId("media-edited-1")
         val editedMediaAsset = MediaAsset(

@@ -22,7 +22,7 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
-import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
+
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
@@ -116,7 +116,7 @@ class PostTextGenerationPipeline(
             val result = aiProvider.generateAltText(
                 AltTextGenerationRequest(
                     draftId = draftId,
-                    mediaAssetId = currentDraft.primaryMediaAsset().id,
+                    mediaAssetId = visionDescription.mediaAssetId,
                     prompt = altTextPrompt,
                 ),
             )
@@ -152,7 +152,7 @@ class PostTextGenerationPipeline(
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-result-$idSuffix"),
             draftId = draftId,
-            mediaAssetId = currentDraft.primaryMediaAsset().id,
+            mediaAssetId = visionDescription.mediaAssetId,
             altText = altTextOutput.altText.trim(),
             modelName = altTextOutput.modelName,
             createdAtEpochMillis = now,

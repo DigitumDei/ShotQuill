@@ -24,7 +24,6 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
-import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import kotlinx.datetime.Instant
@@ -101,7 +100,11 @@ class PhotoEditExecutionPipeline(
         val currentDraft = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
             PhotoEditExecutionError.DraftNotFound,
         )
-        val sourceMediaAsset = currentDraft.primaryMediaAsset()
+        val sourceMediaAsset = currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == visionDescription.mediaAssetId }?.mediaAsset
+            ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == visionDescription.mediaAssetId }?.editedMediaAsset
+            ?: return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            )
 
         val now = clock.nowMillis()
         val idSuffix = nextIdSuffix(now)

@@ -725,6 +725,67 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `source asset matches vision asset when selection changes mid-execution`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = mediaAssetId,
+        )
+        var capturedSource: MediaAssetId? = null
+        val capturingImageSource = PhotoEditImageSource { asset ->
+            capturedSource = asset.id
+            SourceImageResult.Success(sampleAiImageInput())
+        }
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            private var getCount = 0
+            override fun get(id: PostDraftId): PostDraft? {
+                getCount++
+                val fetched = super.get(id) ?: return null
+                if (getCount == 2) {
+                    return fetched.copy(selectedMediaAssetId = MediaAssetId("nonexistent"))
+                }
+                return fetched
+            }
+        }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = capturingImageSource,
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/output.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.Standard,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            prompt = "Edit the photo",
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        assertEquals(mediaAssetId, capturedSource, "Source asset must match the vision asset, not the changed selection")
+    }
+
+    @Test
     fun `PhotoEditExecutionResult Success and Failure are sealed subtypes`() {
         assertIs<PhotoEditExecutionResult>(PhotoEditExecutionResult.Success(
             photoEditRequest = samplePhotoEditRequest(),
