@@ -48,9 +48,9 @@ CREATE TABLE post_drafts (
   status TEXT NOT NULL,
   caption_text TEXT,
   brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL,
-  selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
   created_at_epoch_millis INTEGER NOT NULL,
-  updated_at_epoch_millis INTEGER NOT NULL
+  updated_at_epoch_millis INTEGER NOT NULL,
+  selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL
 );
 
 CREATE TABLE post_draft_target_platforms (
