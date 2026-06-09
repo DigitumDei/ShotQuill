@@ -34,6 +34,7 @@ import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
+import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.datetime.Instant
@@ -1175,6 +1176,70 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canCopyCaption)
         assertTrue(viewModel.state.actions.canCopyAltText)
         assertFalse(viewModel.state.actions.canShareOrExport)
+    }
+
+    @Test
+    fun reportsPipelineNotAvailableWhenNoPhotoEditExecutorConfigured() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+        viewModel.togglePromptHistory()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("Photo edit execution pipeline not available", viewModel.state.statusMessage)
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertEquals(DraftStatus.PhotoAdded, viewModel.state.draftStatus)
+        assertNull(viewModel.state.generatedCaption)
+        assertNull(viewModel.state.generatedAltText)
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent)
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText)
+        assertEquals(TargetPlatform.BlueskyPost, viewModel.state.photoEditForm.selectedTargetPlatform)
+        assertEquals(QualityTier.High, viewModel.state.photoEditForm.selectedQualityTier)
+        assertTrue(viewModel.state.isPromptHistoryVisible)
+    }
+
+    @Test
+    fun preservesWorkspaceStateWhenPostTextGenerationFailsWithImageLoadFailure() {
+        val generated = sampleDraftWithGeneratedText()
+        val repository = FakePostDraftRepository(generated)
+        val generator = FailurePostTextGenerator(PostTextGenerationError.ImageLoadFailure("Corrupted image file"))
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            postTextGenerator = generator,
+            defaultTargetPlatform = TargetPlatform.InstagramFeedSquare,
+        )
+
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+        viewModel.togglePromptHistory()
+
+        viewModel.generatePostText()
+
+        assertEquals("Corrupted image file", viewModel.state.statusMessage)
+        assertEquals(generated.caption?.text, viewModel.state.generatedCaption, "Caption preserved from draft state")
+        assertEquals(generated.status, viewModel.state.draftStatus, "Draft status preserved")
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri, "Original photo URI preserved")
+        assertTrue(viewModel.state.actions.canGeneratePostText, "Can retry generation")
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
+        assertTrue(viewModel.state.isPromptHistoryVisible, "Prompt history visibility preserved")
+        assertEquals(EditIntent.ImproveLighting, viewModel.state.photoEditForm.selectedIntent)
+        assertEquals(RealismLevel.Photoreal, viewModel.state.photoEditForm.selectedRealismLevel)
+        assertEquals(TargetPlatform.InstagramFeedSquare, viewModel.state.photoEditForm.selectedTargetPlatform)
+        assertEquals(QualityTier.Standard, viewModel.state.photoEditForm.selectedQualityTier)
     }
 
     private fun sampleDraft(): PostDraft =
@@ -2690,6 +2755,18 @@ class ManualPostDraftWorkspaceViewModelTest {
                 altTextResult = draft.altTextResults.first(),
                 promptHistoryEntries = emptyList(),
             )
+        }
+    }
+
+    private class FailurePostTextGenerator(
+        private val error: PostTextGenerationError,
+    ) : PostTextGenerator {
+        override fun generateText(
+            draftId: PostDraftId,
+            targetPlatform: TargetPlatform,
+            reuseVisionDescription: Boolean,
+        ): PostTextGenerationResult {
+            return PostTextGenerationResult.Failure(error)
         }
     }
 }
