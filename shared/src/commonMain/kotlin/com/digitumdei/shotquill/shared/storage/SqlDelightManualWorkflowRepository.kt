@@ -497,6 +497,7 @@ class SqlDelightManualWorkflowRepository(
     ): PostDraft? {
         var savedDraft: PostDraft? = null
         queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
             savePhotoEditRequest(editRequest)
             savePromptHistoryEntry(promptHistoryEntry)
             queries.updatePostDraftUpdatedAt(

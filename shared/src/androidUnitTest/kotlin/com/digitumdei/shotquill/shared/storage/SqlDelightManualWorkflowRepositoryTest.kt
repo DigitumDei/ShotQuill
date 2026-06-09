@@ -222,6 +222,52 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun savePhotoEditFailureReturnsNullAndRollsBackForMissingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-failure-1"))
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-failure-1"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditFailure(
+            draftId = PostDraftId("nonexistent-draft"),
+            editRequest = editRequest,
+            promptHistoryEntry = promptHistoryEntry,
+            updatedAt = timestamp,
+        )
+
+        assertNull(result)
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-failure-1")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-failure-1")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditFailurePersistsForExistingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-failure-2"))
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-failure-2"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditFailure(
+            draftId = PostDraftId("draft-1"),
+            editRequest = editRequest,
+            promptHistoryEntry = promptHistoryEntry,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(timestamp, result?.updatedAt)
+        assertNotNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-failure-2")))
+        assertNotNull(repository.get(PromptHistoryEntryId("prompt-failure-2")))
+        driver.close()
+    }
+
+    @Test
     fun returnsNullOrEmptyForMissingRecords() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
