@@ -132,8 +132,10 @@ class ManualPostDraftWorkspaceViewModel(
         when (val result = analyzer.analyzePrimaryPhoto(draftId)) {
             is VisionDescriptionAnalysisResult.Success -> {
                 val msg = if (result.cacheHit) "Reused cached vision description" else "Analyzed photo"
-                state = postDraftRepository.get(draftId)?.toState(msg, state.isPromptHistoryVisible)
-                    ?: unloadedState(statusMessage = "Draft not found")
+                state = (postDraftRepository.get(draftId)?.toState(msg, state.isPromptHistoryVisible)
+                    ?: unloadedState(statusMessage = "Draft not found")).copy(
+                    visionDescription = result.visionDescription.description,
+                )
             }
             is VisionDescriptionAnalysisResult.Failure -> {
                 val msg = when (val error = result.error) {
@@ -542,7 +544,7 @@ class ManualPostDraftWorkspaceViewModel(
             originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
             activePhotoUri = activePhoto?.uri,
-            visionDescription = visionDescription?.description,
+            visionDescription = visionDescription?.takeIf { it.mediaAssetId == activePhoto?.id }?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
             targetPlatform = platform,

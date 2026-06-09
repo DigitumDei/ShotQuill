@@ -577,6 +577,55 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun reusesCachedVisionDescriptionForActiveMediaAssetAcrossAssetSwitch() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val originalPhotoDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-original"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Description for the original photo.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_080_000L,
+        )
+        val editedPhotoDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-edited"),
+            draftId = draftId,
+            mediaAssetId = editedMediaId,
+            description = "Description for the edited photo.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_090_000L,
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraftWithEditedMedia().copy(
+                selectedMediaAssetId = editedMediaId,
+                visionDescription = originalPhotoDescription,
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = object : AnalyzeVision {
+                override fun analyzePrimaryPhoto(
+                    draftId: PostDraftId,
+                    reuseCached: Boolean,
+                ): VisionDescriptionAnalysisResult {
+                    return VisionDescriptionAnalysisResult.Success(
+                        editedPhotoDescription,
+                        cacheHit = true,
+                    )
+                }
+            },
+            clock = FixedClock(1_700_000_090_000L),
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Description for the edited photo.", viewModel.state.visionDescription)
+        assertEquals("Reused cached vision description", viewModel.state.statusMessage)
+    }
+
+    @Test
     fun failsClosedWhenNoAnalyzeVisionConfigured() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
