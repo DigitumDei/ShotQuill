@@ -817,7 +817,6 @@ class SqlDelightManualWorkflowRepositoryTest {
             userRefinement = "Focus on the coffee cup",
             subjectDescription = "A coffee cup on a wooden table",
             targetPlatform = "instagram_feed_square",
-            maskRegion = null,
             createdAt = createdAt,
         )
         val mappedPhotoEditResult = ManualWorkflowStorageMapper.photoEditResult(
@@ -1142,7 +1141,6 @@ class SqlDelightManualWorkflowRepositoryTest {
             userRefinement = null,
             subjectDescription = null,
             targetPlatform = TargetPlatform.InstagramStoryReel,
-            maskRegion = null,
             createdAtEpochMillis = createdAt,
         )
         repository.savePhotoEditRequest(request)
@@ -1351,7 +1349,6 @@ class SqlDelightManualWorkflowRepositoryTest {
         userRefinement = "Focus on the coffee cup",
         subjectDescription = "A coffee cup on a wooden table",
         targetPlatform = TargetPlatform.InstagramFeedSquare,
-        maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
 

@@ -137,7 +137,6 @@ internal fun sampleEditGenerationRequest(): PhotoEditGenerationRequest =
             userRefinement = null,
             subjectDescription = null,
             targetPlatform = TargetPlatform.Original,
-            maskRegion = null,
             createdAtEpochMillis = 1_700_000_000_000L,
         ),
         sourceImage = sampleImageInput(),

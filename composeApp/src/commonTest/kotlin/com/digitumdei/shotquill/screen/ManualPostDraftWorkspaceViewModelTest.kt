@@ -200,7 +200,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_025_000L,
                 ),
             ),
@@ -832,7 +831,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = "A coffee cup on a wooden table.",
                     targetPlatform = TargetPlatform.BlueskyPost,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -1248,7 +1246,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_025_000L,
                 ),
             ),
@@ -1361,8 +1358,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             userRefinement = "Be careful with shadows",
             subjectDescription = null,
             targetPlatform = TargetPlatform.BlueskyPost,
-            maskRegion = null,
-            createdAtEpochMillis = 1_700_000_025_000L,
+                        createdAtEpochMillis = 1_700_000_025_000L,
         )
         val result = PhotoEditResult(
             id = PhotoEditResultId("photo-edit-result-1"),
@@ -1660,7 +1656,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = targetPlatform,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 )
                 val result = PhotoEditResult(
@@ -1772,7 +1767,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = "Remove the cup",
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.BlueskyPost,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 )
                 val result = PhotoEditResult(
@@ -1884,8 +1878,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     draftId = draftId, sourceMediaAssetId = MediaAssetId("media-1"),
                     intent = intent, realismLevel = realismLevel, qualityTier = qualityTier,
                     prompt = "assembled prompt", userRefinement = null, subjectDescription = null,
-                    targetPlatform = targetPlatform, maskRegion = null,
-                    createdAtEpochMillis = 1_700_000_200_000L + callCount,
+                    targetPlatform = targetPlatform, createdAtEpochMillis = 1_700_000_200_000L + callCount,
                 )
                 val result = PhotoEditResult(
                     id = PhotoEditResultId("photo-edit-result-$idSuffix"),
@@ -2164,7 +2157,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2241,7 +2233,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2296,7 +2287,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = "Be careful",
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.BlueskyPost,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2388,7 +2378,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2443,7 +2432,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.BlueskyPost,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2501,7 +2489,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.InstagramFeedSquare,
-                    maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L,
                 ),
             ),
@@ -2606,7 +2593,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
                     subjectDescription = null,
                     targetPlatform = targetPlatform,
-                    maskRegion = null,
                     createdAtEpochMillis = EpochClock.Default.nowMillis(),
                 )
             val createdResult = resultDraft?.photoEditResults?.lastOrNull()

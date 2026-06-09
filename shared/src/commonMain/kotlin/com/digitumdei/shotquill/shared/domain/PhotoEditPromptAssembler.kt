@@ -6,7 +6,6 @@ object PhotoEditPromptAssembler {
         realismLevel: RealismLevel,
         qualityTier: QualityTier,
         targetPlatform: TargetPlatform,
-        maskRegion: MaskRegion?,
         subjectDescription: String?,
         userRefinement: String?,
     ): String {
@@ -28,25 +27,6 @@ object PhotoEditPromptAssembler {
                 append(" using ${preset.defaultFramingBehavior.naturalDescription}")
             }
             append(".")
-            if (maskRegion != null) {
-                val bounds = maskRegion.bounds
-                when (bounds) {
-                    is MaskBounds.Normalized -> {
-                        val right = bounds.left + bounds.width
-                        val bottom = bounds.top + bounds.height
-                        append(" The edit is constrained to the region spanning ${
-                            bounds.left
-                        } to $right horizontally and ${
-                            bounds.top
-                        } to $bottom vertically in normalized coordinates.")
-                    }
-                    is MaskBounds.Pixel -> {
-                        val right = bounds.left + bounds.width
-                        val bottom = bounds.top + bounds.height
-                        append(" The edit is constrained to the pixel region from (${bounds.left}, ${bounds.top}) to ($right, $bottom).")
-                    }
-                }
-            }
             if (normalizedSubject.isNotEmpty()) {
                 append(" The subject is $normalizedSubject.")
                 append(" Preserve the subject's appearance.")

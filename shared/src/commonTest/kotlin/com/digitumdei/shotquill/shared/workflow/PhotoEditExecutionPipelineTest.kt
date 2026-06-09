@@ -741,7 +741,6 @@ class PhotoEditExecutionPipelineTest {
             userRefinement = null,
             subjectDescription = "A handmade ceramic mug beside a notebook.",
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            maskRegion = null,
             createdAtEpochMillis = baseEpoch + 1000,
         )
         val draftWithSelection = sampleDraftWithVisionDescription().copy(
@@ -1209,35 +1208,6 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
-    fun `pipeline always produces PhotoEditRequest with null maskRegion`() {
-        val clock = MutableClock(1_700_000_100_000L)
-        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
-        val settingsRepository = apiKeySettings()
-        val pipeline = pipeline(
-            repository = repository,
-            settingsRepository = settingsRepository,
-            aiProvider = FakeAiProvider(),
-            clock = clock,
-        )
-
-        val result = pipeline.execute(
-            draftId = draftId,
-            intent = EditIntent.ImproveLighting,
-            realismLevel = RealismLevel.Photoreal,
-            qualityTier = QualityTier.High,
-            targetPlatform = TargetPlatform.InstagramFeedSquare,
-            userRefinement = null,
-            reuseVisionDescription = true,
-        )
-
-        val success = assertIs<PhotoEditExecutionResult.Success>(result)
-        assertEquals(null, success.photoEditRequest.maskRegion, "Pipeline must always produce null maskRegion")
-        val stored = assertNotNull(repository.get(draftId))
-        val storedRequest = stored.photoEditRequests.single()
-        assertEquals(null, storedRequest.maskRegion, "Stored request maskRegion must be null")
-    }
-
-    @Test
     fun `selectedMediaAssetId is preserved after failure-persisted edit`() {
         val clock = MutableClock(1_700_000_100_000L)
         val preselectedAssetId = MediaAssetId("media-edited-existing")
@@ -1414,7 +1384,6 @@ class PhotoEditExecutionPipelineTest {
         userRefinement = null,
         subjectDescription = null,
         targetPlatform = TargetPlatform.InstagramFeedSquare,
-        maskRegion = null,
         createdAtEpochMillis = baseEpoch,
     )
 
@@ -1450,7 +1419,6 @@ class PhotoEditExecutionPipelineTest {
         realismLevel = realismLevel,
         qualityTier = qualityTier,
         targetPlatform = targetPlatform,
-        maskRegion = null,
         subjectDescription = subjectDescription,
         userRefinement = userRefinement,
     )

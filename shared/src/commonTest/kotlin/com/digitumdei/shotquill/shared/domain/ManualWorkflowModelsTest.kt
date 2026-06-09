@@ -782,7 +782,6 @@ class ManualWorkflowModelsTest {
         userRefinement = "Focus on the coffee cup",
         subjectDescription = "A coffee cup on a wooden table",
         targetPlatform = TargetPlatform.InstagramFeedSquare,
-        maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
 }

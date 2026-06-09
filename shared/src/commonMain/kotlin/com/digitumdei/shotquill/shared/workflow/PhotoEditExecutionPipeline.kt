@@ -143,7 +143,6 @@ class PhotoEditExecutionPipeline(
                         realismLevel = realismLevel,
                         qualityTier = qualityTier,
                         targetPlatform = targetPlatform,
-                        maskRegion = null,
                         subjectDescription = null,
                         userRefinement = cleanedUserRefinement,
                     )
@@ -158,7 +157,6 @@ class PhotoEditExecutionPipeline(
                         userRefinement = cleanedUserRefinement,
                         subjectDescription = null,
                         targetPlatform = targetPlatform,
-                        maskRegion = null,
                         createdAtEpochMillis = now,
                     )
                     return persistFailure(
@@ -186,7 +184,6 @@ class PhotoEditExecutionPipeline(
             realismLevel = realismLevel,
             qualityTier = qualityTier,
             targetPlatform = targetPlatform,
-            maskRegion = null,
             subjectDescription = visionDescription.description,
             userRefinement = cleanedUserRefinement,
         )
@@ -201,7 +198,6 @@ class PhotoEditExecutionPipeline(
             userRefinement = cleanedUserRefinement,
             subjectDescription = visionDescription.description,
             targetPlatform = targetPlatform,
-            maskRegion = null,
             createdAtEpochMillis = now,
         )
 

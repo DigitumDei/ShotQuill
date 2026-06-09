@@ -16,7 +16,6 @@ class PhotoEditPromptAssemblerTest {
         realismLevel = request.realismLevel,
         qualityTier = request.qualityTier,
         targetPlatform = request.targetPlatform,
-        maskRegion = request.maskRegion,
         subjectDescription = request.subjectDescription,
         userRefinement = request.userRefinement,
     )
@@ -264,47 +263,11 @@ class PhotoEditPromptAssemblerTest {
     }
 
     @Test
-    fun includesMaskRegionWhenPresent() {
-        val request = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.25f, 0.1f, 0.5f, 0.5f)),
-        )
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "The edit is constrained to the region spanning")
-        assertContains(prompt, "0.25 to 0.75 horizontally")
-        assertContains(prompt, "0.1 to 0.6 vertically")
-        assertContains(prompt, "in normalized coordinates")
-    }
-
-    @Test
-    fun includesPixelMaskRegionWithNaturalCoordinates() {
-        val request = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Pixel(100, 200, 400, 400)),
-        )
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "The edit is constrained to the pixel region from (100, 200) to (500, 600).")
-    }
-
-    @Test
-    fun omitsMaskRegionWhenNull() {
-        val request = samplePhotoEditRequest(maskRegion = null)
-
-        val prompt = assembleFromRequest(request)
-
-        assertFalse(prompt.contains("constrained to the region"))
-        assertFalse(prompt.contains("pixel region"))
-    }
-
-    @Test
     fun includesLogoOverlayWordingForAddLogoOverlay() {
         val request = samplePhotoEditRequest(
             intent = EditIntent.AddLogoOverlay,
             subjectDescription = "A storefront with a blank sign area",
             userRefinement = "Place the logo in the top-right corner",
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.7f, 0.0f, 0.3f, 0.2f)),
         )
 
         val prompt = assembleFromRequest(request)
@@ -313,7 +276,6 @@ class PhotoEditPromptAssemblerTest {
         assertContains(prompt, "The subject is A storefront with a blank sign area.")
         assertContains(prompt, "Preserve the subject's appearance.")
         assertContains(prompt, "Place the logo in the top-right corner.")
-        assertContains(prompt, "The edit is constrained to the region spanning")
     }
 
     @Test
@@ -322,7 +284,6 @@ class PhotoEditPromptAssemblerTest {
             intent = EditIntent.RemoveObject,
             subjectDescription = "A parked red car with a scratch on the door",
             userRefinement = "Remove the scratch completely and fill naturally",
-            maskRegion = MaskRegion(MaskBounds.Pixel(300, 400, 150, 50)),
         )
 
         val prompt = assembleFromRequest(request)
@@ -331,29 +292,6 @@ class PhotoEditPromptAssemblerTest {
         assertContains(prompt, "The subject is A parked red car with a scratch on the door.")
         assertContains(prompt, "Preserve the subject's appearance.")
         assertContains(prompt, "Remove the scratch completely and fill naturally.")
-        assertContains(prompt, "The edit is constrained to the pixel region from (300, 400) to (450, 450).")
-    }
-
-    @Test
-    fun maskRegionDescriptionIsNaturalProseNoColonLabels() {
-        val normalized = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.1f, 0.2f, 0.3f, 0.4f)),
-        )
-        val pixel = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Pixel(50, 60, 100, 200)),
-        )
-
-        val normalizedPrompt = assembleFromRequest(normalized)
-        val pixelPrompt = assembleFromRequest(pixel)
-
-        assertFalse(normalizedPrompt.contains("maskRegion:"))
-        assertFalse(normalizedPrompt.contains("MaskBounds."))
-        assertFalse(normalizedPrompt.contains("Normalized("))
-        assertFalse(normalizedPrompt.contains("left="))
-        assertFalse(pixelPrompt.contains("maskRegion:"))
-        assertFalse(pixelPrompt.contains("MaskBounds."))
-        assertFalse(pixelPrompt.contains("Pixel("))
-        assertFalse(pixelPrompt.contains("left="))
     }
 
     @Test
@@ -363,7 +301,6 @@ class PhotoEditPromptAssemblerTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            maskRegion = null,
             subjectDescription = "A coffee cup on a wooden table",
             userRefinement = "Focus on the coffee cup",
         )
@@ -379,7 +316,6 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "Focus on the coffee cup",
             subjectDescription = "A coffee cup on a wooden table",
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            maskRegion = null,
             createdAtEpochMillis = createdAt,
         )
 
@@ -388,7 +324,6 @@ class PhotoEditPromptAssemblerTest {
             realismLevel = persisted.realismLevel,
             qualityTier = persisted.qualityTier,
             targetPlatform = persisted.targetPlatform,
-            maskRegion = persisted.maskRegion,
             subjectDescription = persisted.subjectDescription,
             userRefinement = persisted.userRefinement,
         )
@@ -403,7 +338,6 @@ class PhotoEditPromptAssemblerTest {
             realismLevel = RealismLevel.Flat,
             qualityTier = QualityTier.Medium,
             targetPlatform = TargetPlatform.InstagramPortrait,
-            maskRegion = MaskRegion(MaskBounds.Pixel(100, 200, 300, 400)),
             subjectDescription = "A person standing in front of a wall",
             userRefinement = "Keep the person centered",
         )
@@ -419,7 +353,6 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "Keep the person centered",
             subjectDescription = "A person standing in front of a wall",
             targetPlatform = TargetPlatform.InstagramPortrait,
-            maskRegion = MaskRegion(MaskBounds.Pixel(100, 200, 300, 400)),
             createdAtEpochMillis = createdAt,
         )
 
@@ -428,7 +361,6 @@ class PhotoEditPromptAssemblerTest {
             realismLevel = persisted.realismLevel,
             qualityTier = persisted.qualityTier,
             targetPlatform = persisted.targetPlatform,
-            maskRegion = persisted.maskRegion,
             subjectDescription = persisted.subjectDescription,
             userRefinement = persisted.userRefinement,
         )
@@ -444,7 +376,6 @@ class PhotoEditPromptAssemblerTest {
         qualityTier: QualityTier = QualityTier.Standard,
         subjectDescription: String? = null,
         userRefinement: String? = null,
-        maskRegion: MaskRegion? = null,
     ): PhotoEditRequest = PhotoEditRequest(
         id = photoEditRequestId,
         draftId = draftId,
@@ -456,7 +387,6 @@ class PhotoEditPromptAssemblerTest {
         userRefinement = userRefinement,
         subjectDescription = subjectDescription,
         targetPlatform = targetPlatform,
-        maskRegion = maskRegion,
         createdAtEpochMillis = createdAt,
     )
 }
