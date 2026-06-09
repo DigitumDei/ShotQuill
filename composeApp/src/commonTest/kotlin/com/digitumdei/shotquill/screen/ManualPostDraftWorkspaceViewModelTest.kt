@@ -26,17 +26,23 @@ import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.domain.PostMediaItem
+import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
+import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
+import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisError
+import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -518,6 +524,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            analyzeVision = FakeAnalyzeVision(repository, FixedClock(1_700_000_090_000L)),
             clock = FixedClock(1_700_000_090_000L),
         )
         viewModel.load()
@@ -557,6 +564,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            analyzeVision = FakeAnalyzeVision(repository, FixedClock(1_700_000_090_000L)),
             clock = FixedClock(1_700_000_090_000L),
         )
         viewModel.load()
@@ -566,6 +574,18 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Cached workspace description.", viewModel.state.visionDescription)
         assertEquals("Reused cached vision description", viewModel.state.statusMessage)
         assertEquals(emptyList(), viewModel.state.promptHistory)
+    }
+
+    @Test
+    fun failsClosedWhenNoAnalyzeVisionConfigured() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Vision analysis not available", viewModel.state.statusMessage)
+        assertNull(viewModel.state.visionDescription)
     }
 
     @Test
@@ -641,6 +661,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
+            analyzeVision = FakeAnalyzeVision(repository),
             photoEditExecutor = executor,
         )
         viewModel.load()
@@ -2769,6 +2790,55 @@ class ManualPostDraftWorkspaceViewModelTest {
             reuseVisionDescription: Boolean,
         ): PostTextGenerationResult {
             return PostTextGenerationResult.Failure(error)
+        }
+    }
+
+    private class FakeAnalyzeVision(
+        private val repository: PostDraftRepository,
+        private val clock: EpochClock = EpochClock.Default,
+    ) : AnalyzeVision {
+        override fun analyzePrimaryPhoto(draftId: PostDraftId, reuseCached: Boolean): VisionDescriptionAnalysisResult {
+            val draft = repository.get(draftId) ?: return VisionDescriptionAnalysisResult.Failure(
+                VisionDescriptionAnalysisError.DraftNotFound,
+            )
+            val mediaAsset = try {
+                draft.primaryMediaAsset()
+            } catch (_: IllegalStateException) {
+                return VisionDescriptionAnalysisResult.Failure(
+                    VisionDescriptionAnalysisError.ImageLoadFailure("No primary media asset"),
+                )
+            }
+            if (reuseCached) {
+                draft.visionDescription?.takeIf { it.mediaAssetId == mediaAsset.id }?.let {
+                    return VisionDescriptionAnalysisResult.Success(it, cacheHit = true)
+                }
+            }
+            val now = clock.nowMillis()
+            val description = "Photo shows ${mediaAsset.uri.substringAfterLast('/')} prepared for social content."
+            val prompt = VisionDescriptionPromptFactory.buildPrompt(mediaAsset)
+            val visionDescription = VisionDescription(
+                id = VisionDescriptionId("vision-description-$now"),
+                draftId = draftId,
+                mediaAssetId = mediaAsset.id,
+                description = description,
+                modelName = "fake-manual-draft-ai",
+                createdAtEpochMillis = now,
+            )
+            val promptHistoryEntry = PromptHistoryEntry(
+                id = PromptHistoryEntryId("prompt-vision-description-$now"),
+                draftId = draftId,
+                operationType = AiOperationType.VisionDescription,
+                prompt = prompt,
+                responseSummary = description,
+                modelName = "fake-manual-draft-ai",
+                createdAtEpochMillis = now,
+            )
+            val updated = draft.copy(
+                visionDescription = visionDescription,
+                promptHistory = draft.promptHistory + promptHistoryEntry,
+            )
+            repository.save(updated)
+            return VisionDescriptionAnalysisResult.Success(visionDescription, cacheHit = false)
         }
     }
 }

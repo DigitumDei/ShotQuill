@@ -24,9 +24,6 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
-import com.digitumdei.shotquill.shared.domain.VisionDescription
-import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
-import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
@@ -118,7 +115,7 @@ class ManualPostDraftWorkspaceViewModel(
 
     fun analyzeVisionDescription() {
         val analyzer = analyzeVision ?: run {
-            analyzeVisionDescriptionLegacy()
+            state = state.copy(statusMessage = "Vision analysis not available")
             return
         }
         val draft = postDraftRepository.get(draftId) ?: run {
@@ -134,7 +131,8 @@ class ManualPostDraftWorkspaceViewModel(
         }
         when (val result = analyzer.analyzePrimaryPhoto(draftId)) {
             is VisionDescriptionAnalysisResult.Success -> {
-                state = postDraftRepository.get(draftId)?.toState("Analyzed photo", state.isPromptHistoryVisible)
+                val msg = if (result.cacheHit) "Reused cached vision description" else "Analyzed photo"
+                state = postDraftRepository.get(draftId)?.toState(msg, state.isPromptHistoryVisible)
                     ?: unloadedState(statusMessage = "Draft not found")
             }
             is VisionDescriptionAnalysisResult.Failure -> {
@@ -147,53 +145,6 @@ class ManualPostDraftWorkspaceViewModel(
                     ?: unloadedState(statusMessage = msg)
             }
         }
-    }
-
-    private fun analyzeVisionDescriptionLegacy() {
-        val draft = postDraftRepository.get(draftId) ?: run {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
-        }
-        draft.visionDescription?.let {
-            state = draft.toState("Reused cached vision description", state.isPromptHistoryVisible)
-            return
-        }
-        val now = clock.nowMillis()
-        val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (draft.status !in mutableDraftStatuses) {
-            state = draft.toState(
-                statusMessage = "Cannot analyze vision while status is ${draft.status.wireValue}",
-                isPromptHistoryVisible = state.isPromptHistoryVisible,
-            )
-            return
-        }
-        val idSuffix = nextIdSuffix(now)
-        val original = draft.primaryMediaAsset()
-        val description = "Photo shows ${original.uri.substringAfterLast('/')} prepared for social content."
-        val prompt = VisionDescriptionPromptFactory.buildPrompt(original)
-        val visionDescription = VisionDescription(
-            id = VisionDescriptionId("vision-description-$idSuffix"),
-            draftId = draft.id,
-            mediaAssetId = original.id,
-            description = description,
-            modelName = "fake-manual-draft-ai",
-            createdAtEpochMillis = now,
-        )
-        val updated = draft.copy(
-            visionDescription = visionDescription,
-            promptHistory = draft.promptHistory + PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-vision-description-$idSuffix"),
-                draftId = draft.id,
-                operationType = AiOperationType.VisionDescription,
-                prompt = prompt,
-                responseSummary = description,
-                modelName = "fake-manual-draft-ai",
-                createdAtEpochMillis = now,
-            ),
-            updatedAt = operationUpdatedAt,
-        )
-        postDraftRepository.save(updated)
-        state = updated.toState("Analyzed photo", state.isPromptHistoryVisible)
     }
 
     fun generatePostText() {
