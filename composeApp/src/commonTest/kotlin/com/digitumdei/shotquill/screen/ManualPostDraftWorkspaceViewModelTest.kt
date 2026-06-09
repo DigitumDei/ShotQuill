@@ -2347,7 +2347,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
         assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri, "Active photo must reflect the preselected asset's URI")
         assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri, "Original photo URI must be preserved")
-        assertFalse(viewModel.state.actions.canSelectOriginalPhoto, "Original should not be selectable when preselected edited is active")
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto, "Original should still be selectable when preselected edited is active")
         assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Should still be able to re-edit after failure")
     }
 

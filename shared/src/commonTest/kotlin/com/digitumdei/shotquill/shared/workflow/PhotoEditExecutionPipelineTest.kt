@@ -1197,9 +1197,29 @@ class PhotoEditExecutionPipelineTest {
     @Test
     fun `selectedMediaAssetId is preserved after failure-persisted edit`() {
         val clock = MutableClock(1_700_000_100_000L)
-        val preselectedAssetId = MediaAssetId("media-preselected")
+        val preselectedAssetId = MediaAssetId("media-edited-existing")
+        val existingEditedAsset = MediaAsset(
+            id = preselectedAssetId,
+            type = MediaType.EditedPhoto,
+            uri = "file://edited/existing.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1920,
+            heightPx = 1080,
+            createdAtEpochMillis = baseEpoch + 1000,
+        )
+        val existingResult = PhotoEditResult(
+            id = PhotoEditResultId("edit-result-existing"),
+            requestId = PhotoEditRequestId("edit-req-existing"),
+            draftId = draftId,
+            editedMediaAsset = existingEditedAsset,
+            summary = "Previous edit.",
+            modelName = "dall-e-3",
+            createdAtEpochMillis = baseEpoch + 1000,
+        )
         val currentDraft = sampleDraftWithVisionDescription().copy(
+            status = DraftStatus.PhotoEdited,
             selectedMediaAssetId = preselectedAssetId,
+            photoEditResults = listOf(existingResult),
         )
         val repository = FakeManualWorkflowRepository(currentDraft)
         val settingsRepository = apiKeySettings()
