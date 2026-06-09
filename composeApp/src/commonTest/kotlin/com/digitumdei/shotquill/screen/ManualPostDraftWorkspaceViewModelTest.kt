@@ -2073,6 +2073,116 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(PhotoEditFormOperationState.Loading, capturedStates.single())
     }
 
+    @Test
+    fun failurePersistedWithFailedToLoadSourceImageShowsFormError() {
+        val persistedDraft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-load-fail"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Failing request",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = persistedDraft.photoEditRequests.first(),
+                    assembledPrompt = "assembled",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-load-fail"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "assembled",
+                        responseSummary = "Source image unreadable",
+                        modelName = null,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = persistedDraft,
+                    cause = PhotoEditExecutionError.FailedToLoadSourceImage("Source image unreadable"),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: Source image unreadable", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun failurePersistedWithFailedToSaveEditedImageShowsFormError() {
+        val persistedDraft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditRequests = listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-save-fail"),
+                    draftId = draftId,
+                    sourceMediaAssetId = mediaAssetId,
+                    intent = EditIntent.AddBackground,
+                    realismLevel = RealismLevel.Polished,
+                    qualityTier = QualityTier.High,
+                    prompt = "Add a sunset background",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.BlueskyPost,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = persistedDraft.photoEditRequests.first(),
+                    assembledPrompt = "Add a sunset background",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-save-fail"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "Add a sunset background",
+                        responseSummary = "Insufficient storage",
+                        modelName = null,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = persistedDraft,
+                    cause = PhotoEditExecutionError.FailedToSaveEditedImage("Insufficient storage"),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: Insufficient storage", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
     private class RecordingPhotoEditExecutor(
         private val resultDraft: PostDraft? = null,
         private val result: PhotoEditExecutionResult? = null,
