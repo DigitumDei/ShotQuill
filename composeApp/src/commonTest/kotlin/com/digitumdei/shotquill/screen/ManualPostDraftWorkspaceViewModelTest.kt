@@ -779,6 +779,122 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun selectEditedPhotoOnArchivedDraftPreservesDraftIntegrity() {
+        val originalUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_100_000L)
+        val selectedAssetId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            status = DraftStatus.Archived,
+            selectedMediaAssetId = selectedAssetId,
+            updatedAt = originalUpdatedAt,
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val activeUriBefore = viewModel.state.activePhotoUri
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals(
+            "Cannot select edited photo while status is archived",
+            viewModel.state.statusMessage,
+        )
+        assertEquals(activeUriBefore, viewModel.state.activePhotoUri)
+        assertEquals(selectedAssetId, repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals(originalUpdatedAt, repository.get(draftId)?.updatedAt)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun selectOriginalPhotoOnArchivedDraftPreservesDraftIntegrity() {
+        val originalUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_100_000L)
+        val selectedAssetId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            status = DraftStatus.Archived,
+            selectedMediaAssetId = selectedAssetId,
+            updatedAt = originalUpdatedAt,
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val activeUriBefore = viewModel.state.activePhotoUri
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals(
+            "Cannot select original photo while status is archived",
+            viewModel.state.statusMessage,
+        )
+        assertEquals(activeUriBefore, viewModel.state.activePhotoUri)
+        assertEquals(selectedAssetId, repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals(originalUpdatedAt, repository.get(draftId)?.updatedAt)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun selectEditedPhotoOnSharedDraftPreservesDraftIntegrity() {
+        val originalUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_100_000L)
+        val selectedAssetId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            status = DraftStatus.Shared,
+            selectedMediaAssetId = selectedAssetId,
+            updatedAt = originalUpdatedAt,
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val activeUriBefore = viewModel.state.activePhotoUri
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals(
+            "Cannot select edited photo while status is shared",
+            viewModel.state.statusMessage,
+        )
+        assertEquals(activeUriBefore, viewModel.state.activePhotoUri)
+        assertEquals(selectedAssetId, repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals(originalUpdatedAt, repository.get(draftId)?.updatedAt)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
+    fun selectOriginalPhotoOnSharedDraftPreservesDraftIntegrity() {
+        val originalUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_100_000L)
+        val selectedAssetId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            status = DraftStatus.Shared,
+            selectedMediaAssetId = selectedAssetId,
+            updatedAt = originalUpdatedAt,
+        )
+        val repository = FakePostDraftRepository(draft)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        val activeUriBefore = viewModel.state.activePhotoUri
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals(
+            "Cannot select original photo while status is shared",
+            viewModel.state.statusMessage,
+        )
+        assertEquals(activeUriBefore, viewModel.state.activePhotoUri)
+        assertEquals(selectedAssetId, repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals(originalUpdatedAt, repository.get(draftId)?.updatedAt)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto)
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
     fun handlesDraftDisappearingBeforeActions() {
         val executor = RecordingPhotoEditExecutor(
             result = PhotoEditExecutionResult.Failure(
