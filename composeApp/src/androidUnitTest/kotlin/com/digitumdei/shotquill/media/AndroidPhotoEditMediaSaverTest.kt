@@ -183,7 +183,10 @@ class AndroidPhotoEditMediaSaverTest {
 
         val failingSaver = AndroidPhotoEditMediaSaver(
             filesDir = tmpDir,
-            onWriteFile = { throw java.io.IOException("Simulated write failure") },
+            onWriteFile = { file ->
+                file.writeBytes(byteArrayOf(0, 0, 0))
+                throw java.io.IOException("Simulated write failure")
+            },
         )
 
         val result = failingSaver.save(
