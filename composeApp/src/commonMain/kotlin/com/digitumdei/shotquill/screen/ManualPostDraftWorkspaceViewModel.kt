@@ -409,6 +409,7 @@ class ManualPostDraftWorkspaceViewModel(
                 val cause = result.error
                 val msg = when (cause) {
                     is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
+                    is PhotoEditExecutionError.SourceMediaNotFound -> "The source photo for this draft is no longer available"
                     is PhotoEditExecutionError.InvalidDraftStatus -> "Cannot edit photo while status is ${cause.status.wireValue}"
                     is PhotoEditExecutionError.Provider -> "Unable to edit photo: ${cause.error.userMessage}"
                     is PhotoEditExecutionError.FailurePersisted -> {

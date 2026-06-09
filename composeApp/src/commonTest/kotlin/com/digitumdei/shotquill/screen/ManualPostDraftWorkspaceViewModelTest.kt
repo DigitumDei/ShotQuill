@@ -1938,6 +1938,28 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun exposesRecoverableErrorForSourceMediaNotFound() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.SourceMediaNotFound,
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("The source photo for this draft is no longer available", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+    }
+
+    @Test
     fun usesConfiguredPhotoEditExecutorWhenEditingPhoto() {
         val repository = FakePostDraftRepository(sampleDraft())
         val executor = RecordingPhotoEditExecutor()

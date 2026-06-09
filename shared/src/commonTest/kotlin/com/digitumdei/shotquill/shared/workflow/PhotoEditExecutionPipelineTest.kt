@@ -603,6 +603,13 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `SourceMediaNotFound error is a data object`() {
+        val e1 = PhotoEditExecutionError.SourceMediaNotFound
+        val e2 = PhotoEditExecutionError.SourceMediaNotFound
+        assertEquals(e1, e2)
+    }
+
+    @Test
     fun `InvalidDraftStatus error carries status`() {
         val err = PhotoEditExecutionError.InvalidDraftStatus(DraftStatus.Archived)
         assertEquals(DraftStatus.Archived, err.status)
@@ -658,6 +665,7 @@ class PhotoEditExecutionPipelineTest {
     fun `FailurePersisted can wrap any PhotoEditExecutionError cause`() {
         val causes = listOf<PhotoEditExecutionError>(
             PhotoEditExecutionError.DraftNotFound,
+            PhotoEditExecutionError.SourceMediaNotFound,
             PhotoEditExecutionError.InvalidDraftStatus(DraftStatus.Archived),
             PhotoEditExecutionError.Provider(AiError.MissingApiKey),
             PhotoEditExecutionError.Provider(AiError.QuotaExceeded()),
@@ -789,6 +797,40 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "re-edit success.promptHistoryEntry.prompt must match the assembled prompt")
         assertEquals(editedMediaAssetId, capturedSourceId, "Pipeline must use the selected edited asset as source")
         assertEquals(editedMediaAssetId, success.photoEditRequest.sourceMediaAssetId, "Edit request source must be the selected edited asset")
+    }
+
+    @Test
+    fun `draft exists but vision asset not found returns SourceMediaNotFound`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val orphanVision = VisionDescription(
+            id = VisionDescriptionId("vision-orphan"),
+            draftId = draftId,
+            mediaAssetId = MediaAssetId("media-nonexistent"),
+            description = "A description for an asset that no longer exists.",
+            modelName = "cached-model",
+            createdAtEpochMillis = 1_700_000_050_000L,
+        )
+        val draft = sampleDraft().copy(visionDescription = orphanVision)
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.Standard,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.SourceMediaNotFound>(failure.error)
     }
 
     @Test

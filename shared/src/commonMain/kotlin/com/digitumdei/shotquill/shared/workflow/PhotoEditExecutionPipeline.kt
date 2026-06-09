@@ -85,6 +85,7 @@ class PhotoEditExecutionPipeline(
             is PhotoEditExecutionError.FailurePersisted -> "Previous attempt failed"
             is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
             is PhotoEditExecutionError.InvalidDraftStatus -> "Invalid draft status: ${cause.status.wireValue}"
+            is PhotoEditExecutionError.SourceMediaNotFound -> "Source media not found"
         }
 
         fun persistFailure(
@@ -177,7 +178,7 @@ class PhotoEditExecutionPipeline(
         val sourceMediaAsset = currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == visionDescription.mediaAssetId }?.mediaAsset
             ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == visionDescription.mediaAssetId }?.editedMediaAsset
             ?: return PhotoEditExecutionResult.Failure(
-                PhotoEditExecutionError.DraftNotFound,
+                PhotoEditExecutionError.SourceMediaNotFound,
             )
 
         val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
@@ -354,6 +355,7 @@ sealed class PhotoEditExecutionResult {
 
 sealed class PhotoEditExecutionError {
     data object DraftNotFound : PhotoEditExecutionError()
+    data object SourceMediaNotFound : PhotoEditExecutionError()
     data class InvalidDraftStatus(val status: DraftStatus) : PhotoEditExecutionError()
     data class Provider(val error: AiError) : PhotoEditExecutionError()
     data class FailedToLoadSourceImage(val message: String) : PhotoEditExecutionError()
