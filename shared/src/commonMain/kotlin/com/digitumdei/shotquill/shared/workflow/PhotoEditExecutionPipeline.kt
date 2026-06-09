@@ -20,6 +20,7 @@ import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
+import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
@@ -76,62 +77,9 @@ class PhotoEditExecutionPipeline(
             )
         }
 
-        val visionDescription = when (
-            val result = VisionDescriptionAnalyzer(
-                repository = repository,
-                aiProvider = aiProvider,
-                imageSource = visionImageSource,
-                clock = clock,
-            ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
-        ) {
-            is VisionDescriptionAnalysisResult.Failure -> return PhotoEditExecutionResult.Failure(
-                when (val error = result.error) {
-                    VisionDescriptionAnalysisError.DraftNotFound ->
-                        PhotoEditExecutionError.DraftNotFound
-                    is VisionDescriptionAnalysisError.Provider ->
-                        PhotoEditExecutionError.Provider(error.error)
-                    is VisionDescriptionAnalysisError.ImageLoadFailure ->
-                        PhotoEditExecutionError.FailedToLoadSourceImage(error.message)
-                },
-            )
-            is VisionDescriptionAnalysisResult.Success -> result.visionDescription
-        }
-
-        val currentDraft = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
-            PhotoEditExecutionError.DraftNotFound,
-        )
-        val sourceMediaAsset = currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == visionDescription.mediaAssetId }?.mediaAsset
-            ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == visionDescription.mediaAssetId }?.editedMediaAsset
-            ?: return PhotoEditExecutionResult.Failure(
-                PhotoEditExecutionError.DraftNotFound,
-            )
-
         val now = clock.nowMillis()
         val idSuffix = nextIdSuffix(now)
         val cleanedUserRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() }
-        val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
-            intent = intent,
-            realismLevel = realismLevel,
-            qualityTier = qualityTier,
-            targetPlatform = targetPlatform,
-            maskRegion = maskRegion,
-            subjectDescription = visionDescription.description,
-            userRefinement = cleanedUserRefinement,
-        )
-        val editRequest = PhotoEditRequest(
-            id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
-            draftId = draftId,
-            sourceMediaAssetId = sourceMediaAsset.id,
-            intent = intent,
-            realismLevel = realismLevel,
-            qualityTier = qualityTier,
-            prompt = assembledPrompt,
-            userRefinement = cleanedUserRefinement,
-            subjectDescription = visionDescription.description,
-            targetPlatform = targetPlatform,
-            maskRegion = maskRegion,
-            createdAtEpochMillis = now,
-        )
 
         fun failureSummary(cause: PhotoEditExecutionError): String = when (cause) {
             is PhotoEditExecutionError.Provider -> cause.error.userMessage
@@ -142,7 +90,12 @@ class PhotoEditExecutionPipeline(
             is PhotoEditExecutionError.InvalidDraftStatus -> "Invalid draft status: ${cause.status.wireValue}"
         }
 
-        fun persistFailure(cause: PhotoEditExecutionError): PhotoEditExecutionResult.Failure {
+        fun persistFailure(
+            cause: PhotoEditExecutionError,
+            editRequest: PhotoEditRequest,
+            assembledPrompt: String,
+            currentDraft: PostDraft,
+        ): PhotoEditExecutionResult.Failure {
             val failureEntry = PromptHistoryEntry(
                 id = PromptHistoryEntryId("prompt-photo-edit-failure-$idSuffix"),
                 draftId = draftId,
@@ -172,10 +125,95 @@ class PhotoEditExecutionPipeline(
             )
         }
 
+        val visionDescription = when (
+            val result = VisionDescriptionAnalyzer(
+                repository = repository,
+                aiProvider = aiProvider,
+                imageSource = visionImageSource,
+                clock = clock,
+            ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
+        ) {
+            is VisionDescriptionAnalysisResult.Failure -> when (val error = result.error) {
+                VisionDescriptionAnalysisError.DraftNotFound ->
+                    return PhotoEditExecutionResult.Failure(PhotoEditExecutionError.DraftNotFound)
+                is VisionDescriptionAnalysisError.Provider ->
+                    return PhotoEditExecutionResult.Failure(PhotoEditExecutionError.Provider(error.error))
+                is VisionDescriptionAnalysisError.ImageLoadFailure -> {
+                    val primaryAsset = draft.primaryMediaAsset()
+                    val fallbackPrompt = PhotoEditPromptAssembler.buildPrompt(
+                        intent = intent,
+                        realismLevel = realismLevel,
+                        qualityTier = qualityTier,
+                        targetPlatform = targetPlatform,
+                        maskRegion = maskRegion,
+                        subjectDescription = null,
+                        userRefinement = cleanedUserRefinement,
+                    )
+                    val fallbackRequest = PhotoEditRequest(
+                        id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
+                        draftId = draftId,
+                        sourceMediaAssetId = primaryAsset.id,
+                        intent = intent,
+                        realismLevel = realismLevel,
+                        qualityTier = qualityTier,
+                        prompt = fallbackPrompt,
+                        userRefinement = cleanedUserRefinement,
+                        subjectDescription = null,
+                        targetPlatform = targetPlatform,
+                        maskRegion = maskRegion,
+                        createdAtEpochMillis = now,
+                    )
+                    return persistFailure(
+                        PhotoEditExecutionError.FailedToLoadSourceImage(error.message),
+                        fallbackRequest,
+                        fallbackPrompt,
+                        draft,
+                    )
+                }
+            }
+            is VisionDescriptionAnalysisResult.Success -> result.visionDescription
+        }
+
+        val currentDraft = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
+            PhotoEditExecutionError.DraftNotFound,
+        )
+        val sourceMediaAsset = currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == visionDescription.mediaAssetId }?.mediaAsset
+            ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == visionDescription.mediaAssetId }?.editedMediaAsset
+            ?: return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            )
+
+        val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
+            intent = intent,
+            realismLevel = realismLevel,
+            qualityTier = qualityTier,
+            targetPlatform = targetPlatform,
+            maskRegion = maskRegion,
+            subjectDescription = visionDescription.description,
+            userRefinement = cleanedUserRefinement,
+        )
+        val editRequest = PhotoEditRequest(
+            id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
+            draftId = draftId,
+            sourceMediaAssetId = sourceMediaAsset.id,
+            intent = intent,
+            realismLevel = realismLevel,
+            qualityTier = qualityTier,
+            prompt = assembledPrompt,
+            userRefinement = cleanedUserRefinement,
+            subjectDescription = visionDescription.description,
+            targetPlatform = targetPlatform,
+            maskRegion = maskRegion,
+            createdAtEpochMillis = now,
+        )
+
         val sourceImageResult = imageSource.load(sourceMediaAsset)
         if (sourceImageResult is SourceImageResult.Failure) {
             return persistFailure(
                 PhotoEditExecutionError.FailedToLoadSourceImage(sourceImageResult.message),
+                editRequest,
+                assembledPrompt,
+                currentDraft,
             )
         }
 
@@ -189,6 +227,9 @@ class PhotoEditExecutionPipeline(
         ) {
             is AiProviderResult.Failure -> return persistFailure(
                 PhotoEditExecutionError.Provider(result.error),
+                editRequest,
+                assembledPrompt,
+                currentDraft,
             )
             is AiProviderResult.Success -> result.value
         }
@@ -204,6 +245,9 @@ class PhotoEditExecutionPipeline(
         if (saveResult is SaveEditedImageResult.Failure) {
             return persistFailure(
                 PhotoEditExecutionError.FailedToSaveEditedImage(saveResult.message),
+                editRequest,
+                assembledPrompt,
+                currentDraft,
             )
         }
 

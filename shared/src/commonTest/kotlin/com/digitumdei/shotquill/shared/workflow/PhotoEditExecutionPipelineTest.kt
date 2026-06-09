@@ -290,7 +290,7 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
-    fun `vision image source load failure returns Failure`() {
+    fun `vision image source load failure returns FailurePersisted`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraftWithVisionDescription()
         val repository = FakeManualWorkflowRepository(draft)
@@ -317,11 +317,18 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
-        val loadError = assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(failure.error)
-        assertEquals("Corrupt vision image file", loadError.message)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(persisted.cause)
+        assertEquals("Corrupt vision image file", (persisted.cause as PhotoEditExecutionError.FailedToLoadSourceImage).message)
+        val expectedPrompt = expectedAssembledPrompt(subjectDescription = null)
+        assertEquals(expectedPrompt, persisted.assembledPrompt, "vision load failure persisted.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "vision load failure persisted.photoEditRequest.prompt must match the assembled prompt")
+        assertEquals(expectedPrompt, persisted.promptHistoryEntry.prompt, "vision load failure persisted.promptHistoryEntry.prompt must match the assembled prompt")
         val stored = assertNotNull(repository.get(draftId))
-        assertEquals(0, stored.photoEditRequests.size, "No edit requests should be persisted")
-        assertEquals(0, stored.promptHistory.size, "No prompt history should be persisted")
+        assertEquals(1, stored.photoEditRequests.size, "Edit request must be persisted on vision load failure")
+        assertEquals(1, stored.promptHistory.size, "Prompt history must be persisted on vision load failure")
+        assertTrue(persisted.updatedDraft.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "vision load failure updatedDraft.updatedAt must advance")
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "vision load failure stored updatedAt must advance")
     }
 
     @Test
