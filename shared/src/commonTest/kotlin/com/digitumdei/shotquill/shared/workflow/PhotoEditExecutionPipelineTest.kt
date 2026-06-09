@@ -1492,18 +1492,7 @@ class PhotoEditExecutionPipelineTest {
             clock = clock,
         )
 
-        val resultWithNull = pipeline.execute(
-            draftId = draftId,
-            intent = EditIntent.ImproveLighting,
-            realismLevel = RealismLevel.Photoreal,
-            qualityTier = QualityTier.High,
-            targetPlatform = TargetPlatform.InstagramFeedSquare,
-            userRefinement = null,
-            reuseVisionDescription = true,
-        )
-        val expectedPrompt = (resultWithNull as PhotoEditExecutionResult.Success).assembledPrompt
-
-        val resultWithWhitespace = pipeline.execute(
+        val result = pipeline.execute(
             draftId = draftId,
             intent = EditIntent.ImproveLighting,
             realismLevel = RealismLevel.Photoreal,
@@ -1512,9 +1501,11 @@ class PhotoEditExecutionPipelineTest {
             userRefinement = "  ",
             reuseVisionDescription = true,
         )
-        val whitespacePrompt = (resultWithWhitespace as PhotoEditExecutionResult.Success).assembledPrompt
+        val success = result as PhotoEditExecutionResult.Success
 
-        assertEquals(expectedPrompt, whitespacePrompt, "Whitespace-only refinement must produce the same prompt as null refinement")
+        val expectedPrompt = expectedAssembledPrompt(userRefinement = null)
+        assertEquals(expectedPrompt, success.assembledPrompt, "Whitespace-only refinement must produce the same prompt as null refinement")
+        assertNull(success.photoEditRequest.userRefinement, "Whitespace-only userRefinement must be normalized to null before persistence")
     }
 
     @Test
