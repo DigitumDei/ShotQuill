@@ -1262,7 +1262,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -1293,7 +1292,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -1324,7 +1322,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -1367,7 +1364,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -1380,7 +1376,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     intent = intent,
                     realismLevel = realismLevel,
                     qualityTier = qualityTier,
-                    prompt = prompt,
+                    prompt = "assembled prompt",
                     userRefinement = null,
                     subjectDescription = null,
                     targetPlatform = targetPlatform,
@@ -1476,7 +1472,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -1494,7 +1489,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     intent = EditIntent.RemoveObject,
                     realismLevel = RealismLevel.Polished,
                     qualityTier = QualityTier.High,
-                    prompt = prompt,
+                    prompt = "assembled prompt",
                     userRefinement = "Remove the cup",
                     subjectDescription = null,
                     targetPlatform = TargetPlatform.BlueskyPost,
@@ -1600,7 +1595,6 @@ class ManualPostDraftWorkspaceViewModelTest {
         val executor = object : PhotoEditExecutor {
             override fun execute(
                 draftId: PostDraftId, intent: EditIntent, realismLevel: RealismLevel,
-                qualityTier: QualityTier, targetPlatform: TargetPlatform, prompt: String,
                 userRefinement: String?, maskRegion: MaskRegion?, reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 callCount++
@@ -1609,7 +1603,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
                     draftId = draftId, sourceMediaAssetId = MediaAssetId("media-1"),
                     intent = intent, realismLevel = realismLevel, qualityTier = qualityTier,
-                    prompt = prompt, userRefinement = null, subjectDescription = null,
+                    prompt = "assembled prompt", userRefinement = null, subjectDescription = null,
                     targetPlatform = targetPlatform, maskRegion = null,
                     createdAtEpochMillis = 1_700_000_200_000L + callCount,
                 )
@@ -2056,7 +2050,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 realismLevel: RealismLevel,
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
-                prompt: String,
                 userRefinement: String?,
                 maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
@@ -2092,7 +2085,6 @@ class ManualPostDraftWorkspaceViewModelTest {
         var capturedTargetPlatform: TargetPlatform? = null
         var capturedMaskRegion: MaskRegion? = null
         var capturedUserRefinement: String? = null
-        var capturedPrompt: String? = null
         var capturedReuseVisionDescription: Boolean? = null
 
         private fun defaultMediaAsset(): MediaAsset =
@@ -2114,7 +2106,6 @@ class ManualPostDraftWorkspaceViewModelTest {
             realismLevel: RealismLevel,
             qualityTier: QualityTier,
             targetPlatform: TargetPlatform,
-            prompt: String,
             userRefinement: String?,
             maskRegion: MaskRegion?,
             reuseVisionDescription: Boolean,
@@ -2125,7 +2116,6 @@ class ManualPostDraftWorkspaceViewModelTest {
             capturedTargetPlatform = targetPlatform
             capturedMaskRegion = maskRegion
             capturedUserRefinement = userRefinement
-            capturedPrompt = prompt
             capturedReuseVisionDescription = reuseVisionDescription
 
             if (result != null) {
@@ -2145,7 +2135,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     intent = intent,
                     realismLevel = realismLevel,
                     qualityTier = qualityTier,
-                    prompt = prompt,
+                    prompt = "assembled prompt",
                     userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
                     subjectDescription = null,
                     targetPlatform = targetPlatform,

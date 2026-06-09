@@ -13,7 +13,6 @@ class PhotoEditPromptAssemblerTest {
 
     private fun assembleFromRequest(request: PhotoEditRequest): String = PhotoEditPromptAssembler.buildPrompt(
         intent = request.intent,
-        userPrompt = request.prompt,
         realismLevel = request.realismLevel,
         qualityTier = request.qualityTier,
         targetPlatform = request.targetPlatform,
@@ -36,7 +35,7 @@ class PhotoEditPromptAssemblerTest {
         val prompt = assembleFromRequest(request)
 
         val expected = buildString {
-            append("Edit this image: Improve the lighting and exposure of the image. Make the image brighter while keeping it realistic.")
+            append("Edit this image: Improve the lighting and exposure of the image.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
             append(" Frame the result for Instagram Feed Square at 1:1, 1080x1080px, and fit the content to the frame.")
@@ -195,45 +194,6 @@ class PhotoEditPromptAssemblerTest {
             val prompt = assembleFromRequest(request)
             assertContains(prompt, expectedSnippet, message = "EditIntent.${intent.name} should produce expected instruction")
         }
-    }
-
-    @Test
-    fun trimsPromptWhitespace() {
-        val request = samplePhotoEditRequest(prompt = "  Make it brighter  ")
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "Make it brighter.")
-    }
-
-    @Test
-    fun normalizesPromptEndingWithExclamation() {
-        val request = samplePhotoEditRequest(prompt = "Make it brighter!")
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "Make it brighter.")
-        assertFalse(prompt.contains("!."))
-    }
-
-    @Test
-    fun normalizesPromptEndingWithQuestionMark() {
-        val request = samplePhotoEditRequest(prompt = "Crop tighter?")
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "Crop tighter.")
-        assertFalse(prompt.contains("?."))
-    }
-
-    @Test
-    fun omitsPromptTextWhenNormalizationRemovesAllCharacters() {
-        val request = samplePhotoEditRequest(prompt = "?!...")
-
-        val prompt = assembleFromRequest(request)
-
-        assertContains(prompt, "Edit this image: Improve the lighting and exposure of the image.")
-        assertFalse(prompt.contains(". ."))
     }
 
     @Test
@@ -398,10 +358,8 @@ class PhotoEditPromptAssemblerTest {
 
     @Test
     fun persistedRequestPromptMatchesBuildPromptOutput() {
-        val rawPrompt = "Make the image brighter while keeping it realistic."
         val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
             intent = EditIntent.ImproveLighting,
-            userPrompt = rawPrompt,
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
@@ -425,9 +383,8 @@ class PhotoEditPromptAssemblerTest {
             createdAtEpochMillis = createdAt,
         )
 
-        val rebuildFromRaw = PhotoEditPromptAssembler.buildPrompt(
+        val rebuilt = PhotoEditPromptAssembler.buildPrompt(
             intent = persisted.intent,
-            userPrompt = rawPrompt,
             realismLevel = persisted.realismLevel,
             qualityTier = persisted.qualityTier,
             targetPlatform = persisted.targetPlatform,
@@ -436,15 +393,13 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = persisted.userRefinement,
         )
 
-        assertEquals(persisted.prompt, rebuildFromRaw, "Persisted assembled prompt must match fresh build from raw components — no double-assembly")
+        assertEquals(persisted.prompt, rebuilt, "Persisted assembled prompt must match fresh build — no double-assembly")
     }
 
     @Test
     fun persistedRequestWithAllOptionsRoundTripsThroughBuildPrompt() {
-        val rawPrompt = "Remove the stray object from the background"
         val assembled = PhotoEditPromptAssembler.buildPrompt(
             intent = EditIntent.RemoveObject,
-            userPrompt = rawPrompt,
             realismLevel = RealismLevel.Flat,
             qualityTier = QualityTier.Medium,
             targetPlatform = TargetPlatform.InstagramPortrait,
@@ -470,7 +425,6 @@ class PhotoEditPromptAssemblerTest {
 
         val rebuilt = PhotoEditPromptAssembler.buildPrompt(
             intent = persisted.intent,
-            userPrompt = rawPrompt,
             realismLevel = persisted.realismLevel,
             qualityTier = persisted.qualityTier,
             targetPlatform = persisted.targetPlatform,

@@ -35,7 +35,6 @@ interface PhotoEditExecutor {
         realismLevel: RealismLevel,
         qualityTier: QualityTier,
         targetPlatform: TargetPlatform,
-        prompt: String,
         userRefinement: String? = null,
         maskRegion: MaskRegion? = null,
         reuseVisionDescription: Boolean = true,
@@ -59,7 +58,6 @@ class PhotoEditExecutionPipeline(
         realismLevel: RealismLevel,
         qualityTier: QualityTier,
         targetPlatform: TargetPlatform,
-        prompt: String,
         userRefinement: String?,
         maskRegion: MaskRegion?,
         reuseVisionDescription: Boolean,
@@ -111,7 +109,6 @@ class PhotoEditExecutionPipeline(
         val cleanedUserRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() }
         val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
             intent = intent,
-            userPrompt = prompt,
             realismLevel = realismLevel,
             qualityTier = qualityTier,
             targetPlatform = targetPlatform,

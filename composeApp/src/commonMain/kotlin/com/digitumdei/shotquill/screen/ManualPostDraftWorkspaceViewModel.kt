@@ -389,7 +389,6 @@ class ManualPostDraftWorkspaceViewModel(
                 realismLevel = currentForm.selectedRealismLevel,
                 qualityTier = currentForm.selectedQualityTier,
                 targetPlatform = currentForm.selectedTargetPlatform,
-                prompt = "Edit the image (${currentForm.selectedIntent.wireValue}, ${currentForm.selectedTargetPlatform.wireValue}).",
                 userRefinement = currentForm.userRefinementText.trim().takeIf { it.isNotEmpty() },
                 reuseVisionDescription = true,
             )

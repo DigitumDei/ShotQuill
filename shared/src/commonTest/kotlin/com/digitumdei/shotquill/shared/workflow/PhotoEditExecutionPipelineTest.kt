@@ -73,7 +73,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -135,7 +134,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -207,7 +205,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -220,7 +217,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -274,7 +270,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -316,7 +311,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -359,7 +353,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -409,7 +402,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -451,7 +443,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -481,7 +472,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -754,7 +744,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.Standard,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Re-edit the photo",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -763,7 +752,6 @@ class PhotoEditExecutionPipelineTest {
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
         val expectedPrompt = expectedAssembledPrompt(
             intent = EditIntent.BackgroundAdjustment,
-            prompt = "Re-edit the photo",
             qualityTier = QualityTier.Standard,
         )
         assertEquals(expectedPrompt, success.assembledPrompt, "re-edit success.assembledPrompt must match expected")
@@ -824,7 +812,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.Standard,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Edit the photo",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -832,7 +819,6 @@ class PhotoEditExecutionPipelineTest {
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
         val expectedPrompt = expectedAssembledPrompt(
-            prompt = "Edit the photo",
             qualityTier = QualityTier.Standard,
         )
         assertEquals(expectedPrompt, success.assembledPrompt, "selection-change success.assembledPrompt must match expected")
@@ -870,7 +856,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -920,7 +905,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -964,7 +948,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make it brighter",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -1010,7 +993,6 @@ class PhotoEditExecutionPipelineTest {
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
-            prompt = "Make further adjustments",
             userRefinement = null,
             maskRegion = null,
             reuseVisionDescription = true,
@@ -1174,7 +1156,6 @@ class PhotoEditExecutionPipelineTest {
 
     private fun expectedAssembledPrompt(
         intent: EditIntent = EditIntent.ImproveLighting,
-        prompt: String = "Make it brighter",
         realismLevel: RealismLevel = RealismLevel.Photoreal,
         qualityTier: QualityTier = QualityTier.High,
         targetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
@@ -1182,7 +1163,6 @@ class PhotoEditExecutionPipelineTest {
         userRefinement: String? = null,
     ): String = PhotoEditPromptAssembler.buildPrompt(
         intent = intent,
-        userPrompt = prompt,
         realismLevel = realismLevel,
         qualityTier = qualityTier,
         targetPlatform = targetPlatform,
