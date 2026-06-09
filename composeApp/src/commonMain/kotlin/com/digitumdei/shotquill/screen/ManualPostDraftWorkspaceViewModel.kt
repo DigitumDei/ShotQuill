@@ -508,6 +508,13 @@ class ManualPostDraftWorkspaceViewModel(
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
+        if (draft.status !in mutableDraftStatuses) {
+            state = draft.toState(
+                statusMessage = "Cannot select edited photo while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
         val latestResult = draft.photoEditResults.maxByOrNull { it.createdAtEpochMillis } ?: run {
             state = draft.toState("No edited photo available", state.isPromptHistoryVisible)
             return
@@ -528,6 +535,13 @@ class ManualPostDraftWorkspaceViewModel(
     fun selectOriginalPhoto() {
         val draft = postDraftRepository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (draft.status !in mutableDraftStatuses) {
+            state = draft.toState(
+                statusMessage = "Cannot select original photo while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
             return
         }
         val now = clock.nowMillis()

@@ -756,6 +756,29 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun rejectsTerminalDraftPhotoSelectionsWithoutThrowing() {
+        listOf(DraftStatus.Archived, DraftStatus.Shared).forEach { terminalStatus ->
+            val repository = FakePostDraftRepository(sampleDraftWithEditedMedia().copy(status = terminalStatus))
+            val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+            viewModel.load()
+
+            viewModel.selectEditedPhoto()
+            assertEquals(
+                "Cannot select edited photo while status is ${terminalStatus.wireValue}",
+                viewModel.state.statusMessage,
+            )
+            assertNull(repository.get(draftId)?.selectedMediaAssetId)
+
+            viewModel.selectOriginalPhoto()
+            assertEquals(
+                "Cannot select original photo while status is ${terminalStatus.wireValue}",
+                viewModel.state.statusMessage,
+            )
+            assertNull(repository.get(draftId)?.selectedMediaAssetId)
+        }
+    }
+
+    @Test
     fun handlesDraftDisappearingBeforeActions() {
         val executor = RecordingPhotoEditExecutor(
             result = PhotoEditExecutionResult.Failure(
