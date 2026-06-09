@@ -411,8 +411,6 @@ class ManualPostDraftWorkspaceViewModel(
                     is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
                     is PhotoEditExecutionError.InvalidDraftStatus -> "Cannot edit photo while status is ${cause.status.wireValue}"
                     is PhotoEditExecutionError.Provider -> "Unable to edit photo: ${cause.error.userMessage}"
-                    is PhotoEditExecutionError.FailedToLoadSourceImage -> cause.message
-                    is PhotoEditExecutionError.FailedToSaveEditedImage -> cause.message
                     is PhotoEditExecutionError.FailurePersisted -> {
                         val innerMsg = when (val inner = cause.cause) {
                             is PhotoEditExecutionError.Provider -> inner.error.userMessage
@@ -422,6 +420,7 @@ class ManualPostDraftWorkspaceViewModel(
                         }
                         innerMsg?.let { "Photo edit failed: $it" } ?: "Photo edit failed"
                     }
+                    else -> "Photo edit failed"
                 }
                 if (cause is PhotoEditExecutionError.FailurePersisted) {
                     val baseState = cause.updatedDraft.toState(msg, state.isPromptHistoryVisible)
