@@ -46,7 +46,7 @@ class PostTextGenerationPipeline(
 ) : PostTextGenerator {
     private val operationSequence = AtomicCounter(0)
 
-    fun generateText(
+    private fun generateText(
         draftId: PostDraftId,
         targetPlatform: TargetPlatform,
     ): PostTextGenerationResult = generateText(

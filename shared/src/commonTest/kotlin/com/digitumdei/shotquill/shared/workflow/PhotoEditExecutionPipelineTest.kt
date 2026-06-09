@@ -56,7 +56,7 @@ class PhotoEditExecutionPipelineTest {
     private val editedMediaAssetId = MediaAssetId("media-edited-existing")
 
     @Test
-    fun `happy path with fake provider preserves original media and links edited image to draft`() {
+    fun `happy path preserves original media and links edited image to draft`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraftWithVisionDescription()
         val repository = FakeManualWorkflowRepository(draft)

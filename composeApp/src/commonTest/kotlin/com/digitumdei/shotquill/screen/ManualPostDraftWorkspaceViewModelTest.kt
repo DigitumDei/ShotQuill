@@ -663,7 +663,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun updatesStoredDraftWhenEditingPhotoWithFakeAiProvider() {
+    fun updatesStoredDraftWhenEditingPhotoWithExecutor() {
         val repository = FakePostDraftRepository(sampleDraft())
         val executor = RecordingPhotoEditExecutor(
             repository = repository,
@@ -1600,7 +1600,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun preservesErrorOperationStateWhenAiProviderThrows() {
+    fun preservesErrorOperationStateWhenExecutorThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingExecutor = object : PhotoEditExecutor {
             override fun execute(
@@ -1629,7 +1629,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun showsFallbackMessageWhenAiProviderThrowsNullMessageException() {
+    fun showsFallbackMessageWhenExecutorThrowsNullMessageException() {
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingExecutor = object : PhotoEditExecutor {
             override fun execute(
@@ -1658,7 +1658,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun preservesPhotoEditFormValuesWhenAiProviderThrows() {
+    fun preservesPhotoEditFormValuesWhenExecutorThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingExecutor = object : PhotoEditExecutor {
             override fun execute(
