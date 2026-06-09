@@ -368,8 +368,8 @@ class ManualPostDraftWorkspaceViewModel(
                     is PhotoEditExecutionError.FailurePersisted -> {
                         val innerMsg = when (val inner = cause.cause) {
                             is PhotoEditExecutionError.Provider -> "Unable to edit photo: ${inner.error.userMessage}"
-                            is PhotoEditExecutionError.FailedToLoadSourceImage -> inner.message
-                            is PhotoEditExecutionError.FailedToSaveEditedImage -> inner.message
+                            is PhotoEditExecutionError.FailedToLoadSourceImage -> "Photo edit failed: Unable to load the source photo"
+                            is PhotoEditExecutionError.FailedToSaveEditedImage -> "Photo edit failed: Unable to save the edited photo"
                             else -> null
                         }
                         innerMsg ?: "Photo edit failed"

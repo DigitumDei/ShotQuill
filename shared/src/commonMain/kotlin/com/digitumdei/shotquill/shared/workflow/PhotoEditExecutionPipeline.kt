@@ -80,8 +80,8 @@ class PhotoEditExecutionPipeline(
 
         fun failureSummary(cause: PhotoEditExecutionError): String = when (cause) {
             is PhotoEditExecutionError.Provider -> cause.error.userMessage
-            is PhotoEditExecutionError.FailedToLoadSourceImage -> cause.message
-            is PhotoEditExecutionError.FailedToSaveEditedImage -> cause.message
+            is PhotoEditExecutionError.FailedToLoadSourceImage -> "Unable to load source photo"
+            is PhotoEditExecutionError.FailedToSaveEditedImage -> "Unable to save edited photo"
             is PhotoEditExecutionError.FailurePersisted -> "Previous attempt failed"
             is PhotoEditExecutionError.DraftNotFound -> "Draft not found"
             is PhotoEditExecutionError.InvalidDraftStatus -> "Invalid draft status: ${cause.status.wireValue}"

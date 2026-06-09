@@ -2881,7 +2881,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.editPhotoWithAi()
 
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
-        assertEquals("Photo edit failed: Source image unreadable", viewModel.state.statusMessage)
+        assertEquals("Photo edit failed: Unable to load the source photo", viewModel.state.statusMessage)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
 
@@ -2935,7 +2935,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.editPhotoWithAi()
 
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
-        assertEquals("Photo edit failed: Insufficient storage", viewModel.state.statusMessage)
+        assertEquals("Photo edit failed: Unable to save the edited photo", viewModel.state.statusMessage)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
 
