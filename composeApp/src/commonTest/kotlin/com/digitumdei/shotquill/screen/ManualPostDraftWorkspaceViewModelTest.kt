@@ -379,12 +379,23 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
 
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.High)
+        viewModel.togglePromptHistory()
+
         viewModel.selectEditedPhoto()
 
         assertEquals("Selected asset is not part of this draft", viewModel.state.statusMessage)
         assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
         assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
         assertEquals("file://photo-edited.jpg", viewModel.state.editedPhotoUri)
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent)
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText)
+        assertEquals(TargetPlatform.BlueskyPost, viewModel.state.photoEditForm.selectedTargetPlatform)
+        assertEquals(QualityTier.High, viewModel.state.photoEditForm.selectedQualityTier)
+        assertTrue(viewModel.state.isPromptHistoryVisible)
     }
 
     @Test
@@ -415,11 +426,22 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
 
+        viewModel.updatePhotoEditIntent(EditIntent.StyleTransfer)
+        viewModel.updatePhotoEditRefinement("Vintage film look")
+        viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
+        viewModel.updatePhotoEditQualityTier(QualityTier.Express)
+        viewModel.togglePromptHistory()
+
         viewModel.selectOriginalPhoto()
 
         assertEquals("Selected asset is not part of this draft", viewModel.state.statusMessage)
         assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
         assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertEquals(EditIntent.StyleTransfer, viewModel.state.photoEditForm.selectedIntent)
+        assertEquals("Vintage film look", viewModel.state.photoEditForm.userRefinementText)
+        assertEquals(TargetPlatform.FacebookPost, viewModel.state.photoEditForm.selectedTargetPlatform)
+        assertEquals(QualityTier.Express, viewModel.state.photoEditForm.selectedQualityTier)
+        assertTrue(viewModel.state.isPromptHistoryVisible)
     }
 
     @Test

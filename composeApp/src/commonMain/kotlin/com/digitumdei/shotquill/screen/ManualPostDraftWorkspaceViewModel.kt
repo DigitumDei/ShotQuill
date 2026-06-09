@@ -533,7 +533,7 @@ class ManualPostDraftWorkspaceViewModel(
                 state = unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.AssetNotOwnedByDraft -> {
-                state = draft.toState("Selected asset is not part of this draft", state.isPromptHistoryVisible)
+                state = state.copy(statusMessage = "Selected asset is not part of this draft")
             }
         }
     }
@@ -564,7 +564,7 @@ class ManualPostDraftWorkspaceViewModel(
                 state = unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.AssetNotOwnedByDraft -> {
-                state = draft.toState("Selected asset is not part of this draft", state.isPromptHistoryVisible)
+                state = state.copy(statusMessage = "Selected asset is not part of this draft")
             }
         }
     }
