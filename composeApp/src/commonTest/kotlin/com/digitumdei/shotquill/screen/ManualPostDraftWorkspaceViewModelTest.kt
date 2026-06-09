@@ -1358,7 +1358,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             userRefinement = "Be careful with shadows",
             subjectDescription = null,
             targetPlatform = TargetPlatform.BlueskyPost,
-                        createdAtEpochMillis = 1_700_000_025_000L,
+            createdAtEpochMillis = 1_700_000_025_000L,
         )
         val result = PhotoEditResult(
             id = PhotoEditResultId("photo-edit-result-1"),

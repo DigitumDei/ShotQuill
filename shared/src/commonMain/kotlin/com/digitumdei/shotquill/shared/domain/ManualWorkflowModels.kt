@@ -137,6 +137,12 @@ data class PhotoEditRequest(
     val userRefinement: String? = null,
     val subjectDescription: String? = null,
     val targetPlatform: TargetPlatform,
+    /**
+     * Persisted for future use. Mask-scoped editing is not implemented in the current
+     * issue scope - no execution path reads this field to build a mask image upload.
+     * Stored so drafts that include mask-region definitions survive round-trips through
+     * persistence until mask-region support is added end-to-end.
+     */
     val maskRegion: MaskRegion? = null,
     val createdAtEpochMillis: Long,
 ) {

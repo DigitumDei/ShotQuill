@@ -192,6 +192,14 @@ class OpenAiProvider(
             append("}}]}]}")
         }
 
+    /**
+     * Builds a multipart body for the OpenAI images/edits endpoint.
+     *
+     * The optional [PhotoEditGenerationRequest.maskImage] multipart field is deferred
+     * scaffolding - no production caller populates it in the current issue scope.
+     * The mask upload path is unreachable until mask-region support is implemented
+     * end-to-end from [com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionPipeline].
+     */
     private fun buildImageEditBody(request: PhotoEditGenerationRequest): MultipartBody {
         val boundary = "shotquill-openai-boundary"
         val prompt = request.editRequest.prompt
