@@ -1255,7 +1255,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(preselectedAssetId, persisted.updatedDraft.selectedMediaAssetId, "FailurePersisted updatedDraft must preserve existing selectedMediaAssetId")
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(preselectedAssetId, stored.selectedMediaAssetId, "Stored draft selectedMediaAssetId must be preserved after failure")
-        assertEquals(0, stored.photoEditResults.size, "No edit result must be stored on failure")
+        assertEquals(1, stored.photoEditResults.size, "Existing edit result must be preserved; no new result added on failure")
     }
 
     @Test
