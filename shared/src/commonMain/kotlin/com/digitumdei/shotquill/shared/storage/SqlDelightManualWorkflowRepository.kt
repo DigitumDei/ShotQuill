@@ -229,6 +229,11 @@ class SqlDelightManualWorkflowRepository(
 
     override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
         if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
+        if (mediaAssetId != null) {
+            val isDraftOriginalMedia = queries.selectDraftOriginalMediaAssetId(id.value, mediaAssetId.value).executeAsOneOrNull() != null
+            val isDraftEditedMedia = queries.selectDraftEditedMediaAssetId(id.value, mediaAssetId.value).executeAsOneOrNull() != null
+            if (!isDraftOriginalMedia && !isDraftEditedMedia) return false
+        }
         queries.updatePostDraftSelectedMediaAsset(
             selected_media_asset_id = mediaAssetId?.value,
             updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),

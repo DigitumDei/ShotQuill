@@ -1062,4 +1062,65 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(newUpdatedAt, stored.updatedAt)
         driver.close()
     }
+
+    @Test fun `updateSelectedMediaAsset rejects unrelated existing media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val foreignMediaId = MediaAssetId("media-2")
+        repository.save(sampleMediaAsset().copy(id = foreignMediaId, uri = "file://other.jpg"))
+        val otherDraft = samplePostDraft().copy(
+            id = PostDraftId("draft-2"),
+            mediaItems = listOf(PostMediaItem(sampleMediaAsset().copy(id = foreignMediaId), 0)),
+            photoEditResults = emptyList(),
+        )
+        repository.save(otherDraft)
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), foreignMediaId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset accepts draft-owned original media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val originalId = MediaAssetId("media-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), originalId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(originalId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset accepts draft-owned edited media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset rejects media asset not in media_assets`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val nonexistentId = MediaAssetId("no-such-media")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), nonexistentId, newUpdatedAt))
+        driver.close()
+    }
 }

@@ -325,6 +325,10 @@ JOIN media_assets ON media_assets.id = post_draft_media_items.media_asset_id
 WHERE post_draft_media_items.draft_id = ?
 ORDER BY post_draft_media_items.media_order ASC;
 
+selectDraftOriginalMediaAssetId:
+SELECT media_asset_id FROM post_draft_media_items
+WHERE draft_id = ? AND media_asset_id = ?;
+
 deletePostDraftCaptionHashtags:
 DELETE FROM post_draft_caption_hashtags WHERE draft_id = ?;
 
@@ -536,6 +540,10 @@ FROM photo_edit_results
 JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
 WHERE photo_edit_results.draft_id = ?
 ORDER BY photo_edit_results.created_at_epoch_millis ASC;
+
+selectDraftEditedMediaAssetId:
+SELECT edited_media_asset_id FROM photo_edit_results
+WHERE draft_id = ? AND edited_media_asset_id = ?;
 
 selectPhotoEditResultById:
 SELECT photo_edit_results.*, media_assets.type, media_assets.uri, media_assets.mime_type,
