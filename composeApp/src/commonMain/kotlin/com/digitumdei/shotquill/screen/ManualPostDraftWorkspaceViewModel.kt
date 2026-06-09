@@ -34,6 +34,7 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
@@ -520,15 +521,21 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (!postDraftRepository.updateSelectedMediaAsset(draftId, latestResult.editedMediaAsset.id, operationUpdatedAt)) {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
+        when (postDraftRepository.updateSelectedMediaAsset(draftId, latestResult.editedMediaAsset.id, operationUpdatedAt)) {
+            UpdateSelectionResult.Success -> {
+                val updated = draft.copy(
+                    selectedMediaAssetId = latestResult.editedMediaAsset.id,
+                    updatedAt = operationUpdatedAt,
+                )
+                state = updated.toState("Using edited photo", state.isPromptHistoryVisible)
+            }
+            UpdateSelectionResult.DraftNotFound -> {
+                state = unloadedState(statusMessage = "Draft not found")
+            }
+            UpdateSelectionResult.AssetNotOwnedByDraft -> {
+                state = draft.toState("Selected asset is not part of this draft", state.isPromptHistoryVisible)
+            }
         }
-        val updated = draft.copy(
-            selectedMediaAssetId = latestResult.editedMediaAsset.id,
-            updatedAt = operationUpdatedAt,
-        )
-        state = updated.toState("Using edited photo", state.isPromptHistoryVisible)
     }
 
     fun selectOriginalPhoto() {
@@ -545,15 +552,21 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (!postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)) {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
+        when (postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)) {
+            UpdateSelectionResult.Success -> {
+                val updated = draft.copy(
+                    selectedMediaAssetId = null,
+                    updatedAt = operationUpdatedAt,
+                )
+                state = updated.toState("Using original photo", state.isPromptHistoryVisible)
+            }
+            UpdateSelectionResult.DraftNotFound -> {
+                state = unloadedState(statusMessage = "Draft not found")
+            }
+            UpdateSelectionResult.AssetNotOwnedByDraft -> {
+                state = draft.toState("Selected asset is not part of this draft", state.isPromptHistoryVisible)
+            }
         }
-        val updated = draft.copy(
-            selectedMediaAssetId = null,
-            updatedAt = operationUpdatedAt,
-        )
-        state = updated.toState("Using original photo", state.isPromptHistoryVisible)
     }
 
     private fun PostDraft.toState(

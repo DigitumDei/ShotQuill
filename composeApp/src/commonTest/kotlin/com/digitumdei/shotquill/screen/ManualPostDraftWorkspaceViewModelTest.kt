@@ -30,6 +30,7 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
@@ -354,10 +355,10 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun selectEditedPhotoHandlesRepositoryUpdateReturningFalse() {
+    fun selectEditedPhotoHandlesRepositoryUpdateReturningDraftNotFound() {
         val repository = FakePostDraftRepository(
             sampleDraftWithEditedMedia(),
-            failUpdateSelectedMediaAsset = true,
+            simulatedUpdateSelectionResult = UpdateSelectionResult.DraftNotFound,
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
@@ -369,12 +370,30 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun selectOriginalPhotoHandlesRepositoryUpdateReturningFalse() {
+    fun selectEditedPhotoHandlesAssetNotOwnedByDraftAndPreservesWorkspace() {
+        val draft = sampleDraftWithEditedMedia()
+        val repository = FakePostDraftRepository(
+            draft,
+            simulatedUpdateSelectionResult = UpdateSelectionResult.AssetNotOwnedByDraft,
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("Selected asset is not part of this draft", viewModel.state.statusMessage)
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertEquals("file://photo-edited.jpg", viewModel.state.editedPhotoUri)
+    }
+
+    @Test
+    fun selectOriginalPhotoHandlesRepositoryUpdateReturningDraftNotFound() {
         val editedMediaId = MediaAssetId("media-edited-1")
         val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
         val repository = FakePostDraftRepository(
             draft,
-            failUpdateSelectedMediaAsset = true,
+            simulatedUpdateSelectionResult = UpdateSelectionResult.DraftNotFound,
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
@@ -383,6 +402,24 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertEquals("Draft not found", viewModel.state.statusMessage)
         assertNull(viewModel.state.activePhotoUri)
+    }
+
+    @Test
+    fun selectOriginalPhotoHandlesAssetNotOwnedByDraftAndPreservesWorkspace() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId)
+        val repository = FakePostDraftRepository(
+            draft,
+            simulatedUpdateSelectionResult = UpdateSelectionResult.AssetNotOwnedByDraft,
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("Selected asset is not part of this draft", viewModel.state.statusMessage)
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
     }
 
     @Test
@@ -1113,7 +1150,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     private class FakePostDraftRepository(
         initialDraft: PostDraft? = null,
-        private val failUpdateSelectedMediaAsset: Boolean = false,
+        private val simulatedUpdateSelectionResult: UpdateSelectionResult? = null,
     ) : PostDraftRepository {
         private val drafts: MutableMap<PostDraftId, PostDraft> =
             initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
@@ -1142,11 +1179,11 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
-            if (failUpdateSelectedMediaAsset) return false
-            val current = drafts[id] ?: return false
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+            if (simulatedUpdateSelectionResult != null) return simulatedUpdateSelectionResult
+            val current = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
             drafts[id] = current.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
-            return true
+            return UpdateSelectionResult.Success
         }
     }
 

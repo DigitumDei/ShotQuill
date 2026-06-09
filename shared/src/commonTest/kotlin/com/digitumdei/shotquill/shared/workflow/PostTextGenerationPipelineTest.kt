@@ -47,6 +47,7 @@ import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -646,10 +647,10 @@ class PostTextGenerationPipelineTest {
         }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
-            val draft = drafts[id] ?: return false
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+            val draft = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
             drafts[id] = draft.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
-            return true
+            return UpdateSelectionResult.Success
         }
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)

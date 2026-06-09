@@ -1400,7 +1400,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertNull(original.selectedMediaAssetId)
         val editedId = MediaAssetId("media-edited-1")
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertEquals(editedId, stored.selectedMediaAssetId)
         assertEquals(newUpdatedAt, stored.updatedAt)
@@ -1457,8 +1457,8 @@ class SqlDelightManualWorkflowRepositoryTest {
         val original = repository.get(PostDraftId("draft-1"))!!
         assertEquals(editedId, original.selectedMediaAssetId)
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), null, newUpdatedAt))
-        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("missing"), null, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), null, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.DraftNotFound, repository.updateSelectedMediaAsset(PostDraftId("missing"), null, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertNull(stored.selectedMediaAssetId)
         assertEquals(newUpdatedAt, stored.updatedAt)
@@ -1479,7 +1479,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         repository.save(otherDraft)
         val original = repository.get(PostDraftId("draft-1"))!!
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), foreignMediaId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), foreignMediaId, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertNull(stored.selectedMediaAssetId)
         driver.close()
@@ -1493,7 +1493,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertNull(original.selectedMediaAssetId)
         val originalId = MediaAssetId("media-1")
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), originalId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), originalId, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertEquals(originalId, stored.selectedMediaAssetId)
         assertEquals(newUpdatedAt, stored.updatedAt)
@@ -1508,7 +1508,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertNull(original.selectedMediaAssetId)
         val editedId = MediaAssetId("media-edited-1")
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertTrue(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertEquals(editedId, stored.selectedMediaAssetId)
         assertEquals(newUpdatedAt, stored.updatedAt)
@@ -1523,7 +1523,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         repository.save(sampleMediaAsset().copy(id = orphanId, uri = "file://orphan.jpg"))
         val original = repository.get(PostDraftId("draft-1"))!!
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), orphanId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), orphanId, newUpdatedAt))
         val stored = repository.get(PostDraftId("draft-1"))!!
         assertNull(stored.selectedMediaAssetId)
         driver.close()
@@ -1536,7 +1536,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         val original = repository.get(PostDraftId("draft-1"))!!
         val nonexistentId = MediaAssetId("no-such-media")
         val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
-        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), nonexistentId, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), nonexistentId, newUpdatedAt))
         driver.close()
     }
 }

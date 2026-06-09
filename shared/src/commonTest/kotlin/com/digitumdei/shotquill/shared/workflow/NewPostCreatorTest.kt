@@ -9,6 +9,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -40,8 +41,8 @@ class NewPostCreatorTest {
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean =
             false
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: kotlinx.datetime.Instant): Boolean =
-            false
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: kotlinx.datetime.Instant): UpdateSelectionResult =
+            UpdateSelectionResult.DraftNotFound
     }
 
     private fun getMediaAsset(id: MediaAssetId): MediaAsset? = savedMediaAssets[id]
@@ -219,7 +220,7 @@ class NewPostCreatorTest {
                 id: PostDraftId,
                 mediaAssetId: MediaAssetId?,
                 updatedAt: kotlinx.datetime.Instant,
-            ): Boolean = false
+            ): UpdateSelectionResult = UpdateSelectionResult.DraftNotFound
         }
         val creator = NewPostCreator(failingRepo)
 

@@ -38,6 +38,7 @@ import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -1506,10 +1507,10 @@ class PhotoEditExecutionPipelineTest {
             return true
         }
 
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): Boolean {
-            val draft = drafts[id] ?: return false
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+            val draft = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
             drafts[id] = draft.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
-            return true
+            return UpdateSelectionResult.Success
         }
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
