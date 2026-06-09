@@ -268,6 +268,322 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun savePhotoEditSuccessReturnsNullAndRollsBackForMissingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-new"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-new.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-success-missing"))
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-success-missing"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("nonexistent-draft"),
+            editedMediaAsset = editedAsset,
+            summary = "Should not persist.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-success-missing"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("nonexistent-draft"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNull(result)
+        assertNull(repository.get(MediaAssetId("media-edited-new")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-success-missing")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-success-missing")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-success-missing")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessPersistsAllRecordsAndReturnsRefreshedDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-success"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-success.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-request-success"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-success"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Successful edit.",
+            modelName = "edit-model-plus",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-success"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+        assertEquals(MediaAssetId("media-edited-success"), result?.selectedMediaAssetId)
+
+        val storedAsset = repository.get(MediaAssetId("media-edited-success"))
+        assertNotNull(storedAsset)
+        assertEquals(MediaType.EditedPhoto, storedAsset.type)
+        assertEquals("file://edited-success.jpg", storedAsset.uri)
+
+        val storedRequest = repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-success"))
+        assertNotNull(storedRequest)
+        assertEquals(editRequest.id, storedRequest.id)
+
+        val storedResult = repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-success"))
+        assertNotNull(storedResult)
+        assertEquals("Successful edit.", storedResult.summary)
+
+        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-success"))
+        assertNotNull(storedPrompt)
+        assertEquals(AiOperationType.PhotoEdit, storedPrompt.operationType)
+
+        val storedDraft = repository.get(PostDraftId("draft-1"))
+        assertNotNull(storedDraft)
+        assertEquals(MediaAssetId("media-edited-success"), storedDraft.selectedMediaAssetId)
+        assertTrue(storedDraft.photoEditResults.any { it.id == PhotoEditResultId("photo-edit-result-success") })
+        assertTrue(storedDraft.photoEditRequests.any { it.id == PhotoEditRequestId("photo-edit-request-success") })
+        assertTrue(storedDraft.promptHistory.any { it.id == PromptHistoryEntryId("prompt-success") })
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessTransitionsStatusAndSetsUpdatedAtWhenDifferent() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(status = DraftStatus.PhotoAdded, selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-transition"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-transition.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-transition"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-transition"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Transition edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-transition"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals(timestamp, stored?.updatedAt)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessKeepsStatusWhenTargetMatchesCurrent() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(status = DraftStatus.PhotoEdited, selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-same-status"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-same.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-same"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-same"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Same status edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-same"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals(timestamp, stored?.updatedAt)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessSetsSelectedMediaAssetIdToEditedAsset() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-selection"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-selection.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-selection"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-selection"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Selection edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-selection"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(MediaAssetId("media-edited-selection"), result?.selectedMediaAssetId)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(MediaAssetId("media-edited-selection"), stored?.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessKeepsPreviousMediaAndHistoryWhenAppending() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-append"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-append.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-append"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-append"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Append edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-append"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(2, stored?.photoEditRequests?.size)
+        assertEquals(2, stored?.photoEditResults?.size)
+        assertEquals(2, stored?.promptHistory?.size)
+        assertEquals(1, stored?.mediaItems?.size)
+        assertEquals(1, stored?.captionRequests?.size)
+        assertEquals(1, stored?.captionResults?.size)
+        driver.close()
+    }
+
+    @Test
     fun returnsNullOrEmptyForMissingRecords() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
