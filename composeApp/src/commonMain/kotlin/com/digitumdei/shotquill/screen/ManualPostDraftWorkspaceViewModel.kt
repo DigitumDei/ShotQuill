@@ -30,12 +30,15 @@ import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionResult
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
+import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisError
+import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisResult
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -91,59 +94,10 @@ data class ManualPostDraftWorkspaceActions(
     val canSelectOriginalPhoto: Boolean,
 )
 
-interface ManualDraftAiProvider {
-    fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription
-    fun generatePostText(draft: PostDraft, targetPlatform: TargetPlatform, nowEpochMillis: Long): GeneratedPostText
-}
-
-data class GeneratedVisionDescription(
-    val description: String,
-    val prompt: String,
-    val modelName: String,
-)
-
-data class GeneratedPostText(
-    val caption: String,
-    val shortCaption: String?,
-    val hashtags: List<String>,
-    val altText: String,
-    val captionPrompt: String,
-    val altTextPrompt: String,
-    val modelName: String,
-)
-
-class FakeManualDraftAiProvider : ManualDraftAiProvider {
-    override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription {
-        val original = draft.primaryMediaAsset()
-        return GeneratedVisionDescription(
-            description = "Photo shows ${original.uri.substringAfterLast('/')} prepared for social content.",
-            prompt = VisionDescriptionPromptFactory.buildPrompt(original),
-            modelName = "fake-manual-draft-ai",
-        )
-    }
-
-    override fun generatePostText(
-        draft: PostDraft,
-        targetPlatform: TargetPlatform,
-        nowEpochMillis: Long,
-    ): GeneratedPostText {
-        val original = draft.primaryMediaAsset()
-        return GeneratedPostText(
-            caption = "Ready for ${targetPlatform.wireValue}: ${original.uri.substringAfterLast('/')}",
-            shortCaption = "Ready for ${targetPlatform.wireValue}",
-            hashtags = listOf("#shotquill", "#draft"),
-            altText = "Photo prepared for ${targetPlatform.wireValue}.",
-            captionPrompt = "Generate a manual post caption for ${targetPlatform.wireValue} from ${original.uri}.",
-            altTextPrompt = "Generate accessible alt text for ${original.uri}.",
-            modelName = "fake-manual-draft-ai",
-        )
-    }
-}
-
 class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
-    private val aiProvider: ManualDraftAiProvider = FakeManualDraftAiProvider(),
+    private val analyzeVision: AnalyzeVision? = null,
     private val postTextGenerator: PostTextGenerator? = null,
     private val photoEditExecutor: PhotoEditExecutor? = null,
     private val clock: EpochClock = EpochClock.Default,
@@ -163,6 +117,39 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun analyzeVisionDescription() {
+        val analyzer = analyzeVision ?: run {
+            analyzeVisionDescriptionLegacy()
+            return
+        }
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (draft.status !in mutableDraftStatuses) {
+            state = draft.toState(
+                statusMessage = "Cannot analyze vision while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        when (val result = analyzer.analyzePrimaryPhoto(draftId)) {
+            is VisionDescriptionAnalysisResult.Success -> {
+                state = postDraftRepository.get(draftId)?.toState("Analyzed photo", state.isPromptHistoryVisible)
+                    ?: unloadedState(statusMessage = "Draft not found")
+            }
+            is VisionDescriptionAnalysisResult.Failure -> {
+                val msg = when (val error = result.error) {
+                    VisionDescriptionAnalysisError.DraftNotFound -> "Draft not found"
+                    is VisionDescriptionAnalysisError.Provider -> "Unable to analyze photo: ${error.error.userMessage}"
+                    is VisionDescriptionAnalysisError.ImageLoadFailure -> error.message
+                }
+                state = postDraftRepository.get(draftId)?.toState(msg, state.isPromptHistoryVisible)
+                    ?: unloadedState(statusMessage = msg)
+            }
+        }
+    }
+
+    private fun analyzeVisionDescriptionLegacy() {
         val draft = postDraftRepository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
             return
@@ -181,14 +168,15 @@ class ManualPostDraftWorkspaceViewModel(
             return
         }
         val idSuffix = nextIdSuffix(now)
-        val generated = aiProvider.analyzeVision(draft, now)
         val original = draft.primaryMediaAsset()
+        val description = "Photo shows ${original.uri.substringAfterLast('/')} prepared for social content."
+        val prompt = VisionDescriptionPromptFactory.buildPrompt(original)
         val visionDescription = VisionDescription(
             id = VisionDescriptionId("vision-description-$idSuffix"),
             draftId = draft.id,
             mediaAssetId = original.id,
-            description = generated.description,
-            modelName = generated.modelName,
+            description = description,
+            modelName = "fake-manual-draft-ai",
             createdAtEpochMillis = now,
         )
         val updated = draft.copy(
@@ -197,9 +185,9 @@ class ManualPostDraftWorkspaceViewModel(
                 id = PromptHistoryEntryId("prompt-vision-description-$idSuffix"),
                 draftId = draft.id,
                 operationType = AiOperationType.VisionDescription,
-                prompt = generated.prompt,
-                responseSummary = generated.description,
-                modelName = generated.modelName,
+                prompt = prompt,
+                responseSummary = description,
+                modelName = "fake-manual-draft-ai",
                 createdAtEpochMillis = now,
             ),
             updatedAt = operationUpdatedAt,
@@ -229,12 +217,18 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
         val idSuffix = nextIdSuffix(now)
-        val generated = aiProvider.generatePostText(draft, platform, now)
+        val original = draft.primaryMediaAsset()
+        val captionText = "Ready for ${platform.wireValue}: ${original.uri.substringAfterLast('/')}"
+        val shortCaptionText = "Ready for ${platform.wireValue}"
+        val hashtags = listOf("#shotquill", "#draft")
+        val altTextText = "Photo prepared for ${platform.wireValue}."
+        val captionPrompt = "Generate a manual post caption for ${platform.wireValue} from ${original.uri}."
+        val altTextPrompt = "Generate accessible alt text for ${original.uri}."
         val captionRequest = CaptionRequest(
             id = CaptionRequestId("caption-request-$idSuffix"),
             draftId = draft.id,
             targetPlatform = platform,
-            prompt = generated.captionPrompt,
+            prompt = captionPrompt,
             tone = draft.brandProfile?.voice,
             brandProfileId = draft.brandProfile?.id,
             createdAtEpochMillis = now,
@@ -244,18 +238,18 @@ class ManualPostDraftWorkspaceViewModel(
             requestId = captionRequest.id,
             draftId = draft.id,
             targetPlatform = platform,
-            caption = generated.caption,
-            shortCaption = generated.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
-            hashtags = generated.hashtags,
-            modelName = generated.modelName,
+            caption = captionText,
+            shortCaption = shortCaptionText.trim().takeIf { it.isNotEmpty() },
+            hashtags = hashtags,
+            modelName = "fake-manual-draft-ai",
             createdAtEpochMillis = now,
         )
         val altText = AltTextResult(
             id = AltTextResultId("alt-text-$idSuffix"),
             draftId = draft.id,
             mediaAssetId = draft.primaryMediaAsset().id,
-            altText = generated.altText,
-            modelName = generated.modelName,
+            altText = altTextText,
+            modelName = "fake-manual-draft-ai",
             createdAtEpochMillis = now,
         )
         val transitioned = if (draft.status == nextStatus) {
@@ -264,7 +258,7 @@ class ManualPostDraftWorkspaceViewModel(
             draft.transitionTo(nextStatus, operationUpdatedAt)
         }
         val updated = transitioned.copy(
-            caption = CaptionDraft(generated.caption, generated.hashtags),
+            caption = CaptionDraft(captionText, hashtags),
             targetPlatforms = draft.targetPlatforms + platform,
             captionRequests = draft.captionRequests + captionRequest,
             captionResults = draft.captionResults + captionResult,
@@ -274,18 +268,18 @@ class ManualPostDraftWorkspaceViewModel(
                     id = PromptHistoryEntryId("prompt-caption-$idSuffix"),
                     draftId = draft.id,
                     operationType = AiOperationType.CaptionGeneration,
-                    prompt = generated.captionPrompt,
-                    responseSummary = generated.caption,
-                    modelName = generated.modelName,
+                    prompt = captionPrompt,
+                    responseSummary = captionText,
+                    modelName = "fake-manual-draft-ai",
                     createdAtEpochMillis = now,
                 ),
                 PromptHistoryEntry(
                     id = PromptHistoryEntryId("prompt-alt-text-$idSuffix"),
                     draftId = draft.id,
                     operationType = AiOperationType.AltTextGeneration,
-                    prompt = generated.altTextPrompt,
-                    responseSummary = generated.altText,
-                    modelName = generated.modelName,
+                    prompt = altTextPrompt,
+                    responseSummary = altTextText,
+                    modelName = "fake-manual-draft-ai",
                     createdAtEpochMillis = now,
                 ),
             ),

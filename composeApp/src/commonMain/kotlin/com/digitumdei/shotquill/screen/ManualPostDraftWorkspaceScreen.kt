@@ -33,6 +33,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.coroutines.Dispatchers
@@ -50,9 +51,10 @@ fun ManualPostDraftWorkspaceScreen(
     defaultQualityTier: QualityTier = QualityTier.Standard,
     postTextGenerator: PostTextGenerator? = null,
     photoEditExecutor: PhotoEditExecutor? = null,
+    analyzeVision: AnalyzeVision? = null,
     onNavigateToNewPost: () -> Unit,
 ) {
-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor) {
+    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
@@ -61,6 +63,7 @@ fun ManualPostDraftWorkspaceScreen(
             defaultQualityTier = defaultQualityTier,
             postTextGenerator = postTextGenerator,
             photoEditExecutor = photoEditExecutor,
+            analyzeVision = analyzeVision,
         )
     }
     val state = viewModel.state

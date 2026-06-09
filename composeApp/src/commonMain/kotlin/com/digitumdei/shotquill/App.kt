@@ -53,6 +53,7 @@ import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import com.digitumdei.shotquill.shared.storage.BrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
@@ -77,6 +78,7 @@ fun App(
     manualWorkflowRepository: ManualWorkflowRepository? = null,
     postTextGenerator: PostTextGenerator? = null,
     photoEditExecutor: PhotoEditExecutor? = null,
+    analyzeVision: AnalyzeVision? = null,
     onCaptureFromCamera: (() -> Unit)? = null,
     onPickFromGallery: (() -> Unit)? = null,
     captureResult: MediaCaptureResult? = null,
@@ -181,6 +183,7 @@ fun App(
                             defaultQualityTier = settings.defaultQualityTier,
                             postTextGenerator = postTextGenerator,
                             photoEditExecutor = photoEditExecutor,
+                            analyzeVision = analyzeVision,
                             onNavigateToNewPost = {
                                 currentScreen = AppScreen.NewPost.name
                                 currentDraftId = null

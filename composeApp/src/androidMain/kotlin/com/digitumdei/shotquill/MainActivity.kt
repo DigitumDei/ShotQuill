@@ -26,6 +26,7 @@ import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.AndroidBrandProfileRepositoryFactory
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVisionWorkflow
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionPipeline
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationPipeline
 import java.io.File
@@ -60,6 +61,11 @@ class MainActivity : ComponentActivity() {
             mediaSaver = AndroidPhotoEditMediaSaver(filesDir),
             visionImageSource = FileVisionImageSource(),
         )
+        val analyzeVisionWorkflow = AnalyzeVisionWorkflow(
+            repository = manualWorkflowRepository,
+            aiProvider = aiProvider,
+            imageSource = FileVisionImageSource(),
+        )
 
         setContent {
             val cleanupScope = rememberCoroutineScope()
@@ -88,6 +94,7 @@ class MainActivity : ComponentActivity() {
                 manualWorkflowRepository = manualWorkflowRepository,
                 postTextGenerator = postTextGenerationPipeline,
                 photoEditExecutor = photoEditExecutionPipeline,
+                analyzeVision = analyzeVisionWorkflow,
                 onCaptureFromCamera = captureHandler.launchCamera,
                 onPickFromGallery = captureHandler.launchGallery,
                 captureResult = captureResult,
