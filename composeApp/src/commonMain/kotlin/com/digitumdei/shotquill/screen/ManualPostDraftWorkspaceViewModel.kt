@@ -138,13 +138,14 @@ class ManualPostDraftWorkspaceViewModel(
                 )
             }
             is VisionDescriptionAnalysisResult.Failure -> {
-                val msg = when (val error = result.error) {
-                    VisionDescriptionAnalysisError.DraftNotFound -> "Draft not found"
-                    is VisionDescriptionAnalysisError.Provider -> "Unable to analyze photo: ${error.error.userMessage}"
-                    is VisionDescriptionAnalysisError.ImageLoadFailure -> error.message
+                when (val error = result.error) {
+                    VisionDescriptionAnalysisError.DraftNotFound -> {
+                        state = unloadedState(statusMessage = error.statusMessage())
+                    }
+                    else -> {
+                        state = state.copy(statusMessage = error.statusMessage())
+                    }
                 }
-                state = postDraftRepository.get(draftId)?.toState(msg, state.isPromptHistoryVisible)
-                    ?: unloadedState(statusMessage = msg)
             }
         }
     }
@@ -637,6 +638,13 @@ class ManualPostDraftWorkspaceViewModel(
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence++}"
+
+    private fun VisionDescriptionAnalysisError.statusMessage(): String =
+        when (this) {
+            VisionDescriptionAnalysisError.DraftNotFound -> "Draft not found"
+            is VisionDescriptionAnalysisError.Provider -> "Unable to analyze photo: ${error.userMessage}"
+            is VisionDescriptionAnalysisError.ImageLoadFailure -> message
+        }
 
     private fun PostTextGenerationError.statusMessage(): String =
         when (this) {

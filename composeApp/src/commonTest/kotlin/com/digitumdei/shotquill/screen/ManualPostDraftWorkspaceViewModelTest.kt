@@ -638,6 +638,110 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun preservesWorkspaceStateWhenAnalyzeVisionFailsWithProviderError() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = object : AnalyzeVision {
+                override fun analyzePrimaryPhoto(
+                    draftId: PostDraftId,
+                    reuseCached: Boolean,
+                ): VisionDescriptionAnalysisResult {
+                    return VisionDescriptionAnalysisResult.Failure(
+                        VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
+                    )
+                }
+            },
+        )
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.togglePromptHistory()
+
+        viewModel.analyzeVisionDescription()
+
+        val draft = repository.get(draftId)
+        assertEquals("Unable to analyze photo: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
+        assertNotNull(draft, "Draft should still exist in repository")
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri, "Original photo URI preserved")
+        assertTrue(viewModel.state.actions.canAnalyzeVision, "Can retry vision analysis")
+        assertTrue(viewModel.state.actions.canGeneratePostText, "Can still generate text")
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
+        assertTrue(viewModel.state.isPromptHistoryVisible, "Prompt history visibility preserved")
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent, "Edit intent preserved")
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText, "Refinement text preserved")
+    }
+
+    @Test
+    fun preservesWorkspaceStateWhenAnalyzeVisionFailsWithImageLoadFailure() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = object : AnalyzeVision {
+                override fun analyzePrimaryPhoto(
+                    draftId: PostDraftId,
+                    reuseCached: Boolean,
+                ): VisionDescriptionAnalysisResult {
+                    return VisionDescriptionAnalysisResult.Failure(
+                        VisionDescriptionAnalysisError.ImageLoadFailure("Corrupted image file"),
+                    )
+                }
+            },
+        )
+        viewModel.load()
+
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.togglePromptHistory()
+
+        viewModel.analyzeVisionDescription()
+
+        val draft = repository.get(draftId)
+        assertEquals("Corrupted image file", viewModel.state.statusMessage)
+        assertNotNull(draft, "Draft should still exist in repository")
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri, "Original photo URI preserved")
+        assertTrue(viewModel.state.actions.canAnalyzeVision, "Can retry vision analysis")
+        assertTrue(viewModel.state.actions.canGeneratePostText, "Can still generate text")
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
+        assertTrue(viewModel.state.isPromptHistoryVisible, "Prompt history visibility preserved")
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent, "Edit intent preserved")
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText, "Refinement text preserved")
+    }
+
+    @Test
+    fun showsUnloadedStateWhenAnalyzeVisionFailsWithDraftNotFound() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = object : AnalyzeVision {
+                override fun analyzePrimaryPhoto(
+                    draftId: PostDraftId,
+                    reuseCached: Boolean,
+                ): VisionDescriptionAnalysisResult {
+                    return VisionDescriptionAnalysisResult.Failure(
+                        VisionDescriptionAnalysisError.DraftNotFound,
+                    )
+                }
+            },
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+        assertNull(viewModel.state.draftStatus, "Draft status should be null in unloaded state")
+        assertNull(viewModel.state.visionDescription, "Vision description should be null in unloaded state")
+        assertNull(viewModel.state.originalPhotoUri, "Original photo URI should be null in unloaded state")
+        assertFalse(viewModel.state.actions.canAnalyzeVision, "Cannot analyze vision in unloaded state")
+        assertFalse(viewModel.state.actions.canGeneratePostText, "Cannot generate text in unloaded state")
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi, "Cannot edit photo in unloaded state")
+    }
+
+    @Test
     fun usesConfiguredDefaultPlatformWhenDraftHasNoTargetPlatform() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(
