@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.shared.workflow
 
+import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.ai.AiImageInput
 import com.digitumdei.shotquill.shared.ai.AiProvider
 import com.digitumdei.shotquill.shared.ai.AiProviderResult
@@ -190,6 +191,35 @@ class VisionDescriptionAnalyzerTest {
         val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
         val error = assertIs<VisionDescriptionAnalysisError.ImageLoadFailure>(failure.error)
         assertEquals("File not found", error.message)
+    }
+
+    @Test
+    fun providerFailureReturnsProviderErrorWithoutPersistence() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Failure(AiError.QuotaExceeded())
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                error("Not used")
+        }
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = failingProvider,
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
+        val error = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
+        assertIs<AiError.QuotaExceeded>(error.error)
+        assertEquals(0, repository.get(draftId)?.promptHistory?.size, "No prompt history must be persisted on vision provider failure")
+        assertEquals(null, repository.get(draftId)?.visionDescription, "No vision description must be persisted on vision provider failure")
     }
 
     private fun sampleDraft(): PostDraft =

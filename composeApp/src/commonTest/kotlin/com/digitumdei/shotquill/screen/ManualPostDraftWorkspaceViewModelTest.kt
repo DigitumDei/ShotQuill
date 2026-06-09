@@ -2291,6 +2291,66 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
 
+    @Test
+    fun preservesSelectedMediaAssetIdAfterFailurePersistedEdit() {
+        val preselectedId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(
+            selectedMediaAssetId = preselectedId,
+        )
+        val persistedDraft = draft.copy(
+            photoEditRequests = draft.photoEditRequests + listOf(
+                PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-failed"),
+                    draftId = draftId,
+                    sourceMediaAssetId = preselectedId,
+                    intent = EditIntent.ImproveLighting,
+                    realismLevel = RealismLevel.Photoreal,
+                    qualityTier = QualityTier.Standard,
+                    prompt = "Failing request",
+                    userRefinement = null,
+                    subjectDescription = null,
+                    targetPlatform = TargetPlatform.InstagramFeedSquare,
+                    maskRegion = null,
+                    createdAtEpochMillis = 1_700_000_200_000L,
+                ),
+            ),
+        )
+        val repository = FakePostDraftRepository(draft)
+        val executor = RecordingPhotoEditExecutor(
+            result = PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.FailurePersisted(
+                    photoEditRequest = persistedDraft.photoEditRequests.last(),
+                    assembledPrompt = "Failing request",
+                    promptHistoryEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
+                        id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-failed"),
+                        draftId = draftId,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = "Failing request",
+                        responseSummary = "Provider error",
+                        modelName = null,
+                        createdAtEpochMillis = 1_700_000_200_000L,
+                    ),
+                    updatedDraft = persistedDraft,
+                    cause = PhotoEditExecutionError.Provider(AiError.RateLimited()),
+                ),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri, "Active photo must reflect the preselected asset's URI")
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri, "Original photo URI must be preserved")
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto, "Original should not be selectable when preselected edited is active")
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Should still be able to re-edit after failure")
+    }
+
     private class RecordingPhotoEditExecutor(
         private val resultDraft: PostDraft? = null,
         private val result: PhotoEditExecutionResult? = null,

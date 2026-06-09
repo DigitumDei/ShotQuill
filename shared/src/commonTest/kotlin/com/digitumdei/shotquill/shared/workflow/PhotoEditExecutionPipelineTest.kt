@@ -1043,6 +1043,202 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `vision imageSource load failure with reuse=true and no cached vision returns FailurePersisted`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraft()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = settingsRepository,
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
+            visionImageSource = VisionImageSource { SourceImageResult.Failure("Vision image file corrupt") },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(persisted.cause)
+        assertEquals("Vision image file corrupt", (persisted.cause as PhotoEditExecutionError.FailedToLoadSourceImage).message)
+        val expectedPrompt = expectedAssembledPrompt(subjectDescription = null)
+        assertEquals(expectedPrompt, persisted.assembledPrompt, "vision load failure with reuse=true no cache persisted.assembledPrompt must match expected")
+        assertEquals(expectedPrompt, persisted.photoEditRequest.prompt, "vision load failure with reuse=true no cache persisted.photoEditRequest.prompt must match")
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(1, stored.photoEditRequests.size, "Edit request must be persisted on vision load failure when cache miss")
+        assertEquals(1, stored.promptHistory.size, "Prompt history must be persisted on vision load failure when cache miss")
+        assertTrue(persisted.updatedDraft.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "vision load failure with reuse=true no cache updatedDraft.updatedAt must advance")
+        assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "vision load failure with reuse=true no cache stored updatedAt must advance")
+    }
+
+    @Test
+    fun `vision-analysis provider failure before image edit returns Failure without persistence`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraft()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingVisionProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                error("Not used")
+        }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = failingVisionProvider,
+            settingsRepository = settingsRepository,
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = false,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.Provider>(failure.error)
+        assertEquals(AiError.RateLimited(), (failure.error as PhotoEditExecutionError.Provider).error)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(0, stored.photoEditRequests.size, "No edit request must be persisted on vision-analysis failure")
+        assertEquals(0, stored.promptHistory.size, "No prompt history must be persisted on vision-analysis failure")
+        assertEquals(0, stored.photoEditResults.size, "No edit result must be persisted on vision-analysis failure")
+    }
+
+    @Test
+    fun `reuseVisionDescription equals false forces re-analysis even with cached vision`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = false,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt()
+        assertEquals(expectedPrompt, success.assembledPrompt, "reuseVisionDescription=false assembledPrompt must match expected")
+        assertEquals(expectedPrompt, success.photoEditRequest.prompt, "reuseVisionDescription=false photoEditRequest.prompt must match")
+        assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "reuseVisionDescription=false promptHistoryEntry.prompt must match")
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(DraftStatus.PhotoEdited, stored.status)
+        assertEquals(1, stored.photoEditRequests.size)
+        assertEquals(1, stored.photoEditResults.size)
+        assertEquals(2, stored.promptHistory.size, "Must have both a fresh vision analysis AND edit entry")
+        val visionHistoryEntries = stored.promptHistory.filter { it.operationType == AiOperationType.VisionDescription }
+        assertEquals(1, visionHistoryEntries.size, "A fresh vision description must be recorded")
+        assertTrue(stored.visionDescription?.description?.startsWith("Fake vision for media-edit-1") == true, "Vision must be freshly analyzed, not from cache")
+    }
+
+    @Test
+    fun `pipeline always produces PhotoEditRequest with null maskRegion`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+        val settingsRepository = apiKeySettings()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        assertEquals(null, success.photoEditRequest.maskRegion, "Pipeline must always produce null maskRegion")
+        val stored = assertNotNull(repository.get(draftId))
+        val storedRequest = stored.photoEditRequests.single()
+        assertEquals(null, storedRequest.maskRegion, "Stored request maskRegion must be null")
+    }
+
+    @Test
+    fun `selectedMediaAssetId is preserved after failure-persisted edit`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val preselectedAssetId = MediaAssetId("media-preselected")
+        val currentDraft = sampleDraftWithVisionDescription().copy(
+            selectedMediaAssetId = preselectedAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(currentDraft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        assertEquals(preselectedAssetId, persisted.updatedDraft.selectedMediaAssetId, "FailurePersisted updatedDraft must preserve existing selectedMediaAssetId")
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(preselectedAssetId, stored.selectedMediaAssetId, "Stored draft selectedMediaAssetId must be preserved after failure")
+        assertEquals(0, stored.photoEditResults.size, "No edit result must be stored on failure")
+    }
+
+    @Test
     fun `PhotoEditExecutionResult Success and Failure are sealed subtypes`() {
         assertIs<PhotoEditExecutionResult>(PhotoEditExecutionResult.Success(
             photoEditRequest = samplePhotoEditRequest(),
