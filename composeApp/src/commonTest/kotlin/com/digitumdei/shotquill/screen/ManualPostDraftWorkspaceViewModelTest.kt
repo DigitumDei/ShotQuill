@@ -695,6 +695,116 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun editPhotoWithAiAutoSelectsEditedResultOverExplicitOriginalSelection() {
+        val existingEditedId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = existingEditedId)
+        val repository = FakePostDraftRepository(draft)
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri,
+            "Active photo starts as previously selected edited result")
+        assertEquals("file://photo-edited.jpg", viewModel.state.editedPhotoUri)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto,
+            "Edited is already active, should not be selectable")
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto,
+            "Original should be selectable when edited is active")
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri,
+            "Active photo reverts to original after explicit selection")
+        assertEquals("Using original photo", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canSelectOriginalPhoto,
+            "Original already active, should not be selectable")
+        assertTrue(viewModel.state.actions.canSelectEditedPhoto,
+            "Edited should be selectable when original is active")
+        assertEquals(null, repository.get(draftId)?.selectedMediaAssetId,
+            "Repository must persist cleared selection")
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("file://executor-edited.jpg", viewModel.state.activePhotoUri,
+            "Active photo must auto-select the new edited result despite explicit original choice")
+        assertEquals("file://executor-edited.jpg", viewModel.state.editedPhotoUri)
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertEquals("Edited photo created", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto,
+            "Original should be selectable after auto-selecting new edited result")
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto,
+            "New edited result already active, should not be re-selectable")
+        val stored = repository.get(draftId)
+        assertEquals(MediaAssetId("media-edited-executor"), stored?.selectedMediaAssetId,
+            "Repository must persist auto-selected newest edited asset")
+    }
+
+    @Test
+    fun editPhotoWithAiAutoSelectsEditedResultWhenNoPriorSelectionExists() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+        assertNull(viewModel.state.editedPhotoUri)
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("file://executor-edited.jpg", viewModel.state.activePhotoUri,
+            "Active photo must auto-select the new edited result on first edit")
+        assertEquals("file://executor-edited.jpg", viewModel.state.editedPhotoUri)
+        assertTrue(viewModel.state.actions.canSelectOriginalPhoto)
+        assertFalse(viewModel.state.actions.canSelectEditedPhoto)
+    }
+
+    @Test
+    fun reEditAutoSelectsNewestResultOverPreviouslySelectedEditedAsset() {
+        val oldEditedId = MediaAssetId("media-edited-1")
+        val draft = sampleDraftWithEditedMedia().copy(selectedMediaAssetId = oldEditedId)
+        val repository = FakePostDraftRepository(draft)
+        val executor = RecordingPhotoEditExecutor(
+            repository = repository,
+            defaultMediaAsset = sampleMediaAsset(),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = executor,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri,
+            "Active photo starts as previously edited when it was selected")
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals("file://executor-edited.jpg", viewModel.state.activePhotoUri,
+            "Active photo must auto-select the newest edited result")
+        assertNotEquals(oldEditedId, repository.get(draftId)?.selectedMediaAssetId,
+            "Old edited asset must be replaced by new auto-selection")
+        assertEquals(MediaAssetId("media-edited-executor"), repository.get(draftId)?.selectedMediaAssetId,
+            "Repository must persist the new edited asset as selected")
+    }
+
+    @Test
     fun usesPreferredTargetPlatformAndVisionContextWhenEditingPhotoWithAi() {
         val draft = sampleDraft().copy(
             targetPlatforms = setOf(TargetPlatform.BlueskyPost),
@@ -2543,6 +2653,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             )
             val updatedDraft = baseDraft.copy(
                 status = if (baseDraft.status == DraftStatus.PhotoAdded) DraftStatus.PhotoEdited else baseDraft.status,
+                selectedMediaAssetId = createdResult.editedMediaAsset.id,
                 photoEditRequests = baseDraft.photoEditRequests + createdRequest,
                 photoEditResults = baseDraft.photoEditResults + createdResult,
                 promptHistory = baseDraft.promptHistory + createdEntry,
