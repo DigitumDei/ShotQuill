@@ -2085,7 +2085,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.editPhotoWithAi()
 
         assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
-        assertEquals("Photo edit failed: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
+        assertEquals("Unable to edit photo: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
 
