@@ -554,7 +554,7 @@ class ManualPostDraftWorkspaceViewModel(
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
-                canEditPhotoWithAi = canMutateDraft,
+                canEditPhotoWithAi = canMutateDraft && photoEditExecutor != null,
                 canCopyCaption = !captionText.isNullOrBlank(),
                 canCopyAltText = !altText.isNullOrBlank(),
                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),

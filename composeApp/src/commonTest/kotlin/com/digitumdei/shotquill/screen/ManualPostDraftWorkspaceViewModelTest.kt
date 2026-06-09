@@ -83,7 +83,11 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun exposesStateWithOnlyOriginalMedia() {
         val repository = FakePostDraftRepository(sampleDraft())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = RecordingPhotoEditExecutor(),
+        )
 
         viewModel.load()
 
@@ -102,7 +106,11 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun exposesStateWithGeneratedText() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = RecordingPhotoEditExecutor(),
+        )
 
         viewModel.load()
 
@@ -112,12 +120,17 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canCopyCaption)
         assertTrue(viewModel.state.actions.canCopyAltText)
         assertTrue(viewModel.state.actions.canShareOrExport)
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
 
     @Test
     fun exposesStateWithEditedMedia() {
         val repository = FakePostDraftRepository(sampleDraftWithEditedMedia())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = RecordingPhotoEditExecutor(),
+        )
 
         viewModel.load()
 
@@ -664,6 +677,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     )
                 }
             },
+            photoEditExecutor = RecordingPhotoEditExecutor(),
         )
         viewModel.load()
 
@@ -701,6 +715,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     )
                 }
             },
+            photoEditExecutor = RecordingPhotoEditExecutor(),
         )
         viewModel.load()
 
@@ -947,6 +962,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     )
                 }
             },
+            photoEditExecutor = RecordingPhotoEditExecutor(),
         )
         viewModel.load()
 
@@ -1587,6 +1603,8 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.load()
 
+        assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+
         viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
         viewModel.updatePhotoEditRefinement("Softer contrast")
         viewModel.updatePhotoEditTargetPlatform(TargetPlatform.BlueskyPost)
@@ -1619,6 +1637,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             postDraftRepository = repository,
             postTextGenerator = generator,
             defaultTargetPlatform = TargetPlatform.InstagramFeedSquare,
+            photoEditExecutor = RecordingPhotoEditExecutor(),
         )
 
         viewModel.load()
