@@ -395,7 +395,7 @@ class ManualPostDraftWorkspaceViewModel(
             )
         } catch (e: Exception) {
             state = state.copy(
-                statusMessage = "Photo edit failed: ${e.message}",
+                statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
                 photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
                 actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
             )
