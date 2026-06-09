@@ -10,6 +10,7 @@ import java.io.FileOutputStream
 
 class AndroidPhotoEditMediaSaver(
     private val filesDir: File,
+    private val onWriteFile: ((File) -> Unit)? = null,
 ) : PhotoEditMediaSaver {
     override fun save(
         bytes: ByteArray,
@@ -34,8 +35,12 @@ class AndroidPhotoEditMediaSaver(
         }
 
         return try {
-            FileOutputStream(destFile).use { output ->
-                output.write(bytes)
+            if (onWriteFile != null) {
+                onWriteFile(destFile)
+            } else {
+                FileOutputStream(destFile).use { output ->
+                    output.write(bytes)
+                }
             }
             val (width, height) = MediaFileManager.readImageDimensions(destFile.absolutePath)
             SaveEditedImageResult.Success(

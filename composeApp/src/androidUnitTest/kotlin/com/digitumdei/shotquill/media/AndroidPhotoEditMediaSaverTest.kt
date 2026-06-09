@@ -179,11 +179,14 @@ class AndroidPhotoEditMediaSaverTest {
         val editedId = MediaAssetId("photo-edited-failure-test")
         val destDir = File(tmpDir, "media/edited")
         val destFile = File(destDir, "${editedId.value}.jpg")
-        // Make the directory read-only so the FileOutputStream write fails
         destDir.mkdirs()
-        destDir.setWritable(false)
 
-        val result = saver.save(
+        val failingSaver = AndroidPhotoEditMediaSaver(
+            filesDir = tmpDir,
+            onWriteFile = { throw java.io.IOException("Simulated write failure") },
+        )
+
+        val result = failingSaver.save(
             bytes = byteArrayOf(1, 2, 3),
             mimeType = "image/jpeg",
             originalMediaAsset = originalMediaAsset,
@@ -193,8 +196,6 @@ class AndroidPhotoEditMediaSaverTest {
 
         assertIs<SaveEditedImageResult.Failure>(result)
 
-        // Restore writable for cleanup
-        destDir.setWritable(true)
         // No stray file should have been left behind
         assertFalse(destFile.exists())
         // Directory should still exist
@@ -204,8 +205,7 @@ class AndroidPhotoEditMediaSaverTest {
     @Test
     fun `save returns Failure when directory creation fails`() {
         val readOnlyParent = File(tmpDir, "readonly_root")
-        readOnlyParent.mkdirs()
-        readOnlyParent.setWritable(false)
+        readOnlyParent.writeBytes(byteArrayOf(0))
         val failingSaver = AndroidPhotoEditMediaSaver(filesDir = readOnlyParent)
 
         val result = failingSaver.save(
@@ -217,7 +217,6 @@ class AndroidPhotoEditMediaSaverTest {
         )
 
         assertIs<SaveEditedImageResult.Failure>(result)
-        readOnlyParent.setWritable(true)
     }
 
     @Test
