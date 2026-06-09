@@ -1327,14 +1327,18 @@ class PhotoEditExecutionPipelineTest {
         ): PostDraft? {
             val currentDraft = drafts[draftId] ?: return null
             mediaAssets[editedMediaAsset.id] = editedMediaAsset
-            drafts[draftId] = currentDraft.copy(
-                status = targetStatus,
-                updatedAt = updatedAt,
-                selectedMediaAssetId = editedMediaAsset.id,
+            val draftWithRecords = currentDraft.copy(
                 photoEditRequests = currentDraft.photoEditRequests + editRequest,
                 photoEditResults = currentDraft.photoEditResults + editResult,
                 promptHistory = currentDraft.promptHistory + promptHistoryEntry,
             )
+            drafts[draftId] = if (targetStatus != currentDraft.status) {
+                draftWithRecords.transitionTo(targetStatus, updatedAt).copy(
+                    selectedMediaAssetId = editedMediaAsset.id,
+                )
+            } else {
+                draftWithRecords.copy(updatedAt = updatedAt, selectedMediaAssetId = editedMediaAsset.id)
+            }
             return drafts[draftId]
         }
 
