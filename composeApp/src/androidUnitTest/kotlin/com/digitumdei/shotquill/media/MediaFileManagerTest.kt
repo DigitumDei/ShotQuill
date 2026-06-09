@@ -241,5 +241,24 @@ class MediaFileManagerTest {
         assertTrue(ex.message!!.contains("Unsupported URI scheme"))
     }
 
+    @Test
+    fun readMediaAssetBytesThrowsForMissingFile() {
+        val missingFile = File(tmpDir, "nonexistent.jpg")
+        val asset = MediaAsset(
+            id = MediaAssetId("test-6"),
+            type = MediaType.Photo,
+            uri = "file://${missingFile.absolutePath}",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Source file not found"))
+        assertTrue(ex.message!!.contains(missingFile.absolutePath))
+    }
+
 
 }
