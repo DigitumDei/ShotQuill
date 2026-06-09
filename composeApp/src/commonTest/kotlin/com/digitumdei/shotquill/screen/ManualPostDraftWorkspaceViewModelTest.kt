@@ -1261,6 +1261,37 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun showsFallbackMessageWhenAiProviderThrowsNullMessageException() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingExecutor = object : PhotoEditExecutor {
+            override fun execute(
+                draftId: PostDraftId,
+                intent: EditIntent,
+                realismLevel: RealismLevel,
+                qualityTier: QualityTier,
+                targetPlatform: TargetPlatform,
+                prompt: String,
+                userRefinement: String?,
+                maskRegion: MaskRegion?,
+                reuseVisionDescription: Boolean,
+            ): PhotoEditExecutionResult {
+                throw RuntimeException()
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            photoEditExecutor = throwingExecutor,
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals("Photo edit failed: Unknown error", viewModel.state.statusMessage)
+    }
+
+    @Test
     fun preservesPhotoEditFormValuesWhenAiProviderThrows() {
         val repository = FakePostDraftRepository(sampleDraft())
         val throwingExecutor = object : PhotoEditExecutor {
