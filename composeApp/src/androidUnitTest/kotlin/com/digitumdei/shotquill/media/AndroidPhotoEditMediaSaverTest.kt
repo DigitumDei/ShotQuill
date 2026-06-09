@@ -128,10 +128,10 @@ class AndroidPhotoEditMediaSaverTest {
     }
 
     private fun writePngChunk(output: java.io.ByteArrayOutputStream, type: String, data: ByteArray) {
-        output.write((data.size shr 24).toByte())
-        output.write((data.size shr 16).toByte())
-        output.write((data.size shr 8).toByte())
-        output.write(data.size.toByte())
+        output.write((data.size shr 24) and 0xFF)
+        output.write((data.size shr 16) and 0xFF)
+        output.write((data.size shr 8) and 0xFF)
+        output.write(data.size and 0xFF)
 
         val typeBytes = type.toByteArray(Charsets.US_ASCII)
         val crc = java.util.zip.CRC32()
@@ -142,10 +142,10 @@ class AndroidPhotoEditMediaSaverTest {
         output.write(data)
 
         val crcVal = crc.value
-        output.write((crcVal shr 24).toByte())
-        output.write((crcVal shr 16).toByte())
-        output.write((crcVal shr 8).toByte())
-        output.write(crcVal.toByte())
+        output.write(((crcVal shr 24) and 0xFF).toInt())
+        output.write(((crcVal shr 16) and 0xFF).toInt())
+        output.write(((crcVal shr 8) and 0xFF).toInt())
+        output.write((crcVal and 0xFF).toInt())
     }
 
     @Test

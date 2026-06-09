@@ -32,6 +32,7 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
+import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
@@ -459,7 +460,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.updatePhotoEditIntent(EditIntent.StyleTransfer)
         viewModel.updatePhotoEditRefinement("Vintage film look")
         viewModel.updatePhotoEditTargetPlatform(TargetPlatform.FacebookPost)
-        viewModel.updatePhotoEditQualityTier(QualityTier.Express)
+        viewModel.updatePhotoEditQualityTier(QualityTier.Draft)
         viewModel.togglePromptHistory()
 
         viewModel.selectOriginalPhoto()
@@ -470,7 +471,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(EditIntent.StyleTransfer, viewModel.state.photoEditForm.selectedIntent)
         assertEquals("Vintage film look", viewModel.state.photoEditForm.userRefinementText)
         assertEquals(TargetPlatform.FacebookPost, viewModel.state.photoEditForm.selectedTargetPlatform)
-        assertEquals(QualityTier.Express, viewModel.state.photoEditForm.selectedQualityTier)
+        assertEquals(QualityTier.Draft, viewModel.state.photoEditForm.selectedQualityTier)
         assertTrue(viewModel.state.isPromptHistoryVisible)
     }
 
@@ -2913,7 +2914,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     id = PhotoEditRequestId("photo-edit-request-save-fail"),
                     draftId = draftId,
                     sourceMediaAssetId = mediaAssetId,
-                    intent = EditIntent.AddBackground,
+                    intent = EditIntent.BackgroundAdjustment,
                     realismLevel = RealismLevel.Polished,
                     qualityTier = QualityTier.High,
                     prompt = "Add a sunset background",
@@ -3276,8 +3277,8 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         override fun saveVisionDescription(visionDescription: VisionDescription) {
             storedVisionDescriptions += visionDescription
-            drafts[visionDescription.draftId] = drafts[visionDescription.draftId]?.copy(
-                visionDescriptions = (drafts[visionDescription.draftId]?.visionDescriptions ?: emptyList()) + visionDescription,
+            drafts[visionDescription.draftId] = drafts[visionDescription.draftId]!!.copy(
+                visionDescriptions = (drafts[visionDescription.draftId]!!.visionDescriptions) + visionDescription,
             )
         }
         override fun save(visionDescription: VisionDescription) { saveVisionDescription(visionDescription) }
@@ -3287,8 +3288,8 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
             storedPromptHistory += promptHistoryEntry
-            drafts[promptHistoryEntry.draftId] = drafts[promptHistoryEntry.draftId]?.copy(
-                promptHistory = (drafts[promptHistoryEntry.draftId]?.promptHistory ?: emptyList()) + promptHistoryEntry,
+            drafts[promptHistoryEntry.draftId] = drafts[promptHistoryEntry.draftId]!!.copy(
+                promptHistory = (drafts[promptHistoryEntry.draftId]!!.promptHistory) + promptHistoryEntry,
             )
         }
         override fun save(promptHistoryEntry: PromptHistoryEntry) { savePromptHistoryEntry(promptHistoryEntry) }

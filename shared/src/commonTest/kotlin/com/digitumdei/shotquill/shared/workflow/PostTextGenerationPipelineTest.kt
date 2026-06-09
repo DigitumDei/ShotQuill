@@ -606,7 +606,7 @@ class PostTextGenerationPipelineTest {
             error("Not used")
     }
 
-    private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
+    private open class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
         private val mediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
         var deleteBeforeDraftGetNumber: Int? = null

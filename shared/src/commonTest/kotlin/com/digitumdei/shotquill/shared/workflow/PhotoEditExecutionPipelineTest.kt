@@ -1691,7 +1691,7 @@ class PhotoEditExecutionPipelineTest {
         override fun nowMillis(): Long = now
     }
 
-    private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
+    private open class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
         private val mediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
 

@@ -335,8 +335,8 @@ class PhotoEditPromptAssemblerTest {
     fun persistedRequestWithAllOptionsRoundTripsThroughBuildPrompt() {
         val assembled = PhotoEditPromptAssembler.buildPrompt(
             intent = EditIntent.RemoveObject,
-            realismLevel = RealismLevel.Flat,
-            qualityTier = QualityTier.Medium,
+            realismLevel = RealismLevel.Stylized,
+            qualityTier = QualityTier.Draft,
             targetPlatform = TargetPlatform.InstagramPortrait,
             subjectDescription = "A person standing in front of a wall",
             userRefinement = "Keep the person centered",
@@ -347,8 +347,8 @@ class PhotoEditPromptAssemblerTest {
             draftId = draftId,
             sourceMediaAssetId = mediaAssetId,
             intent = EditIntent.RemoveObject,
-            realismLevel = RealismLevel.Flat,
-            qualityTier = QualityTier.Medium,
+            realismLevel = RealismLevel.Stylized,
+            qualityTier = QualityTier.Draft,
             prompt = assembled,
             userRefinement = "Keep the person centered",
             subjectDescription = "A person standing in front of a wall",

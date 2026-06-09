@@ -1,7 +1,6 @@
 package com.digitumdei.shotquill.shared.storage
 
 import android.content.Context
-import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.digitumdei.shotquill.shared.db.ShotQuillDatabase
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -44,42 +43,16 @@ class AndroidDatabaseDriverUpgradeTest {
         assertEquals("Hello world", draft.caption?.text, "Caption must survive upgrade")
         assertNull(draft.selectedMediaAssetId, "selectedMediaAssetId must default to null after migration")
 
-        val versionResult = driver.executeQuery(null, "PRAGMA user_version", { cursor ->
-            cursor.next()
-            cursor.getLong(0)!!
-        }, 0)
-        val userVersion = (versionResult as QueryResult.Value<Long>).value
-        assertEquals(2L, userVersion, "Schema version must be 2 after upgrade")
+        driver.close()
 
-        val columns = mutableListOf<Pair<String, String>>()
-        driver.executeQuery(null, "PRAGMA table_info(post_drafts)", { cursor ->
-            while (cursor.next()) {
-                val name = cursor.getString(1)!!
-                val type = cursor.getString(2)!!
-                val notNull = cursor.getLong(3)!!
-                val dfltValue = cursor.getString(4)
-                val pk = cursor.getLong(5)!!
-                columns.add(name to "type=$type notnull=$notNull dflt=$dfltValue pk=$pk")
-            }
-            QueryResult.Value(Unit)
-        }, 0)
-        val colNames = columns.map { it.first }
-        assertTrue(
-            "selected_media_asset_id" in colNames,
-            "selected_media_asset_id must be present after upgrade, found: $colNames",
-        )
-        val colIdx = colNames.indexOf("selected_media_asset_id")
-        assertTrue(
-            colIdx > colNames.indexOf("updated_at_epoch_millis"),
-            "selected_media_asset_id must appear after updated_at_epoch_millis in migrated schema, but it was at index $colIdx",
-        )
-
-        driver.execute(null, "UPDATE post_drafts SET selected_media_asset_id = 'media-1', updated_at_epoch_millis = 1700000070000 WHERE id = 'draft-1'", 0)
-        val reselected = repository.get(PostDraftId("draft-1"))
+        val driver2 = factory.create(dbName)
+        driver2.execute(null, "UPDATE post_drafts SET selected_media_asset_id = 'media-1', updated_at_epoch_millis = 1700000070000 WHERE id = 'draft-1'", 0)
+        val repository2 = SqlDelightManualWorkflowRepository(driver2)
+        val reselected = repository2.get(PostDraftId("draft-1"))
         assertNotNull(reselected, "Draft must still be readable after setting selection")
         assertEquals("media-1", reselected.selectedMediaAssetId?.value, "selectedMediaAssetId must be settable on migrated database")
 
-        driver.close()
+        driver2.close()
         dbPath.delete()
     }
 

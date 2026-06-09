@@ -97,7 +97,7 @@ class OpenAiProviderTest {
         val transport = SuccessfulOpenAiTransport()
         val provider = configuredProvider(transport)
         val assembledPrompt = "Edit this image: Improve the lighting and exposure of the image. Improve lighting while preserving the subject. Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details. Use standard quality tier. Frame the result for Original (no resize) using preserve the original dimensions without resizing."
-        val request = PhotoEditGenerationRequest(
+        val generationRequest = PhotoEditGenerationRequest(
             editRequest = PhotoEditRequest(
                 id = PhotoEditRequestId("edit-request-1"),
                 draftId = PostDraftId("draft-1"),
@@ -114,7 +114,7 @@ class OpenAiProviderTest {
             sourceImage = sampleImageInput(),
         )
 
-        val result = provider.editPhoto(request)
+        val result = provider.editPhoto(generationRequest)
 
         val success = assertIs<AiProviderResult.Success<PhotoEditOutput>>(result)
         assertEquals("edited-image", success.value.imageBytes.decodeToString())
