@@ -269,7 +269,7 @@ ON CONFLICT(id) DO UPDATE SET
   updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
 selectPostDraftById:
-SELECT * FROM post_drafts WHERE id = ?;
+SELECT id, format, status, caption_text, brand_profile_id, selected_media_asset_id, created_at_epoch_millis, updated_at_epoch_millis FROM post_drafts WHERE id = ?;
 
 updatePostDraftStatus:
 UPDATE post_drafts

@@ -1373,6 +1373,25 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.close()
     }
 
+    @Test fun `saveToGetRoundTrip preserves all draft columns with distinct sensitive values`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val draftCreatedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        val draftUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_060_000L)
+        val selectedAssetId = MediaAssetId("media-selected-distinct")
+        val draft = samplePostDraft().copy(
+            createdAt = draftCreatedAt,
+            updatedAt = draftUpdatedAt,
+            selectedMediaAssetId = selectedAssetId,
+        )
+        repository.save(draft)
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(draftCreatedAt, stored.createdAt)
+        assertEquals(draftUpdatedAt, stored.updatedAt)
+        assertEquals(selectedAssetId, stored.selectedMediaAssetId)
+        driver.close()
+    }
+
     @Test fun `updateSelectedMediaAsset sets non-null value and advances timestamp`() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
