@@ -1481,6 +1481,70 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `whitespace-only userRefinement is treated as no refinement`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val resultWithNull = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+        val expectedPrompt = (resultWithNull as PhotoEditExecutionResult.Success).assembledPrompt
+
+        val resultWithWhitespace = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = "  ",
+            reuseVisionDescription = true,
+        )
+        val whitespacePrompt = (resultWithWhitespace as PhotoEditExecutionResult.Success).assembledPrompt
+
+        assertEquals(expectedPrompt, whitespacePrompt, "Whitespace-only refinement must produce the same prompt as null refinement")
+    }
+
+    @Test
+    fun `userRefinement with leading and trailing whitespace is trimmed before assembly`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = "  add a warm filter  ",
+            reuseVisionDescription = true,
+        )
+        val success = assertIs<PhotoEditExecutionResult.Success>(result)
+        val expectedPrompt = expectedAssembledPrompt(userRefinement = "add a warm filter")
+        assertEquals(expectedPrompt, success.assembledPrompt, "Leading and trailing whitespace must be trimmed before prompt assembly")
+        assertEquals("add a warm filter", success.photoEditRequest.userRefinement, "Stored photoEditRequest.userRefinement must be trimmed")
+    }
+
+    @Test
     fun `PhotoEditExecutionResult Success and Failure are sealed subtypes`() {
         assertIs<PhotoEditExecutionResult>(PhotoEditExecutionResult.Success(
             photoEditRequest = samplePhotoEditRequest(),
