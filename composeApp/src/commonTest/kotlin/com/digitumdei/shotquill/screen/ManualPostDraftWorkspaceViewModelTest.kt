@@ -742,6 +742,135 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun analyzeVisionWithInjectedAnalyzerStoresDescriptionWithCorrectMediaAssetId() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val clock = FixedClock(1_700_000_090_000L)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = FakeAnalyzeVision(repository, clock),
+            clock = clock,
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        val stored = repository.get(draftId)
+        assertNotNull(stored?.visionDescription)
+        assertEquals("Photo shows photo.jpg prepared for social content.", viewModel.state.visionDescription)
+        assertEquals(viewModel.state.visionDescription, stored?.visionDescription?.description)
+        assertEquals(mediaAssetId, stored?.visionDescription?.mediaAssetId)
+        assertEquals("Analyzed photo", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.promptHistory.isNotEmpty())
+    }
+
+    @Test
+    fun selectEditedPhotoHidesOriginalPhotoVisionDescription() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val originalDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-original"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Original photo description for regression test.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_080_000L,
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraftWithEditedMedia().copy(visionDescription = originalDescription),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        assertEquals("Original photo description for regression test.", viewModel.state.visionDescription)
+        assertEquals("file://photo.jpg", viewModel.state.activePhotoUri)
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertEquals("Using edited photo", viewModel.state.statusMessage)
+        assertNull(viewModel.state.visionDescription, "Vision description hidden when active asset differs")
+        assertEquals(editedMediaId, repository.get(draftId)?.selectedMediaAssetId)
+    }
+
+    @Test
+    fun doesNotReuseCachedVisionDescriptionWhenMediaAssetIdDoesNotMatch() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val originalDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-original"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Legacy cached description for original photo.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_080_000L,
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraftWithEditedMedia().copy(visionDescription = originalDescription),
+        )
+        val clock = FixedClock(1_700_000_090_000L)
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = FakeAnalyzeVision(repository, clock),
+            clock = clock,
+        )
+        viewModel.load()
+
+        assertEquals("Legacy cached description for original photo.", viewModel.state.visionDescription)
+
+        viewModel.selectEditedPhoto()
+        assertNull(viewModel.state.visionDescription)
+
+        viewModel.analyzeVisionDescription()
+
+        val stored = repository.get(draftId)
+        assertEquals("Photo shows photo-edited.jpg prepared for social content.", viewModel.state.visionDescription)
+        assertNotEquals("Legacy cached description for original photo.", stored?.visionDescription?.description)
+        assertEquals(editedMediaId, stored?.visionDescription?.mediaAssetId)
+        assertEquals("Analyzed photo", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun preservesExistingVisionDescriptionOnAnalyzeFailure() {
+        val existingDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-existing"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            description = "Existing vision description to preserve on failure.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_080_000L,
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraft().copy(visionDescription = existingDescription),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = object : AnalyzeVision {
+                override fun analyzePrimaryPhoto(
+                    draftId: PostDraftId,
+                    reuseCached: Boolean,
+                ): VisionDescriptionAnalysisResult {
+                    return VisionDescriptionAnalysisResult.Failure(
+                        VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
+                    )
+                }
+            },
+        )
+        viewModel.load()
+
+        assertEquals("Existing vision description to preserve on failure.", viewModel.state.visionDescription)
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Unable to analyze photo: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
+        assertEquals("Existing vision description to preserve on failure.", viewModel.state.visionDescription, "Existing vision description preserved in state")
+        assertEquals("file://photo.jpg", viewModel.state.originalPhotoUri)
+        assertTrue(viewModel.state.actions.canAnalyzeVision, "Can retry vision analysis")
+        assertTrue(viewModel.state.actions.canGeneratePostText, "Can still generate text")
+        assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
+    }
+
+    @Test
     fun usesConfiguredDefaultPlatformWhenDraftHasNoTargetPlatform() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(
