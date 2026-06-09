@@ -188,12 +188,11 @@ class MediaFileManagerTest {
     }
 
     @Test
-    fun readMediaAssetBytesThrowsForMissingFile() {
-        val missingFile = File(tmpDir, "nonexistent.jpg")
+    fun readMediaAssetBytesThrowsForUnsupportedUriScheme() {
         val asset = MediaAsset(
-            id = MediaAssetId("test-2"),
+            id = MediaAssetId("test-3"),
             type = MediaType.Photo,
-            uri = "file://${missingFile.absolutePath}",
+            uri = "content://com.example.provider/photos/1",
             mimeType = "image/jpeg",
             widthPx = 100,
             heightPx = 100,
@@ -202,7 +201,44 @@ class MediaFileManagerTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             MediaFileManager.readMediaAssetBytes(asset)
         }
-        assertTrue(ex.message!!.contains("Source file not found"))
+        assertTrue(ex.message!!.contains("Unsupported URI scheme"))
+        assertTrue(ex.message!!.contains("content"))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForSchemeOnlyUri() {
+        val asset = MediaAsset(
+            id = MediaAssetId("test-4"),
+            type = MediaType.Photo,
+            uri = "file://",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("URI is missing a file path"))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForPlainPathWithoutScheme() {
+        val testFile = File(tmpDir, "test_noscheme.jpg")
+        testFile.writeBytes(byteArrayOf(1, 2, 3))
+        val asset = MediaAsset(
+            id = MediaAssetId("test-5"),
+            type = MediaType.Photo,
+            uri = testFile.absolutePath,
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Unsupported URI scheme"))
     }
 
 

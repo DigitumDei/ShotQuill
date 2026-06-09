@@ -49,7 +49,12 @@ class MediaFileManager(
         }
 
         fun readMediaAssetBytes(mediaAsset: MediaAsset): ByteArray {
-            val file = File(mediaAsset.uri.removePrefix("file://"))
+            require(mediaAsset.uri.startsWith("file://")) {
+                "Unsupported URI scheme: expected file:// but got ${mediaAsset.uri.substringBefore("://", "").ifEmpty { mediaAsset.uri }}"
+            }
+            val filePath = mediaAsset.uri.removePrefix("file://")
+            require(filePath.isNotEmpty()) { "URI is missing a file path: ${mediaAsset.uri}" }
+            val file = File(filePath)
             require(file.exists()) { "Source file not found: ${file.absolutePath}" }
             return file.readBytes()
         }
