@@ -32,6 +32,11 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
+import com.digitumdei.shotquill.shared.domain.BrandProfile
+import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionRequest
+import com.digitumdei.shotquill.shared.domain.ExportRecord
+import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
@@ -43,6 +48,12 @@ import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisError
 import com.digitumdei.shotquill.shared.workflow.VisionDescriptionAnalysisResult
+import com.digitumdei.shotquill.shared.ai.FakeAiProvider
+import com.digitumdei.shotquill.shared.ai.AiImageInput
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVisionWorkflow
+import com.digitumdei.shotquill.shared.workflow.VisionImageSource
+import com.digitumdei.shotquill.shared.workflow.SourceImageResult
+import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -743,12 +754,26 @@ class ManualPostDraftWorkspaceViewModelTest {
 
     @Test
     fun analyzeVisionWithInjectedAnalyzerStoresDescriptionWithCorrectMediaAssetId() {
-        val repository = FakePostDraftRepository(sampleDraft())
         val clock = FixedClock(1_700_000_090_000L)
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val imageSource = VisionImageSource { _ ->
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = byteArrayOf(0, 1, 2),
+                    mimeType = "image/jpeg",
+                    fileName = "test.jpg",
+                ),
+            )
+        }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            analyzeVision = FakeAnalyzeVision(repository, clock),
+            analyzeVision = AnalyzeVisionWorkflow(
+                repository = repository,
+                aiProvider = FakeAiProvider(),
+                imageSource = imageSource,
+                clock = clock,
+            ),
             clock = clock,
         )
         viewModel.load()
@@ -757,8 +782,10 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         val stored = repository.get(draftId)
         assertNotNull(stored?.visionDescription)
-        assertEquals("Photo shows photo.jpg prepared for social content.", viewModel.state.visionDescription)
-        assertEquals(viewModel.state.visionDescription, stored?.visionDescription?.description)
+        assertTrue(
+            stored?.visionDescription?.description?.startsWith("Fake vision for media-1:") ?: false,
+            "Description should come from injected FakeAiProvider",
+        )
         assertEquals(mediaAssetId, stored?.visionDescription?.mediaAssetId)
         assertEquals("Analyzed photo", viewModel.state.statusMessage)
         assertTrue(viewModel.state.promptHistory.isNotEmpty())
@@ -803,14 +830,28 @@ class ManualPostDraftWorkspaceViewModelTest {
             modelName = "fake",
             createdAtEpochMillis = 1_700_000_080_000L,
         )
-        val repository = FakePostDraftRepository(
+        val clock = FixedClock(1_700_000_090_000L)
+        val repository = FakeManualWorkflowRepository(
             sampleDraftWithEditedMedia().copy(visionDescription = originalDescription),
         )
-        val clock = FixedClock(1_700_000_090_000L)
+        val imageSource = VisionImageSource { _ ->
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = byteArrayOf(0, 1, 2),
+                    mimeType = "image/jpeg",
+                    fileName = "test.jpg",
+                ),
+            )
+        }
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = repository,
-            analyzeVision = FakeAnalyzeVision(repository, clock),
+            analyzeVision = AnalyzeVisionWorkflow(
+                repository = repository,
+                aiProvider = FakeAiProvider(),
+                imageSource = imageSource,
+                clock = clock,
+            ),
             clock = clock,
         )
         viewModel.load()
@@ -823,7 +864,10 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.analyzeVisionDescription()
 
         val stored = repository.get(draftId)
-        assertEquals("Photo shows photo-edited.jpg prepared for social content.", viewModel.state.visionDescription)
+        assertTrue(
+            viewModel.state.visionDescription?.startsWith("Fake vision for media-edited-1:") ?: false,
+            "Description should come from injected FakeAiProvider for edited photo",
+        )
         assertNotEquals("Legacy cached description for original photo.", stored?.visionDescription?.description)
         assertEquals(editedMediaId, stored?.visionDescription?.mediaAssetId)
         assertEquals("Analyzed photo", viewModel.state.statusMessage)
@@ -860,6 +904,10 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertEquals("Existing vision description to preserve on failure.", viewModel.state.visionDescription)
 
+        viewModel.updatePhotoEditIntent(EditIntent.RemoveObject)
+        viewModel.updatePhotoEditRefinement("Softer contrast")
+        viewModel.togglePromptHistory()
+
         viewModel.analyzeVisionDescription()
 
         assertEquals("Unable to analyze photo: The AI provider is rate limited. Try again later.", viewModel.state.statusMessage)
@@ -868,6 +916,9 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canAnalyzeVision, "Can retry vision analysis")
         assertTrue(viewModel.state.actions.canGeneratePostText, "Can still generate text")
         assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
+        assertTrue(viewModel.state.isPromptHistoryVisible, "Prompt history visibility preserved")
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent, "Edit intent preserved")
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText, "Refinement text preserved")
     }
 
     @Test
@@ -3121,6 +3172,117 @@ class ManualPostDraftWorkspaceViewModelTest {
             )
             repository.save(updated)
             return VisionDescriptionAnalysisResult.Success(visionDescription, cacheHit = false)
+        }
+    }
+
+    private class FakeManualWorkflowRepository(
+        initialDraft: PostDraft? = null,
+    ) : ManualWorkflowRepository {
+        private val drafts: MutableMap<PostDraftId, PostDraft> =
+            initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
+        private val storedVisionDescriptions = mutableListOf<VisionDescription>()
+        private val storedPromptHistory = mutableListOf<PromptHistoryEntry>()
+
+        override fun save(postDraft: PostDraft) { drafts[postDraft.id] = postDraft }
+        override fun get(id: PostDraftId): PostDraft? = drafts[id]
+        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
+            val current = drafts[id] ?: return false
+            drafts[id] = current.copy(status = status, updatedAt = updatedAt)
+            return true
+        }
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val current = drafts[id] ?: return false
+            drafts[id] = current.copy(updatedAt = updatedAt)
+            return true
+        }
+        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+            val current = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
+            drafts[id] = current.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
+            return UpdateSelectionResult.Success
+        }
+
+        override fun saveVisionDescription(visionDescription: VisionDescription) {
+            storedVisionDescriptions += visionDescription
+            drafts[visionDescription.draftId] = drafts[visionDescription.draftId]?.copy(
+                visionDescription = visionDescription,
+            )
+        }
+        override fun save(visionDescription: VisionDescription) { saveVisionDescription(visionDescription) }
+        override fun get(id: VisionDescriptionId): VisionDescription? = storedVisionDescriptions.find { it.id == id }
+        override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
+            storedVisionDescriptions.filter { it.draftId == id }
+
+        override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
+            storedPromptHistory += promptHistoryEntry
+            drafts[promptHistoryEntry.draftId] = drafts[promptHistoryEntry.draftId]?.copy(
+                promptHistory = (drafts[promptHistoryEntry.draftId]?.promptHistory ?: emptyList()) + promptHistoryEntry,
+            )
+        }
+        override fun save(promptHistoryEntry: PromptHistoryEntry) { savePromptHistoryEntry(promptHistoryEntry) }
+        override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = storedPromptHistory.find { it.id == id }
+        override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+            storedPromptHistory.filter { it.draftId == id }
+
+        override fun save(mediaAsset: MediaAsset) {}
+        override fun get(id: MediaAssetId): MediaAsset? = null
+        override fun save(brandProfile: BrandProfile) {}
+        override fun get(id: BrandProfileId): BrandProfile? = null
+        override fun save(captionRequest: CaptionRequest) {}
+        override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? = null
+        override fun listCaptionRequestsForDraft(id: PostDraftId): List<CaptionRequest> = emptyList()
+        override fun save(captionResult: CaptionResult) {}
+        override fun getCaptionResult(id: CaptionResultId): CaptionResult? = null
+        override fun listCaptionResultsForDraft(id: PostDraftId): List<CaptionResult> = emptyList()
+        override fun save(altTextResult: AltTextResult) {}
+        override fun get(id: AltTextResultId): AltTextResult? = null
+        override fun listAltTextResultsForDraft(id: PostDraftId): List<AltTextResult> = emptyList()
+        override fun save(photoEditRequest: PhotoEditRequest) {}
+        override fun getPhotoEditRequest(id: PhotoEditRequestId): PhotoEditRequest? = null
+        override fun listPhotoEditRequestsForDraft(id: PostDraftId): List<PhotoEditRequest> = emptyList()
+        override fun save(photoEditResult: PhotoEditResult) {}
+        override fun getPhotoEditResult(id: PhotoEditResultId): PhotoEditResult? = null
+        override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> = emptyList()
+        override fun save(exportRecord: ExportRecord) {}
+        override fun get(id: ExportRecordId): ExportRecord? = null
+        override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
+        override fun saveCaptionRequest(captionRequest: CaptionRequest) {}
+        override fun saveCaptionResult(captionResult: CaptionResult) {}
+        override fun saveAltTextResult(altTextResult: AltTextResult) {}
+        override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {}
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {}
+        override fun saveExportRecord(exportRecord: ExportRecord) {}
+        override fun savePhotoEditSuccess(
+            draftId: PostDraftId,
+            editedMediaAsset: MediaAsset,
+            editRequest: PhotoEditRequest,
+            editResult: PhotoEditResult,
+            promptHistoryEntry: PromptHistoryEntry,
+            targetStatus: DraftStatus,
+            updatedAt: Instant,
+        ): PostDraft? = null
+        override fun savePhotoEditFailure(
+            draftId: PostDraftId,
+            editRequest: PhotoEditRequest,
+            promptHistoryEntry: PromptHistoryEntry,
+            updatedAt: Instant,
+        ): PostDraft? = null
+        override fun recordPostTextGeneration(
+            draftId: PostDraftId,
+            status: DraftStatus,
+            caption: CaptionDraft,
+            targetPlatform: TargetPlatform,
+            brandProfile: BrandProfile?,
+            captionRequest: CaptionRequest,
+            captionResult: CaptionResult,
+            altTextResult: AltTextResult,
+            promptHistoryEntries: List<PromptHistoryEntry>,
+            updatedAt: Instant,
+        ): PostDraft? = null
+        override fun clearAll() {
+            drafts.clear()
+            storedVisionDescriptions.clear()
+            storedPromptHistory.clear()
         }
     }
 }
