@@ -99,8 +99,8 @@ class PhotoEditExecutionPipelineTest {
         assertTrue(stored.promptHistory.any { it.operationType == AiOperationType.PhotoEdit && it.responseSummary != null })
 
         assertEquals(1, stored.mediaItems.size, "Original mediaItems must not be modified")
-        val originalAsset = stored.mediaItems.first().mediaAsset
-        assertEquals(mediaAssetId, originalAsset.id)
+        val draftOriginalAsset = stored.mediaItems.first().mediaAsset
+        assertEquals(mediaAssetId, draftOriginalAsset.id)
         val latestResult = stored.photoEditResults.maxByOrNull { it.createdAtEpochMillis }
         assertNotNull(latestResult, "Edited asset must be linked via photoEditResults")
         assertEquals(editedAsset.id, latestResult.editedMediaAsset.id)
