@@ -12,7 +12,6 @@ import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportStatus
-import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -1379,7 +1378,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 throw RuntimeException("Provider failure")
@@ -1409,7 +1407,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 throw RuntimeException()
@@ -1439,7 +1436,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 throw RuntimeException("Provider failure")
@@ -1481,7 +1477,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 capturedStates.add(viewModelRef[0]!!.state.photoEditForm.operationState)
@@ -1589,7 +1584,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 val vm = viewModelRef[0]!!
@@ -1712,7 +1706,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             override fun execute(
                 draftId: PostDraftId, intent: EditIntent, realismLevel: RealismLevel,
                 qualityTier: QualityTier, targetPlatform: TargetPlatform,
-                userRefinement: String?, maskRegion: MaskRegion?, reuseVisionDescription: Boolean,
+                userRefinement: String?, reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 callCount++
                 val idSuffix = "call$callCount"
@@ -1961,7 +1955,6 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(EditIntent.ImproveLighting, executor.capturedIntent)
         assertEquals(RealismLevel.Photoreal, executor.capturedRealismLevel)
         assertEquals(QualityTier.Standard, executor.capturedQualityTier)
-        assertNull(executor.capturedMaskRegion)
     }
 
     @Test
@@ -2168,7 +2161,6 @@ class ManualPostDraftWorkspaceViewModelTest {
                 qualityTier: QualityTier,
                 targetPlatform: TargetPlatform,
                 userRefinement: String?,
-                maskRegion: MaskRegion?,
                 reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 capturedStates.add(viewModelRef[0]!!.state.photoEditForm.operationState)
@@ -2310,7 +2302,6 @@ class ManualPostDraftWorkspaceViewModelTest {
         var capturedRealismLevel: RealismLevel? = null
         var capturedQualityTier: QualityTier? = null
         var capturedTargetPlatform: TargetPlatform? = null
-        var capturedMaskRegion: MaskRegion? = null
         var capturedUserRefinement: String? = null
         var capturedReuseVisionDescription: Boolean? = null
 
@@ -2334,14 +2325,12 @@ class ManualPostDraftWorkspaceViewModelTest {
             qualityTier: QualityTier,
             targetPlatform: TargetPlatform,
             userRefinement: String?,
-            maskRegion: MaskRegion?,
             reuseVisionDescription: Boolean,
         ): PhotoEditExecutionResult {
             capturedIntent = intent
             capturedRealismLevel = realismLevel
             capturedQualityTier = qualityTier
             capturedTargetPlatform = targetPlatform
-            capturedMaskRegion = maskRegion
             capturedUserRefinement = userRefinement
             capturedReuseVisionDescription = reuseVisionDescription
 
@@ -2366,7 +2355,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
                     subjectDescription = null,
                     targetPlatform = targetPlatform,
-                    maskRegion = maskRegion,
+                    maskRegion = null,
                     createdAtEpochMillis = EpochClock.Default.nowMillis(),
                 )
             val createdResult = resultDraft?.photoEditResults?.lastOrNull()

@@ -9,7 +9,6 @@ import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
-import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
@@ -37,7 +36,6 @@ interface PhotoEditExecutor {
         qualityTier: QualityTier,
         targetPlatform: TargetPlatform,
         userRefinement: String? = null,
-        maskRegion: MaskRegion? = null,
         reuseVisionDescription: Boolean = true,
     ): PhotoEditExecutionResult
 }
@@ -60,7 +58,6 @@ class PhotoEditExecutionPipeline(
         qualityTier: QualityTier,
         targetPlatform: TargetPlatform,
         userRefinement: String?,
-        maskRegion: MaskRegion?,
         reuseVisionDescription: Boolean,
     ): PhotoEditExecutionResult {
         val draft = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
@@ -145,7 +142,7 @@ class PhotoEditExecutionPipeline(
                         realismLevel = realismLevel,
                         qualityTier = qualityTier,
                         targetPlatform = targetPlatform,
-                        maskRegion = maskRegion,
+                        maskRegion = null,
                         subjectDescription = null,
                         userRefinement = cleanedUserRefinement,
                     )
@@ -160,7 +157,7 @@ class PhotoEditExecutionPipeline(
                         userRefinement = cleanedUserRefinement,
                         subjectDescription = null,
                         targetPlatform = targetPlatform,
-                        maskRegion = maskRegion,
+                        maskRegion = null,
                         createdAtEpochMillis = now,
                     )
                     return persistFailure(
@@ -188,7 +185,7 @@ class PhotoEditExecutionPipeline(
             realismLevel = realismLevel,
             qualityTier = qualityTier,
             targetPlatform = targetPlatform,
-            maskRegion = maskRegion,
+            maskRegion = null,
             subjectDescription = visionDescription.description,
             userRefinement = cleanedUserRefinement,
         )
@@ -203,7 +200,7 @@ class PhotoEditExecutionPipeline(
             userRefinement = cleanedUserRefinement,
             subjectDescription = visionDescription.description,
             targetPlatform = targetPlatform,
-            maskRegion = maskRegion,
+            maskRegion = null,
             createdAtEpochMillis = now,
         )
 

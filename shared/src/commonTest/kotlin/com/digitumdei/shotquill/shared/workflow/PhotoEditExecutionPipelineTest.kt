@@ -74,7 +74,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -135,7 +134,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -206,7 +204,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -218,7 +215,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -271,7 +267,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -312,7 +307,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = false,
         )
 
@@ -354,7 +348,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -396,7 +389,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -445,7 +437,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -486,7 +477,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -515,7 +505,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -787,7 +776,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.Standard,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -855,7 +843,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.Standard,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -899,7 +886,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -948,7 +934,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
@@ -991,7 +976,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
         val firstSuccess = assertIs<PhotoEditExecutionResult.Success>(firstResult)
@@ -1036,7 +1020,6 @@ class PhotoEditExecutionPipelineTest {
             qualityTier = QualityTier.High,
             targetPlatform = TargetPlatform.InstagramFeedSquare,
             userRefinement = null,
-            maskRegion = null,
             reuseVisionDescription = true,
         )
 
