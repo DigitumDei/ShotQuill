@@ -621,7 +621,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
         driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'InstagramFeedSquare')", 0)
 
-        Migrations.migrateV1ToV2 { sql -> driver.execute(null, sql, 0) }
+        ShotQuillDatabase.Schema.migrate(driver, 1, 2)
 
         val repository = SqlDelightManualWorkflowRepository(driver)
 
