@@ -140,7 +140,7 @@ class SqlDelightManualWorkflowRepository(
                 )
             }
             deleteOwnedDraftRows(postDraft.id)
-            postDraft.visionDescription?.let { saveVisionDescription(it) }
+            postDraft.visionDescriptions.forEach { saveVisionDescription(it) }
             postDraft.captionRequests.forEach { saveCaptionRequest(it) }
             postDraft.captionResults.forEach { saveCaptionResult(it) }
             postDraft.altTextResults.forEach { saveAltTextResult(it) }
@@ -194,7 +194,7 @@ class SqlDelightManualWorkflowRepository(
                 .executeAsList()
                 .mapTo(linkedSetOf()) { ManualWorkflowStorageMapper.enumFromWire(it, TargetPlatform::fromWireValue) },
             brandProfile = draft.brandProfileId?.let { selectBrandProfile(BrandProfileId(it)) },
-            visionDescription = selectVisionDescriptions(id).lastOrNull(),
+            visionDescriptions = selectVisionDescriptions(id),
             captionRequests = selectCaptionRequests(id),
             captionResults = selectCaptionResults(id),
             altTextResults = selectAltTextResults(id),

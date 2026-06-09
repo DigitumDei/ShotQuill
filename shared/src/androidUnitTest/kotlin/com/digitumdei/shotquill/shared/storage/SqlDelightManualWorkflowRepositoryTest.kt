@@ -136,7 +136,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(MediaAssetId("media-1"), stored.mediaItems.single().mediaAsset.id)
         assertEquals(listOf("#coffee", "#work"), stored.caption?.hashtags)
         assertEquals(BrandProfileId("brand-1"), stored.brandProfile?.id)
-        assertEquals(VisionDescriptionId("vision-1"), stored.visionDescription?.id)
+        assertEquals(VisionDescriptionId("vision-1"), stored.visionDescriptions.firstOrNull()?.id)
         assertEquals(CaptionRequestId("caption-request-1"), stored.captionRequests.single().id)
         assertEquals(CaptionResultId("caption-result-1"), stored.captionResults.single().id)
         assertEquals(listOf("#coffee", "#work"), stored.captionResults.single().hashtags)
@@ -702,7 +702,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -958,7 +958,7 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         val stored = repository.get(PostDraftId("draft-1"))
         assertNotNull(stored)
-        assertEquals("Updated desk scene.", stored.visionDescription?.description)
+        assertEquals("Updated desk scene.", stored.visionDescriptions.firstOrNull()?.description)
         assertEquals("Write a sharper caption.", stored.captionRequests.single().prompt)
         assertEquals("Brewed focus for the morning.", stored.captionResults.single().caption)
         assertEquals(listOf("#focus"), stored.captionResults.single().hashtags)
@@ -1223,7 +1223,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         ),
         targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
-        visionDescription = VisionDescription(
+        visionDescriptions = listOf(VisionDescription(
             id = VisionDescriptionId("vision-1"),
             draftId = PostDraftId("draft-1"),
             mediaAssetId = MediaAssetId("media-1"),
@@ -1231,6 +1231,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             modelName = "vision-model",
             createdAtEpochMillis = createdAt,
         ),
+    ),
         captionRequests = listOf(sampleCaptionRequest()),
         captionResults = listOf(sampleCaptionResult()),
         altTextResults = listOf(sampleAltTextResult()),
@@ -1419,7 +1420,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(original.mediaItems, stored.mediaItems)
         assertEquals(original.targetPlatforms, stored.targetPlatforms)
         assertEquals(original.brandProfile, stored.brandProfile)
-        assertEquals(original.visionDescription, stored.visionDescription)
+        assertEquals(original.visionDescriptions, stored.visionDescriptions)
         assertEquals(original.captionRequests, stored.captionRequests)
         assertEquals(original.captionResults, stored.captionResults)
         assertEquals(original.altTextResults, stored.altTextResults)

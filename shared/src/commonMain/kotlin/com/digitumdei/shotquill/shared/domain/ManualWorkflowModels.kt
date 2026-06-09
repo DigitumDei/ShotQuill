@@ -11,7 +11,7 @@ data class PostDraft(
     val caption: CaptionDraft?,
     val targetPlatforms: Set<TargetPlatform>,
     val brandProfile: BrandProfile?,
-    val visionDescription: VisionDescription?,
+    val visionDescriptions: List<VisionDescription>,
     val captionRequests: List<CaptionRequest>,
     val captionResults: List<CaptionResult>,
     val altTextResults: List<AltTextResult>,

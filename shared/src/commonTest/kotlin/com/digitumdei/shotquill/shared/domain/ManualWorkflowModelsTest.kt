@@ -719,7 +719,7 @@ class ManualWorkflowModelsTest {
         ),
         targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
-        visionDescription = null,
+        visionDescriptions = emptyList(),
         captionRequests = listOf(sampleCaptionRequest()),
         captionResults = emptyList(),
         altTextResults = emptyList(),

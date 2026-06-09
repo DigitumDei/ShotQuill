@@ -532,7 +532,7 @@ class ManualPostDraftWorkspaceViewModel(
             originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
             activePhotoUri = activePhoto?.uri,
-            visionDescription = visionDescription?.takeIf { it.mediaAssetId == activePhoto?.id }?.description,
+            visionDescription = visionDescriptions.firstOrNull { it.mediaAssetId == activePhoto?.id }?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
             targetPlatform = platform,

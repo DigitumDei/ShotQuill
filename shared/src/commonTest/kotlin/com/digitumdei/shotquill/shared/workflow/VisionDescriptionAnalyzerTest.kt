@@ -71,7 +71,7 @@ class VisionDescriptionAnalyzerTest {
         assertEquals(false, success.cacheHit)
         assertTrue(success.visionDescription.description.startsWith("Fake vision for media-1"))
         val stored = repository.get(draftId)
-        assertEquals(success.visionDescription, stored?.visionDescription)
+        assertEquals(success.visionDescription, stored?.visionDescriptions?.firstOrNull())
         assertEquals(1, stored?.promptHistory?.size)
         val promptHistory = stored?.promptHistory?.single()
         assertEquals(AiOperationType.VisionDescription, promptHistory?.operationType)
@@ -89,7 +89,7 @@ class VisionDescriptionAnalyzerTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescription = cached))
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescriptions = listOf(cached)))
         val provider = RecordingAiProvider()
         val analyzer = VisionDescriptionAnalyzer(
             repository = repository,
@@ -117,7 +117,7 @@ class VisionDescriptionAnalyzerTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescription = cached))
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(visionDescriptions = listOf(cached)))
         val provider = RecordingAiProvider()
         val analyzer = VisionDescriptionAnalyzer(
             repository = repository,
@@ -220,7 +220,7 @@ class VisionDescriptionAnalyzerTest {
         val error = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
         assertIs<AiError.QuotaExceeded>(error.error)
         assertEquals(0, repository.get(draftId)?.promptHistory?.size, "No prompt history must be persisted on vision provider failure")
-        assertEquals(null, repository.get(draftId)?.visionDescription, "No vision description must be persisted on vision provider failure")
+        assertEquals(null, repository.get(draftId)?.visionDescriptions?.firstOrNull(), "No vision description must be persisted on vision provider failure")
     }
 
     private fun sampleDraft(): PostDraft =
@@ -245,7 +245,7 @@ class VisionDescriptionAnalyzerTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -333,14 +333,14 @@ class VisionDescriptionAnalyzerTest {
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) {
             val draft = drafts.getValue(visionDescription.draftId)
-            drafts[visionDescription.draftId] = draft.copy(visionDescription = visionDescription)
+            drafts[visionDescription.draftId] = draft.copy(visionDescriptions = draft.visionDescriptions + visionDescription)
         }
 
         override fun get(id: VisionDescriptionId): VisionDescription? =
-            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+            drafts.values.flatMap { it.visionDescriptions }.firstOrNull { it.id == id }
 
         override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
-            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+            drafts[id]?.visionDescriptions.orEmpty()
 
         override fun save(captionRequest: CaptionRequest) = saveCaptionRequest(captionRequest)
         override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? = null

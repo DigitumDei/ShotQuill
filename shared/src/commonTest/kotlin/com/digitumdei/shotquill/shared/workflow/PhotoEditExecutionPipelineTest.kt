@@ -811,7 +811,7 @@ class PhotoEditExecutionPipelineTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        val draft = sampleDraft().copy(visionDescription = orphanVision)
+        val draft = sampleDraft().copy(visionDescriptions = listOf(orphanVision))
         val repository = FakeManualWorkflowRepository(draft)
         val pipeline = pipeline(
             repository = repository,
@@ -1205,7 +1205,7 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.promptHistory.size, "Must have both a fresh vision analysis AND edit entry")
         val visionHistoryEntries = stored.promptHistory.filter { it.operationType == AiOperationType.VisionDescription }
         assertEquals(1, visionHistoryEntries.size, "A fresh vision description must be recorded")
-        assertTrue(stored.visionDescription?.description?.startsWith("Fake vision for media-edit-1") == true, "Vision must be freshly analyzed, not from cache")
+        assertTrue(stored.visionDescriptions.firstOrNull()?.description?.startsWith("Fake vision for media-edit-1") == true, "Vision must be freshly analyzed, not from cache")
     }
 
     @Test
@@ -1587,7 +1587,7 @@ class PhotoEditExecutionPipelineTest {
         caption = null,
         targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare),
         brandProfile = null,
-        visionDescription = null,
+        visionDescriptions = emptyList(),
         captionRequests = emptyList(),
         captionResults = emptyList(),
         altTextResults = emptyList(),
@@ -1608,7 +1608,7 @@ class PhotoEditExecutionPipelineTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        return sampleDraft().copy(visionDescription = visionDescription)
+        return sampleDraft().copy(visionDescriptions = listOf(visionDescription))
     }
 
     private fun sampleMediaAsset(): MediaAsset = MediaAsset(
@@ -1747,12 +1747,12 @@ class PhotoEditExecutionPipelineTest {
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) = save(
-            drafts.getValue(visionDescription.draftId).copy(visionDescription = visionDescription),
+            drafts.getValue(visionDescription.draftId).copy(visionDescriptions = drafts.getValue(visionDescription.draftId).visionDescriptions + visionDescription),
         )
         override fun get(id: VisionDescriptionId): VisionDescription? =
-            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+            drafts.values.flatMap { it.visionDescriptions }.firstOrNull { it.id == id }
         override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
-            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+            drafts[id]?.visionDescriptions.orEmpty()
 
         override fun save(captionRequest: com.digitumdei.shotquill.shared.domain.CaptionRequest) = saveCaptionRequest(captionRequest)
         override fun getCaptionRequest(id: com.digitumdei.shotquill.shared.domain.CaptionRequestId): com.digitumdei.shotquill.shared.domain.CaptionRequest? = null

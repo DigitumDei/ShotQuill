@@ -80,7 +80,7 @@ class PostTextGenerationPipelineTest {
         assertTrue(success.captionResult.caption.startsWith("Fake instagram_feed_square caption"))
         assertTrue(success.captionResult.shortCaption?.startsWith("Fake short caption") == true)
         assertTrue(success.altTextResult.altText.startsWith("Fake alt text for media-1"))
-        assertEquals(success.visionDescription, stored.visionDescription)
+        assertEquals(success.visionDescription, stored.visionDescriptions.firstOrNull())
         assertEquals(1, stored.captionRequests.size)
         assertEquals(1, stored.captionResults.size)
         assertEquals(1, stored.altTextResults.size)
@@ -305,7 +305,7 @@ class PostTextGenerationPipelineTest {
 
         assertIs<PostTextGenerationResult.Success>(result)
         assertEquals(1, provider.visionCalls)
-        assertEquals("Recorded vision.", repository.get(draftId)?.visionDescription?.description)
+        assertEquals("Recorded vision.", repository.get(draftId)?.visionDescriptions?.firstOrNull()?.description)
     }
 
     @Test
@@ -479,7 +479,7 @@ class PostTextGenerationPipelineTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        return sampleDraft().copy(visionDescription = visionDescription)
+        return sampleDraft().copy(visionDescriptions = listOf(visionDescription))
     }
 
     private fun sampleDraft(): PostDraft =
@@ -504,7 +504,7 @@ class PostTextGenerationPipelineTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -655,14 +655,14 @@ class PostTextGenerationPipelineTest {
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) = save(
-            drafts.getValue(visionDescription.draftId).copy(visionDescription = visionDescription),
+            drafts.getValue(visionDescription.draftId).copy(visionDescriptions = drafts.getValue(visionDescription.draftId).visionDescriptions + visionDescription),
         )
 
         override fun get(id: VisionDescriptionId): VisionDescription? =
-            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+            drafts.values.flatMap { it.visionDescriptions }.firstOrNull { it.id == id }
 
         override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
-            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+            drafts[id]?.visionDescriptions.orEmpty()
 
         override fun save(captionRequest: CaptionRequest) = saveCaptionRequest(captionRequest)
         override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? = drafts.values

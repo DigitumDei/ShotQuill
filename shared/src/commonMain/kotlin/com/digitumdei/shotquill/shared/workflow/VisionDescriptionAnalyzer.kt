@@ -91,7 +91,9 @@ class VisionDescriptionAnalyzer(
         repository.listVisionDescriptionsForDraft(draft.id)
             .filter { it.mediaAssetId == mediaAsset.id }
             .maxByOrNull { it.createdAtEpochMillis }
-            ?: draft.visionDescription?.takeIf { it.mediaAssetId == mediaAsset.id }
+            ?: draft.visionDescriptions
+                .filter { it.mediaAssetId == mediaAsset.id }
+                .maxByOrNull { it.createdAtEpochMillis }
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence.getAndIncrement()}"

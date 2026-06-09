@@ -560,7 +560,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             "Photo shows photo.jpg prepared for social content.",
             viewModel.state.visionDescription,
         )
-        assertEquals(viewModel.state.visionDescription, stored?.visionDescription?.description)
+        assertEquals(viewModel.state.visionDescription, stored?.visionDescriptions?.firstOrNull()?.description)
         assertEquals(DraftStatus.PhotoAdded, stored?.status)
         assertEquals(1, viewModel.state.promptHistory.size)
         assertEquals(
@@ -575,14 +575,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun reusesCachedVisionDescriptionInWorkspace() {
         val repository = FakePostDraftRepository(
             sampleDraft().copy(
-                visionDescription = VisionDescription(
+                visionDescriptions = listOf(VisionDescription(
                     id = VisionDescriptionId("vision-description-1"),
                     draftId = draftId,
                     mediaAssetId = mediaAssetId,
                     description = "Cached workspace description.",
                     modelName = "fake",
                     createdAtEpochMillis = 1_700_000_080_000L,
-                ),
+                )),
             ),
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -622,7 +622,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val repository = FakePostDraftRepository(
             sampleDraftWithEditedMedia().copy(
                 selectedMediaAssetId = editedMediaId,
-                visionDescription = originalPhotoDescription,
+                visionDescriptions = listOf(originalPhotoDescription),
             ),
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(
@@ -796,12 +796,12 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.analyzeVisionDescription()
 
         val stored = repository.get(draftId)
-        assertNotNull(stored?.visionDescription)
+        assertNotNull(stored?.visionDescriptions?.firstOrNull())
         assertTrue(
-            stored?.visionDescription?.description?.startsWith("Fake vision for media-1:") ?: false,
+            stored?.visionDescriptions?.firstOrNull()?.description?.startsWith("Fake vision for media-1:") ?: false,
             "Description should come from injected FakeAiProvider",
         )
-        assertEquals(mediaAssetId, stored?.visionDescription?.mediaAssetId)
+        assertEquals(mediaAssetId, stored?.visionDescriptions?.firstOrNull()?.mediaAssetId)
         assertEquals("Analyzed photo", viewModel.state.statusMessage)
         assertTrue(viewModel.state.promptHistory.isNotEmpty())
     }
@@ -818,7 +818,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             createdAtEpochMillis = 1_700_000_080_000L,
         )
         val repository = FakePostDraftRepository(
-            sampleDraftWithEditedMedia().copy(visionDescription = originalDescription),
+            sampleDraftWithEditedMedia().copy(visionDescriptions = listOf(originalDescription)),
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
         viewModel.load()
@@ -847,7 +847,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         )
         val clock = FixedClock(1_700_000_090_000L)
         val repository = FakeManualWorkflowRepository(
-            sampleDraftWithEditedMedia().copy(visionDescription = originalDescription),
+            sampleDraftWithEditedMedia().copy(visionDescriptions = listOf(originalDescription)),
         )
         val imageSource = VisionImageSource { _ ->
             SourceImageResult.Success(
@@ -883,8 +883,8 @@ class ManualPostDraftWorkspaceViewModelTest {
             viewModel.state.visionDescription?.startsWith("Fake vision for media-edited-1:") ?: false,
             "Description should come from injected FakeAiProvider for edited photo",
         )
-        assertNotEquals("Legacy cached description for original photo.", stored?.visionDescription?.description)
-        assertEquals(editedMediaId, stored?.visionDescription?.mediaAssetId)
+        assertNotEquals("Legacy cached description for original photo.", stored?.visionDescriptions?.firstOrNull()?.description)
+        assertEquals(editedMediaId, stored?.visionDescriptions?.firstOrNull()?.mediaAssetId)
         assertEquals("Analyzed photo", viewModel.state.statusMessage)
     }
 
@@ -947,7 +947,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             createdAtEpochMillis = 1_700_000_080_000L,
         )
         val repository = FakePostDraftRepository(
-            sampleDraft().copy(visionDescription = existingDescription),
+            sampleDraft().copy(visionDescriptions = listOf(existingDescription)),
         )
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
@@ -1226,14 +1226,14 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun usesPreferredTargetPlatformAndVisionContextWhenEditingPhotoWithAi() {
         val draft = sampleDraft().copy(
             targetPlatforms = setOf(TargetPlatform.BlueskyPost),
-            visionDescription = VisionDescription(
+            visionDescriptions = listOf(VisionDescription(
                 id = VisionDescriptionId("vision-description-1"),
                 draftId = draftId,
                 mediaAssetId = mediaAssetId,
                 description = "A coffee cup on a wooden table.",
                 modelName = "fake",
                 createdAtEpochMillis = 1_700_000_010_000L,
-            ),
+            )),
         )
         val repository = FakePostDraftRepository(draft)
         val resultDraft = draft.copy(
@@ -1674,7 +1674,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -2179,7 +2179,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     caption = null,
                     targetPlatforms = emptySet(),
                     brandProfile = null,
-                    visionDescription = null,
+                    visionDescriptions = emptyList(),
                     captionRequests = emptyList(),
                     captionResults = emptyList(),
                     altTextResults = emptyList(),
@@ -2290,7 +2290,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     caption = null,
                     targetPlatforms = emptySet(),
                     brandProfile = null,
-                    visionDescription = null,
+                    visionDescriptions = emptyList(),
                     captionRequests = emptyList(),
                     captionResults = emptyList(),
                     altTextResults = emptyList(),
@@ -3114,7 +3114,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 caption = null,
                 targetPlatforms = emptySet(),
                 brandProfile = null,
-                visionDescription = null,
+                visionDescriptions = emptyList(),
                 captionRequests = emptyList(),
                 captionResults = emptyList(),
                 altTextResults = emptyList(),
@@ -3209,7 +3209,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 )
             }
             if (reuseCached) {
-                draft.visionDescription?.takeIf { it.mediaAssetId == mediaAsset.id }?.let {
+                draft.visionDescriptions.firstOrNull()?.takeIf { it.mediaAssetId == mediaAsset.id }?.let {
                     return VisionDescriptionAnalysisResult.Success(it, cacheHit = true)
                 }
             }
@@ -3234,7 +3234,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 createdAtEpochMillis = now,
             )
             val updated = draft.copy(
-                visionDescription = visionDescription,
+                visionDescriptions = listOf(visionDescription),
                 promptHistory = draft.promptHistory + promptHistoryEntry,
             )
             repository.save(updated)
@@ -3251,7 +3251,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         private val storedPromptHistory = mutableListOf<PromptHistoryEntry>()
 
         init {
-            initialDraft?.visionDescription?.let { storedVisionDescriptions += it }
+            initialDraft?.visionDescriptions?.let { storedVisionDescriptions.addAll(it) }
             initialDraft?.promptHistory?.let { storedPromptHistory += it }
         }
 
@@ -3277,7 +3277,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun saveVisionDescription(visionDescription: VisionDescription) {
             storedVisionDescriptions += visionDescription
             drafts[visionDescription.draftId] = drafts[visionDescription.draftId]?.copy(
-                visionDescription = visionDescription,
+                visionDescriptions = (drafts[visionDescription.draftId]?.visionDescriptions ?: emptyList()) + visionDescription,
             )
         }
         override fun save(visionDescription: VisionDescription) { saveVisionDescription(visionDescription) }
