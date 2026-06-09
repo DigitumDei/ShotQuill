@@ -370,6 +370,20 @@ class VisionDescriptionAnalyzerTest {
             )
             return drafts[draftId]
         }
+        override fun savePhotoEditFailure(
+            draftId: PostDraftId,
+            editRequest: PhotoEditRequest,
+            promptHistoryEntry: PromptHistoryEntry,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            drafts[draftId] = draft.copy(
+                updatedAt = updatedAt,
+                photoEditRequests = draft.photoEditRequests + editRequest,
+                promptHistory = draft.promptHistory + promptHistoryEntry,
+            )
+            return drafts[draftId]
+        }
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,

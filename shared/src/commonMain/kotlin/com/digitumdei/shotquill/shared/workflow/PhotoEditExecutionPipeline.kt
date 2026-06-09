@@ -153,14 +153,14 @@ class PhotoEditExecutionPipeline(
                 modelName = null,
                 createdAtEpochMillis = now,
             )
-            repository.savePhotoEditRequest(editRequest)
-            repository.savePromptHistoryEntry(failureEntry)
             val updatedAt = operationUpdatedAt(currentDraft, now)
-            repository.updateUpdatedAt(draftId, updatedAt)
-            val persistedDraft = currentDraft.copy(
+            val persistedDraft = repository.savePhotoEditFailure(
+                draftId = draftId,
+                editRequest = editRequest,
+                promptHistoryEntry = failureEntry,
                 updatedAt = updatedAt,
-                photoEditRequests = currentDraft.photoEditRequests + editRequest,
-                promptHistory = currentDraft.promptHistory + failureEntry,
+            ) ?: return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
             )
             return PhotoEditExecutionResult.Failure(
                 PhotoEditExecutionError.FailurePersisted(

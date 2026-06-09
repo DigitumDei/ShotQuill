@@ -1333,6 +1333,21 @@ class PhotoEditExecutionPipelineTest {
             return drafts[draftId]
         }
 
+        override fun savePhotoEditFailure(
+            draftId: PostDraftId,
+            editRequest: PhotoEditRequest,
+            promptHistoryEntry: PromptHistoryEntry,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val currentDraft = drafts[draftId] ?: return null
+            drafts[draftId] = currentDraft.copy(
+                updatedAt = updatedAt,
+                photoEditRequests = currentDraft.photoEditRequests + editRequest,
+                promptHistory = currentDraft.promptHistory + promptHistoryEntry,
+            )
+            return drafts[draftId]
+        }
+
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,

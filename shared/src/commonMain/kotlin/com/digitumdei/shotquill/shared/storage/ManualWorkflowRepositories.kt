@@ -115,6 +115,12 @@ interface ManualWorkflowRepository :
         targetStatus: DraftStatus,
         updatedAt: Instant,
     ): PostDraft?
+    fun savePhotoEditFailure(
+        draftId: PostDraftId,
+        editRequest: PhotoEditRequest,
+        promptHistoryEntry: PromptHistoryEntry,
+        updatedAt: Instant,
+    ): PostDraft?
     fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,

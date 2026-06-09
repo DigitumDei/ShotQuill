@@ -489,6 +489,25 @@ class SqlDelightManualWorkflowRepository(
         return savedDraft
     }
 
+    override fun savePhotoEditFailure(
+        draftId: PostDraftId,
+        editRequest: PhotoEditRequest,
+        promptHistoryEntry: PromptHistoryEntry,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            savePhotoEditRequest(editRequest)
+            savePromptHistoryEntry(promptHistoryEntry)
+            queries.updatePostDraftUpdatedAt(
+                updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
+
     override fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,
