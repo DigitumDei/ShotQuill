@@ -48,6 +48,9 @@ class PhotoEditExecutionPipeline(
     private val mediaSaver: PhotoEditMediaSaver,
     private val visionImageSource: VisionImageSource,
     private val clock: EpochClock = EpochClock.Default,
+    private val mediaDeleter: PhotoEditMediaDeleter = object : PhotoEditMediaDeleter {
+        override fun delete(mediaAsset: MediaAsset) {}
+    },
 ) : PhotoEditExecutor {
     private val operationSequence = AtomicCounter(0)
 
@@ -265,12 +268,18 @@ class PhotoEditExecutionPipeline(
             createdAtEpochMillis = now,
         )
 
-        val currentBeforeSave = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
-            PhotoEditExecutionError.DraftNotFound,
-        )
-        val targetStatus = photoEditStatus(currentBeforeSave) ?: return PhotoEditExecutionResult.Failure(
-            PhotoEditExecutionError.InvalidDraftStatus(currentBeforeSave.status),
-        )
+        val currentBeforeSave = repository.get(draftId) ?: run {
+            mediaDeleter.delete(editedMediaAsset)
+            return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            )
+        }
+        val targetStatus = photoEditStatus(currentBeforeSave) ?: run {
+            mediaDeleter.delete(editedMediaAsset)
+            return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.InvalidDraftStatus(currentBeforeSave.status),
+            )
+        }
 
         val updatedAt = operationUpdatedAt(currentBeforeSave, now)
         val persistedDraft = repository.savePhotoEditSuccess(
@@ -281,9 +290,12 @@ class PhotoEditExecutionPipeline(
             promptHistoryEntry = promptHistoryEntry,
             targetStatus = targetStatus,
             updatedAt = updatedAt,
-        ) ?: return PhotoEditExecutionResult.Failure(
-            PhotoEditExecutionError.DraftNotFound,
-        )
+        ) ?: run {
+            mediaDeleter.delete(editedMediaAsset)
+            return PhotoEditExecutionResult.Failure(
+                PhotoEditExecutionError.DraftNotFound,
+            )
+        }
 
         return PhotoEditExecutionResult.Success(
             photoEditRequest = editRequest,
@@ -333,6 +345,10 @@ fun interface PhotoEditMediaSaver {
         mediaAssetId: MediaAssetId,
         createdAtEpochMillis: Long,
     ): SaveEditedImageResult
+}
+
+fun interface PhotoEditMediaDeleter {
+    fun delete(mediaAsset: MediaAsset)
 }
 
 sealed class PhotoEditExecutionResult {

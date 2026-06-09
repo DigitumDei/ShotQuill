@@ -28,6 +28,7 @@ import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVisionWorkflow
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionPipeline
+import com.digitumdei.shotquill.shared.workflow.PhotoEditMediaDeleter
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationPipeline
 import java.io.File
 
@@ -60,6 +61,10 @@ class MainActivity : ComponentActivity() {
             imageSource = FilePhotoEditImageSource(),
             mediaSaver = AndroidPhotoEditMediaSaver(filesDir),
             visionImageSource = FileVisionImageSource(),
+            mediaDeleter = PhotoEditMediaDeleter { asset ->
+                val path = asset.uri.removePrefix("file://")
+                File(path).delete()
+            },
         )
         val analyzeVisionWorkflow = AnalyzeVisionWorkflow(
             repository = manualWorkflowRepository,

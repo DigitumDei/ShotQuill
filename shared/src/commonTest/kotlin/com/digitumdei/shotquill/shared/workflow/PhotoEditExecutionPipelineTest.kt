@@ -44,6 +44,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PhotoEditExecutionPipelineTest {
@@ -1269,6 +1270,214 @@ class PhotoEditExecutionPipelineTest {
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(preselectedAssetId, stored.selectedMediaAssetId, "Stored draft selectedMediaAssetId must be preserved after failure")
         assertEquals(1, stored.photoEditResults.size, "Existing edit result must be preserved; no new result added on failure")
+    }
+
+    @Test
+    fun `draft deleted after save triggers file cleanup`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        var deletedAsset: MediaAsset? = null
+        val trackingDeleter = PhotoEditMediaDeleter { asset -> deletedAsset = asset }
+        var getCount = 0
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            override fun get(id: PostDraftId): PostDraft? {
+                getCount++
+                val fetched = super.get(id) ?: return null
+                if (getCount >= 4) return null
+                return fetched
+            }
+        }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/orphan.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
+            clock = clock,
+            mediaDeleter = trackingDeleter,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.DraftNotFound>(failure.error)
+        val orphan = assertNotNull(deletedAsset, "The orphaned edited file must be cleaned up via mediaDeleter")
+        assertEquals("file://edited/orphan.jpg", orphan.uri, "Deleted asset URI must match the saved orphan file")
+    }
+
+    @Test
+    fun `invalid draft status after save triggers file cleanup`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        var deletedAsset: MediaAsset? = null
+        val trackingDeleter = PhotoEditMediaDeleter { asset -> deletedAsset = asset }
+        var getCount = 0
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            override fun get(id: PostDraftId): PostDraft? {
+                getCount++
+                val fetched = super.get(id) ?: return null
+                if (getCount >= 4) return fetched.copy(status = DraftStatus.Archived)
+                return fetched
+            }
+        }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/orphan.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
+            clock = clock,
+            mediaDeleter = trackingDeleter,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.InvalidDraftStatus>(failure.error)
+        assertEquals(DraftStatus.Archived, (failure.error as PhotoEditExecutionError.InvalidDraftStatus).status)
+        val orphan = assertNotNull(deletedAsset, "The orphaned edited file must be cleaned up via mediaDeleter")
+        assertEquals("file://edited/orphan.jpg", orphan.uri, "Deleted asset URI must match the saved orphan file")
+    }
+
+    @Test
+    fun `savePhotoEditSuccess returning null triggers file cleanup`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        var deletedAsset: MediaAsset? = null
+        val trackingDeleter = PhotoEditMediaDeleter { asset -> deletedAsset = asset }
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            override fun savePhotoEditSuccess(
+                draftId: PostDraftId,
+                editedMediaAsset: MediaAsset,
+                editRequest: PhotoEditRequest,
+                editResult: PhotoEditResult,
+                promptHistoryEntry: PromptHistoryEntry,
+                targetStatus: DraftStatus,
+                updatedAt: Instant,
+            ): PostDraft? = null
+        }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/orphan.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
+            clock = clock,
+            mediaDeleter = trackingDeleter,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        assertIs<PhotoEditExecutionError.DraftNotFound>(failure.error)
+        val orphan = assertNotNull(deletedAsset, "The orphaned edited file must be cleaned up via mediaDeleter")
+        assertEquals("file://edited/orphan.jpg", orphan.uri, "Deleted asset URI must match the saved orphan file")
+    }
+
+    @Test
+    fun `successful save does not trigger file cleanup`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        var deletedAsset: MediaAsset? = null
+        val trackingDeleter = PhotoEditMediaDeleter { asset -> deletedAsset = asset }
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = FakeManualWorkflowRepository(draft),
+            aiProvider = FakeAiProvider(),
+            settingsRepository = apiKeySettings(),
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, original, id, createdAt ->
+                SaveEditedImageResult.Success(
+                    MediaAsset(
+                        id = id,
+                        type = MediaType.EditedPhoto,
+                        uri = "file://edited/output.jpg",
+                        mimeType = "image/jpeg",
+                        widthPx = original.widthPx,
+                        heightPx = original.heightPx,
+                        createdAtEpochMillis = createdAt,
+                    ),
+                )
+            },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
+            clock = clock,
+            mediaDeleter = trackingDeleter,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        assertIs<PhotoEditExecutionResult.Success>(result)
+        assertNull(deletedAsset, "Media deleter must not be called on successful save")
     }
 
     @Test
