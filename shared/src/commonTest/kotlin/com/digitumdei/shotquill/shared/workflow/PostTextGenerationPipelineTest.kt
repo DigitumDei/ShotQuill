@@ -752,20 +752,21 @@ class PostTextGenerationPipelineTest {
             updatedAt: Instant,
         ): PostDraft? {
             val draft = drafts[draftId] ?: return null
-            mediaAssets[editedMediaAsset.id] = editedMediaAsset
             val draftWithRecords = draft.copy(
                 photoEditRequests = draft.photoEditRequests + editRequest,
                 photoEditResults = draft.photoEditResults + editResult,
                 promptHistory = draft.promptHistory + promptHistoryEntry,
             )
-            drafts[draftId] = if (targetStatus != draft.status) {
+            val candidate = if (targetStatus != draft.status) {
                 draftWithRecords.transitionTo(targetStatus, updatedAt).copy(
                     selectedMediaAssetId = editedMediaAsset.id,
                 )
             } else {
                 draftWithRecords.copy(updatedAt = updatedAt, selectedMediaAssetId = editedMediaAsset.id)
             }
-            return drafts[draftId]
+            mediaAssets[editedMediaAsset.id] = editedMediaAsset
+            drafts[draftId] = candidate
+            return candidate
         }
         override fun savePhotoEditFailure(
             draftId: PostDraftId,
