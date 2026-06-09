@@ -43,6 +43,7 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -305,6 +306,72 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-success-missing")))
         assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-success-missing")))
         assertNull(repository.get(PromptHistoryEntryId("prompt-success-missing")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessRollsBackPartialWritesOnForeignKeyViolation() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+        ShotQuillDatabase.Schema.create(driver)
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val draftId = PostDraftId("draft-1")
+        val originalDraft = repository.get(draftId)!!
+        val originalStatus = originalDraft.status
+        val originalUpdatedAt = originalDraft.updatedAt
+        val originalSelectedMediaAssetId = originalDraft.selectedMediaAssetId
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-rollback"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-rollback.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-rollback"),
+            draftId = draftId,
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-rollback"),
+            requestId = editRequest.id,
+            draftId = draftId,
+            editedMediaAsset = editedAsset,
+            summary = "Should be rolled back.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-rollback"),
+            draftId = PostDraftId("missing-draft"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val exception = assertFailsWith<Exception> {
+            repository.savePhotoEditSuccess(
+                draftId = draftId,
+                editedMediaAsset = editedAsset,
+                editRequest = editRequest,
+                editResult = editResult,
+                promptHistoryEntry = promptHistoryEntry,
+                targetStatus = DraftStatus.PhotoEdited,
+                updatedAt = timestamp,
+            )
+        }
+        assertTrue(exception.message?.contains("FOREIGN KEY") == true)
+
+        assertNull(repository.get(MediaAssetId("media-edited-rollback")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-req-rollback")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-res-rollback")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-rollback")))
+
+        val stored = repository.get(draftId)
+        assertNotNull(stored)
+        assertEquals(originalStatus, stored.status)
+        assertEquals(originalUpdatedAt, stored.updatedAt)
+        assertEquals(originalSelectedMediaAssetId, stored.selectedMediaAssetId)
+
         driver.close()
     }
 
