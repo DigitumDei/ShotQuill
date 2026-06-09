@@ -874,6 +874,54 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun reusesCachedVisionDescriptionWithRealAnalyzerForEditedPhotoAfterAssetSwitch() {
+        val editedMediaId = MediaAssetId("media-edited-1")
+        val editedDescription = VisionDescription(
+            id = VisionDescriptionId("vision-description-edited-cached"),
+            draftId = draftId,
+            mediaAssetId = editedMediaId,
+            description = "Cached description for the edited photo via real analyzer.",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_080_000L,
+        )
+        val clock = FixedClock(1_700_000_090_000L)
+        val repository = FakeManualWorkflowRepository(
+            sampleDraftWithEditedMedia().copy(selectedMediaAssetId = editedMediaId),
+        )
+        repository.saveVisionDescription(editedDescription)
+        val imageSource = VisionImageSource { _ ->
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = byteArrayOf(0, 1, 2),
+                    mimeType = "image/jpeg",
+                    fileName = "test.jpg",
+                ),
+            )
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = AnalyzeVisionWorkflow(
+                repository = repository,
+                aiProvider = FakeAiProvider(),
+                imageSource = imageSource,
+                clock = clock,
+            ),
+            clock = clock,
+        )
+        viewModel.load()
+
+        assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
+        assertNull(viewModel.state.visionDescription, "No vision description yet for edited photo")
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals("Cached description for the edited photo via real analyzer.", viewModel.state.visionDescription)
+        assertEquals("Reused cached vision description", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.promptHistory.isEmpty(), "No prompt history entry for cache hit")
+    }
+
+    @Test
     fun preservesExistingVisionDescriptionOnAnalyzeFailure() {
         val existingDescription = VisionDescription(
             id = VisionDescriptionId("vision-description-existing"),
@@ -3182,6 +3230,11 @@ class ManualPostDraftWorkspaceViewModelTest {
             initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
         private val storedVisionDescriptions = mutableListOf<VisionDescription>()
         private val storedPromptHistory = mutableListOf<PromptHistoryEntry>()
+
+        init {
+            initialDraft?.visionDescription?.let { storedVisionDescriptions += it }
+            initialDraft?.promptHistory?.let { storedPromptHistory += it }
+        }
 
         override fun save(postDraft: PostDraft) { drafts[postDraft.id] = postDraft }
         override fun get(id: PostDraftId): PostDraft? = drafts[id]
