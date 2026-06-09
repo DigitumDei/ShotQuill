@@ -42,7 +42,13 @@ class VisionDescriptionAnalyzer(
         }
 
         val prompt = VisionDescriptionPromptFactory.buildPrompt(mediaAsset)
-        val image = imageSource.load(mediaAsset)
+        val sourceImageResult = imageSource.load(mediaAsset)
+        if (sourceImageResult is SourceImageResult.Failure) {
+            return VisionDescriptionAnalysisResult.Failure(
+                VisionDescriptionAnalysisError.ImageLoadFailure(sourceImageResult.message),
+            )
+        }
+        val image = (sourceImageResult as SourceImageResult.Success).image
         return when (val providerResult = aiProvider.describeVision(
             VisionDescriptionRequest(
                 draftId = draft.id,
@@ -92,7 +98,7 @@ class VisionDescriptionAnalyzer(
 }
 
 fun interface VisionImageSource {
-    fun load(mediaAsset: MediaAsset): AiImageInput
+    fun load(mediaAsset: MediaAsset): SourceImageResult
 }
 
 sealed class VisionDescriptionAnalysisResult {
@@ -109,4 +115,5 @@ sealed class VisionDescriptionAnalysisResult {
 sealed class VisionDescriptionAnalysisError {
     data object DraftNotFound : VisionDescriptionAnalysisError()
     data class Provider(val error: AiError) : VisionDescriptionAnalysisError()
+    data class ImageLoadFailure(val message: String) : VisionDescriptionAnalysisError()
 }

@@ -679,6 +679,7 @@ class ManualPostDraftWorkspaceViewModel(
             PostTextGenerationError.DraftNotFound -> "Draft not found"
             is PostTextGenerationError.InvalidDraftStatus -> "Cannot generate text while status is ${status.wireValue}"
             is PostTextGenerationError.Provider -> "Unable to generate text: ${error.userMessage}"
+            is PostTextGenerationError.ImageLoadFailure -> message
         }
 
     private companion object {

@@ -175,6 +175,23 @@ class VisionDescriptionAnalyzerTest {
         assertTrue(success.visionDescription.description.startsWith("Fake vision for media-edited-1"))
     }
 
+    @Test
+    fun imageLoadFailureReturnsFailureWithMessage() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = FakeAiProvider(modelName = "fake-vision"),
+            imageSource = VisionImageSource { SourceImageResult.Failure("File not found") },
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
+        val error = assertIs<VisionDescriptionAnalysisError.ImageLoadFailure>(failure.error)
+        assertEquals("File not found", error.message)
+    }
+
     private fun sampleDraft(): PostDraft =
         PostDraft(
             id = draftId,
@@ -211,10 +228,12 @@ class VisionDescriptionAnalyzerTest {
 
     private fun fakeImageSource(): VisionImageSource =
         VisionImageSource {
-            AiImageInput(
-                bytes = "image-bytes".encodeToByteArray(),
-                mimeType = it.mimeType ?: "image/jpeg",
-                fileName = "${it.id.value}.jpg",
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = "image-bytes".encodeToByteArray(),
+                    mimeType = it.mimeType ?: "image/jpeg",
+                    fileName = "${it.id.value}.jpg",
+                ),
             )
         }
 

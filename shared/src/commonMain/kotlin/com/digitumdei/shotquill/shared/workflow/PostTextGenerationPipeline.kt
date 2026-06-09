@@ -82,6 +82,7 @@ class PostTextGenerationPipeline(
                 when (val error = result.error) {
                     VisionDescriptionAnalysisError.DraftNotFound -> PostTextGenerationError.DraftNotFound
                     is VisionDescriptionAnalysisError.Provider -> PostTextGenerationError.Provider(error.error)
+                    is VisionDescriptionAnalysisError.ImageLoadFailure -> PostTextGenerationError.ImageLoadFailure(error.message)
                 },
             )
             is VisionDescriptionAnalysisResult.Success -> result.visionDescription
@@ -260,4 +261,5 @@ sealed class PostTextGenerationError {
     data object DraftNotFound : PostTextGenerationError()
     data class InvalidDraftStatus(val status: DraftStatus) : PostTextGenerationError()
     data class Provider(val error: AiError) : PostTextGenerationError()
+    data class ImageLoadFailure(val message: String) : PostTextGenerationError()
 }

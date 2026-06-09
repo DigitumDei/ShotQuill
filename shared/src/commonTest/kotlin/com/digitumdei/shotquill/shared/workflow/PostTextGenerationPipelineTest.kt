@@ -517,10 +517,12 @@ class PostTextGenerationPipelineTest {
 
     private fun fakeImageSource(): VisionImageSource =
         VisionImageSource {
-            AiImageInput(
-                bytes = "image-bytes".encodeToByteArray(),
-                mimeType = it.mimeType ?: "image/jpeg",
-                fileName = "${it.id.value}.jpg",
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = "image-bytes".encodeToByteArray(),
+                    mimeType = it.mimeType ?: "image/jpeg",
+                    fileName = "${it.id.value}.jpg",
+                ),
             )
         }
 

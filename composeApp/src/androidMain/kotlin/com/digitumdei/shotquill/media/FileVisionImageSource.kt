@@ -2,17 +2,24 @@ package com.digitumdei.shotquill.media
 
 import com.digitumdei.shotquill.shared.ai.AiImageInput
 import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.workflow.SourceImageResult
 import com.digitumdei.shotquill.shared.workflow.VisionImageSource
 import java.io.File
 
 class FileVisionImageSource : VisionImageSource {
-    override fun load(mediaAsset: MediaAsset): AiImageInput {
-        val bytes = MediaFileManager.readMediaAssetBytes(mediaAsset)
-        val file = File(mediaAsset.uri.removePrefix("file://"))
-        return AiImageInput(
-            bytes = bytes,
-            mimeType = mediaAsset.mimeType ?: MediaFileManager.guessMimeType(file.name),
-            fileName = file.name,
-        )
+    override fun load(mediaAsset: MediaAsset): SourceImageResult {
+        return try {
+            val bytes = MediaFileManager.readMediaAssetBytes(mediaAsset)
+            val file = File(mediaAsset.uri.removePrefix("file://"))
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = bytes,
+                    mimeType = mediaAsset.mimeType ?: MediaFileManager.guessMimeType(file.name),
+                    fileName = file.name,
+                ),
+            )
+        } catch (e: Exception) {
+            SourceImageResult.Failure(e.message ?: "Unknown error loading vision image")
+        }
     }
 }

@@ -260,7 +260,7 @@ class PhotoEditExecutionPipelineTest {
             settingsRepository = settingsRepository,
             imageSource = PhotoEditImageSource { _ -> SourceImageResult.Failure("File not found") },
             mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
-            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
             clock = clock,
         )
 
@@ -290,6 +290,41 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `vision image source load failure returns Failure`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val pipeline = PhotoEditExecutionPipeline(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            settingsRepository = settingsRepository,
+            imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
+            mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Success(sampleMediaAsset()) },
+            visionImageSource = VisionImageSource { SourceImageResult.Failure("Corrupt vision image file") },
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            maskRegion = null,
+            reuseVisionDescription = false,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val loadError = assertIs<PhotoEditExecutionError.FailedToLoadSourceImage>(failure.error)
+        assertEquals("Corrupt vision image file", loadError.message)
+        val stored = assertNotNull(repository.get(draftId))
+        assertEquals(0, stored.photoEditRequests.size, "No edit requests should be persisted")
+        assertEquals(0, stored.promptHistory.size, "No prompt history should be persisted")
+    }
+
+    @Test
     fun `media saver failure returns FailurePersisted`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraftWithVisionDescription()
@@ -301,7 +336,7 @@ class PhotoEditExecutionPipelineTest {
             settingsRepository = settingsRepository,
             imageSource = PhotoEditImageSource { _ -> SourceImageResult.Success(sampleAiImageInput()) },
             mediaSaver = PhotoEditMediaSaver { _, _, _, _, _ -> SaveEditedImageResult.Failure("Disk full") },
-            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
             clock = clock,
         )
 
@@ -734,7 +769,7 @@ class PhotoEditExecutionPipelineTest {
                     ),
                 )
             },
-            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
             clock = clock,
         )
 
@@ -802,7 +837,7 @@ class PhotoEditExecutionPipelineTest {
                     ),
                 )
             },
-            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
             clock = clock,
         )
 
@@ -983,7 +1018,7 @@ class PhotoEditExecutionPipelineTest {
                     ),
                 )
             },
-            visionImageSource = VisionImageSource { sampleAiImageInput() },
+            visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
             clock = clock,
         )
 
@@ -1054,7 +1089,7 @@ class PhotoEditExecutionPipelineTest {
                 ),
             )
         },
-        visionImageSource = VisionImageSource { sampleAiImageInput() },
+        visionImageSource = VisionImageSource { SourceImageResult.Success(sampleAiImageInput()) },
         clock = clock,
     )
 

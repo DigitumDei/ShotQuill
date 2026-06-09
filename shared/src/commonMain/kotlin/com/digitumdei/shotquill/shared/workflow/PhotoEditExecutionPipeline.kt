@@ -90,6 +90,8 @@ class PhotoEditExecutionPipeline(
                         PhotoEditExecutionError.DraftNotFound
                     is VisionDescriptionAnalysisError.Provider ->
                         PhotoEditExecutionError.Provider(error.error)
+                    is VisionDescriptionAnalysisError.ImageLoadFailure ->
+                        PhotoEditExecutionError.FailedToLoadSourceImage(error.message)
                 },
             )
             is VisionDescriptionAnalysisResult.Success -> result.visionDescription
