@@ -660,7 +660,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     intent = EditIntent.ImproveLighting,
                     realismLevel = RealismLevel.Photoreal,
                     qualityTier = QualityTier.Standard,
-                    prompt = "Edit the image (improve_lighting, bluesky_post).",
+                    prompt = "assembled prompt",
                     userRefinement = null,
                     subjectDescription = "A coffee cup on a wooden table.",
                     targetPlatform = TargetPlatform.BlueskyPost,
@@ -1595,6 +1595,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val executor = object : PhotoEditExecutor {
             override fun execute(
                 draftId: PostDraftId, intent: EditIntent, realismLevel: RealismLevel,
+                qualityTier: QualityTier, targetPlatform: TargetPlatform,
                 userRefinement: String?, maskRegion: MaskRegion?, reuseVisionDescription: Boolean,
             ): PhotoEditExecutionResult {
                 callCount++
