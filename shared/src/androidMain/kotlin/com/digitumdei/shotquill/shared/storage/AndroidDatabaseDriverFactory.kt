@@ -19,9 +19,7 @@ class AndroidDatabaseDriverFactory(
                 }
 
                 override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
-                    if (oldVersion < 2) {
-                        Migrations.migrateV1ToV2 { sql -> db.execSQL(sql) }
-                    }
+                    super.onUpgrade(db, oldVersion, newVersion)
                 }
             },
         )
