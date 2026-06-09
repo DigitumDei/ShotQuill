@@ -58,17 +58,93 @@ class AndroidPhotoEditMediaSaverTest {
     }
 
     @Test
-    fun `save captures image dimensions from saved file`() {
-        val editedId = MediaAssetId("photo-edited-dimensions-test")
-        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+    fun `save decodes image dimensions from real png content`() {
+        val editedId = MediaAssetId("photo-edited-dimensions-real")
+        val width = 7
+        val height = 3
+        val pngBytes = createValidPng(width, height)
 
-        val result = saver.save(bytes, "image/webp", originalMediaAsset, editedId, 1_000_000_300_000L)
+        val result = saver.save(pngBytes, "image/png", originalMediaAsset, editedId, 1_000_000_300_000L)
 
         val success = assertIs<SaveEditedImageResult.Success>(result)
-        // Dimensions may be null for non-decodable fake data — that's acceptable
-        // The important thing is the file was created and a MediaAsset was returned
-        assertTrue(success.mediaAsset.widthPx == null || success.mediaAsset.widthPx > 0)
-        assertTrue(success.mediaAsset.heightPx == null || success.mediaAsset.heightPx > 0)
+        assertEquals(width, success.mediaAsset.widthPx)
+        assertEquals(height, success.mediaAsset.heightPx)
+        assertEquals("image/png", success.mediaAsset.mimeType)
+        assertTrue(success.mediaAsset.uri.endsWith(".png"))
+
+        val savedFile = File(success.mediaAsset.uri.removePrefix("file://"))
+        assertTrue(savedFile.exists())
+        assertTrue(savedFile.readBytes().contentEquals(pngBytes))
+    }
+
+    private fun createValidPng(width: Int, height: Int): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+
+        output.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+
+        val ihdrData = ByteArray(13)
+        ihdrData[0] = (width shr 24).toByte()
+        ihdrData[1] = (width shr 16).toByte()
+        ihdrData[2] = (width shr 8).toByte()
+        ihdrData[3] = width.toByte()
+        ihdrData[4] = (height shr 24).toByte()
+        ihdrData[5] = (height shr 16).toByte()
+        ihdrData[6] = (height shr 8).toByte()
+        ihdrData[7] = height.toByte()
+        ihdrData[8] = 8
+        ihdrData[9] = 2
+        ihdrData[10] = 0
+        ihdrData[11] = 0
+        ihdrData[12] = 0
+
+        writePngChunk(output, "IHDR", ihdrData)
+
+        val raw = ByteArray(height * (1 + width * 3))
+        var pos = 0
+        for (y in 0 until height) {
+            raw[pos++] = 0
+            for (x in 0 until width) {
+                raw[pos++] = ((x * 255) / maxOf(1, width - 1)).toByte()
+                raw[pos++] = ((y * 255) / maxOf(1, height - 1)).toByte()
+                raw[pos++] = 64.toByte()
+            }
+        }
+
+        val deflater = java.util.zip.Deflater()
+        deflater.setInput(raw)
+        deflater.finish()
+        val compressed = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(1024)
+        while (!deflater.finished()) {
+            compressed.write(buf, 0, deflater.deflate(buf))
+        }
+        deflater.end()
+
+        writePngChunk(output, "IDAT", compressed.toByteArray())
+        writePngChunk(output, "IEND", ByteArray(0))
+
+        return output.toByteArray()
+    }
+
+    private fun writePngChunk(output: java.io.ByteArrayOutputStream, type: String, data: ByteArray) {
+        output.write((data.size shr 24).toByte())
+        output.write((data.size shr 16).toByte())
+        output.write((data.size shr 8).toByte())
+        output.write(data.size.toByte())
+
+        val typeBytes = type.toByteArray(Charsets.US_ASCII)
+        val crc = java.util.zip.CRC32()
+        crc.update(typeBytes)
+        crc.update(data)
+
+        output.write(typeBytes)
+        output.write(data)
+
+        val crcVal = crc.value
+        output.write((crcVal shr 24).toByte())
+        output.write((crcVal shr 16).toByte())
+        output.write((crcVal shr 8).toByte())
+        output.write(crcVal.toByte())
     }
 
     @Test
