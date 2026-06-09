@@ -67,7 +67,7 @@ class PostTextGenerationPipeline(
                 aiProvider = aiProvider,
                 imageSource = imageSource,
                 clock = clock,
-            ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
+            ).analyzePrimaryPhoto(draft, reuseCached = reuseVisionDescription)
         ) {
             is VisionDescriptionAnalysisResult.Failure -> return PostTextGenerationResult.Failure(
                 when (val error = result.error) {

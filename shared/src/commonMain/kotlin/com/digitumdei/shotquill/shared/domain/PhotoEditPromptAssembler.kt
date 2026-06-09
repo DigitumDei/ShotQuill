@@ -13,7 +13,7 @@ object PhotoEditPromptAssembler {
         val normalizedSubject = subjectDescription?.let(::normalize).orEmpty()
         val normalizedRefinement = userRefinement?.let(::normalize).orEmpty()
         return buildString {
-            append("Edit this image: ${intent.promptIntent}.")
+            append("Edit this image: ${intent.promptIntent}")
             append(" Apply a ${realismLevel.adjective} edit. ${realismLevel.promptIntent}")
             append(" Use ${qualityTier.wireValue} quality tier.")
             append(" Frame the result for ${preset.displayName}")

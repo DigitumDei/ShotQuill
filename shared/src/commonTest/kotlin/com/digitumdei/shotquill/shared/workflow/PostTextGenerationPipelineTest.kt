@@ -305,7 +305,10 @@ class PostTextGenerationPipelineTest {
 
         assertIs<PostTextGenerationResult.Success>(result)
         assertEquals(1, provider.visionCalls)
-        assertEquals("Recorded vision.", repository.get(draftId)?.visionDescriptions?.firstOrNull()?.description)
+        assertEquals(
+            "Recorded vision.",
+            repository.get(draftId)?.visionDescriptions?.maxByOrNull { it.createdAtEpochMillis }?.description,
+        )
     }
 
     @Test

@@ -1194,8 +1194,10 @@ class PhotoEditExecutionPipelineTest {
         )
 
         val success = assertIs<PhotoEditExecutionResult.Success>(result)
-        val expectedPrompt = expectedAssembledPrompt()
-        assertEquals(expectedPrompt, success.assembledPrompt, "reuseVisionDescription=false assembledPrompt must match expected")
+        val expectedPrompt = expectedAssembledPrompt(
+            subjectDescription = "Fake vision for media-edit-1: Describe this imported photo for later social caption and edit prompts",
+        )
+        assertEquals(expectedPrompt, success.assembledPrompt, "reuseVisionDescription=false assembledPrompt must use the freshly analyzed description")
         assertEquals(expectedPrompt, success.photoEditRequest.prompt, "reuseVisionDescription=false photoEditRequest.prompt must match")
         assertEquals(expectedPrompt, success.promptHistoryEntry.prompt, "reuseVisionDescription=false promptHistoryEntry.prompt must match")
         val stored = assertNotNull(repository.get(draftId))
@@ -1205,7 +1207,8 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.promptHistory.size, "Must have both a fresh vision analysis AND edit entry")
         val visionHistoryEntries = stored.promptHistory.filter { it.operationType == AiOperationType.VisionDescription }
         assertEquals(1, visionHistoryEntries.size, "A fresh vision description must be recorded")
-        assertTrue(stored.visionDescriptions.firstOrNull()?.description?.startsWith("Fake vision for media-edit-1") == true, "Vision must be freshly analyzed, not from cache")
+        val newestVision = stored.visionDescriptions.maxByOrNull { it.createdAtEpochMillis }
+        assertTrue(newestVision?.description?.startsWith("Fake vision for media-edit-1") == true, "Vision must be freshly analyzed, not from cache")
     }
 
     @Test
@@ -1283,7 +1286,8 @@ class PhotoEditExecutionPipelineTest {
             override fun get(id: PostDraftId): PostDraft? {
                 getCount++
                 val fetched = super.get(id) ?: return null
-                if (getCount >= 4) return null
+                // get #1 = initial draft, #2 = currentDraft after vision reuse, #3 = currentBeforeSave
+                if (getCount >= 3) return null
                 return fetched
             }
         }
@@ -1337,7 +1341,8 @@ class PhotoEditExecutionPipelineTest {
             override fun get(id: PostDraftId): PostDraft? {
                 getCount++
                 val fetched = super.get(id) ?: return null
-                if (getCount >= 4) return fetched.copy(status = DraftStatus.Archived)
+                // get #1 = initial draft, #2 = currentDraft after vision reuse, #3 = currentBeforeSave
+                if (getCount >= 3) return fetched.copy(status = DraftStatus.Archived)
                 return fetched
             }
         }

@@ -126,13 +126,23 @@ class PhotoEditExecutionPipeline(
             )
         }
 
-        val visionDescription = when (
+        // For photo edits, a vision description cached for ANY of the draft's assets
+        // (typically the original photo) still describes the draft's subject, so it is
+        // reused even when the selected asset is a derived edited photo. This avoids a
+        // redundant vision round-trip on every re-edit.
+        val cachedDraftDescription = if (reuseVisionDescription) {
+            (repository.listVisionDescriptionsForDraft(draftId) + draft.visionDescriptions)
+                .maxByOrNull { it.createdAtEpochMillis }
+        } else {
+            null
+        }
+        val visionDescription = cachedDraftDescription ?: when (
             val result = VisionDescriptionAnalyzer(
                 repository = repository,
                 aiProvider = aiProvider,
                 imageSource = visionImageSource,
                 clock = clock,
-            ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
+            ).analyzePrimaryPhoto(draft, reuseCached = reuseVisionDescription)
         ) {
             is VisionDescriptionAnalysisResult.Failure -> when (val error = result.error) {
                 VisionDescriptionAnalysisError.DraftNotFound ->
@@ -176,8 +186,13 @@ class PhotoEditExecutionPipeline(
         val currentDraft = repository.get(draftId) ?: return PhotoEditExecutionResult.Failure(
             PhotoEditExecutionError.DraftNotFound,
         )
-        val sourceMediaAsset = currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == visionDescription.mediaAssetId }?.mediaAsset
-            ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == visionDescription.mediaAssetId }?.editedMediaAsset
+        // Prefer the user's selected asset as the edit source; fall back to the asset the
+        // vision description was produced for. If neither resolves, the source is gone.
+        fun resolveAsset(assetId: MediaAssetId): MediaAsset? =
+            currentDraft.mediaItems.firstOrNull { it.mediaAsset.id == assetId }?.mediaAsset
+                ?: currentDraft.photoEditResults.firstOrNull { it.editedMediaAsset.id == assetId }?.editedMediaAsset
+        val sourceMediaAsset = currentDraft.selectedMediaAssetId?.let(::resolveAsset)
+            ?: resolveAsset(visionDescription.mediaAssetId)
             ?: return PhotoEditExecutionResult.Failure(
                 PhotoEditExecutionError.SourceMediaNotFound,
             )

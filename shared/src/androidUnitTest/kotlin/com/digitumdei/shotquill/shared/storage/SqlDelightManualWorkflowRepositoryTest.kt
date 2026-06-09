@@ -49,6 +49,16 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SqlDelightManualWorkflowRepositoryTest {
+    companion object {
+        init {
+            // Force sqlite-jdbc driver registration with this classloader's DriverManager
+            // state. Without this, the first test in the class can fail with
+            // "No suitable driver found for jdbc:sqlite:" depending on which test class
+            // (e.g. a Robolectric-sandboxed one) initialized DriverManager first.
+            Class.forName("org.sqlite.JDBC")
+        }
+    }
+
     private val createdAt = 1_700_000_000_000L
     private val updatedAt = 1_700_000_060_000L
 
@@ -1043,12 +1053,14 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         createV1Schema(driver)
 
-        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'Photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
-        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-2', 'Photo', 'file://photo2.jpg', 'image/jpeg', 1920, 1080, 1700000000000)", 0)
-        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'PhotoAdded', NULL, NULL, 1700000000000, 1700000060000)", 0)
-        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-2', 'SingleImage', 'Draft', 'existing caption', NULL, 1700000000000, 1700000060000)", 0)
+        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
+        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-2', 'photo', 'file://photo2.jpg', 'image/jpeg', 1920, 1080, 1700000000000)", 0)
+        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'Carousel', 'photo_added', NULL, NULL, 1700000000000, 1700000060000)", 0)
+        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-2', 'SingleImage', 'draft', 'existing caption', NULL, 1700000000000, 1700000060000)", 0)
         driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
-        driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'InstagramFeedSquare')", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-2', 1)", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-2', 'media-2', 0)", 0)
+        driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'instagram_feed_square')", 0)
 
         ShotQuillDatabase.Schema.migrate(driver, 1, 2)
 
@@ -1056,10 +1068,10 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         val draft1 = repository.get(PostDraftId("draft-1"))
         assertNotNull(draft1)
-        assertEquals(PostFormat.SingleImage, draft1.format)
+        assertEquals(PostFormat.Carousel, draft1.format)
         assertEquals(DraftStatus.PhotoAdded, draft1.status)
         assertNull(draft1.caption)
-        assertEquals(1, draft1.mediaItems.size)
+        assertEquals(2, draft1.mediaItems.size)
         assertEquals(MediaAssetId("media-1"), draft1.mediaItems[0].mediaAsset.id)
         assertTrue(draft1.targetPlatforms.contains(TargetPlatform.InstagramFeedSquare))
         assertNull(draft1.selectedMediaAssetId)

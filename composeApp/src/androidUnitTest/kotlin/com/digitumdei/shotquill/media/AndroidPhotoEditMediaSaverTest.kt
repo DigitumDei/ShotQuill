@@ -11,7 +11,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import java.io.File
 import java.io.IOException
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+// Robolectric provides a real BitmapFactory implementation so saved image
+// dimensions can be decoded from actual PNG bytes in `save decodes image
+// dimensions from real png content`.
+@RunWith(RobolectricTestRunner::class)
 class AndroidPhotoEditMediaSaverTest {
     private val tmpDir = createTempDir("shotquill-edited-media-test-")
     private val saver = AndroidPhotoEditMediaSaver(filesDir = tmpDir)
@@ -38,7 +44,7 @@ class AndroidPhotoEditMediaSaverTest {
         assertEquals(editedId, success.mediaAsset.id)
         assertEquals("image/jpeg", success.mediaAsset.mimeType)
         assertTrue(success.mediaAsset.uri.startsWith("file://"))
-        assertTrue(success.mediaAsset.uri.contains("media/edited/"))
+        assertTrue(success.mediaAsset.uri.replace('\\', '/').contains("media/edited/"))
         assertTrue(success.mediaAsset.uri.endsWith(".jpg"))
         assertEquals(now, success.mediaAsset.createdAtEpochMillis)
 

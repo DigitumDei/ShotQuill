@@ -33,6 +33,18 @@ class VisionDescriptionAnalyzer(
         val draft = repository.get(draftId) ?: return VisionDescriptionAnalysisResult.Failure(
             VisionDescriptionAnalysisError.DraftNotFound,
         )
+        return analyzePrimaryPhoto(draft, reuseCached)
+    }
+
+    /**
+     * Analyze using an already-fetched draft snapshot. Callers that have fetched the draft
+     * should pass it directly so the analyzed asset matches the snapshot they operate on,
+     * even if the stored selection changes mid-execution.
+     */
+    fun analyzePrimaryPhoto(
+        draft: PostDraft,
+        reuseCached: Boolean = true,
+    ): VisionDescriptionAnalysisResult {
         val mediaAsset = draft.primaryMediaAsset()
 
         if (reuseCached) {

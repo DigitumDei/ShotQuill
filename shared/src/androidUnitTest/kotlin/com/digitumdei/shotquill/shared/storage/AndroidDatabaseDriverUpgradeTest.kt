@@ -28,8 +28,9 @@ class AndroidDatabaseDriverUpgradeTest {
         val v1Driver = JdbcSqliteDriver("jdbc:sqlite:${dbPath.absolutePath}")
         createV1Schema(v1Driver)
 
-        v1Driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'Photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
-        v1Driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'Draft', 'Hello world', NULL, 1700000000000, 1700000060000)", 0)
+        v1Driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
+        v1Driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'draft', 'Hello world', NULL, 1700000000000, 1700000060000)", 0)
+        v1Driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
 
         v1Driver.execute(null, "PRAGMA user_version = 1", 0)
         v1Driver.close()

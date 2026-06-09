@@ -98,7 +98,7 @@ class MediaFileManagerTest {
     @Test
     fun createCameraCaptureFileCreatesFileInCorrectDir() {
         val file = mgr.createCameraCaptureFile()
-        assertTrue(file.absolutePath.contains("media/originals/camera"))
+        assertTrue(file.absolutePath.replace('\\', '/').contains("media/originals/camera"))
         assertTrue(file.name.endsWith(".jpg"))
         assertTrue(file.name.startsWith("img_"))
         assertTrue(file.name.contains("_camera_"))

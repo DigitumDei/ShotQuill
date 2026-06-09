@@ -14,6 +14,7 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
+import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PostDraft
@@ -518,7 +519,10 @@ class ManualPostDraftWorkspaceViewModel(
         statusMessage: String?,
         isPromptHistoryVisible: Boolean,
     ): ManualPostDraftWorkspaceState {
-        val originalPhoto = mediaItems.minByOrNull { it.order }?.mediaAsset
+        val originalPhoto = mediaItems
+            .filter { it.mediaAsset.type == MediaType.Photo }
+            .minByOrNull { it.order }
+            ?.mediaAsset
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
         val activePhoto = primaryMediaAsset()
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
@@ -532,7 +536,10 @@ class ManualPostDraftWorkspaceViewModel(
             originalPhotoUri = originalPhoto?.uri,
             editedPhotoUri = editedPhoto?.uri,
             activePhotoUri = activePhoto?.uri,
-            visionDescription = visionDescriptions.firstOrNull { it.mediaAssetId == activePhoto?.id }?.description,
+            visionDescription = visionDescriptions
+                .filter { it.mediaAssetId == activePhoto?.id }
+                .maxByOrNull { it.createdAtEpochMillis }
+                ?.description,
             generatedCaption = captionText,
             generatedAltText = altText,
             targetPlatform = platform,

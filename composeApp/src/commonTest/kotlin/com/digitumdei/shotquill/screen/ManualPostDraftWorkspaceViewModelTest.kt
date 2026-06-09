@@ -884,8 +884,9 @@ class ManualPostDraftWorkspaceViewModelTest {
             viewModel.state.visionDescription?.startsWith("Fake vision for media-edited-1:") ?: false,
             "Description should come from injected FakeAiProvider for edited photo",
         )
-        assertNotEquals("Legacy cached description for original photo.", stored?.visionDescriptions?.firstOrNull()?.description)
-        assertEquals(editedMediaId, stored?.visionDescriptions?.firstOrNull()?.mediaAssetId)
+        val newestStored = stored?.visionDescriptions?.maxByOrNull { it.createdAtEpochMillis }
+        assertNotEquals("Legacy cached description for original photo.", newestStored?.description)
+        assertEquals(editedMediaId, newestStored?.mediaAssetId)
         assertEquals("Analyzed photo", viewModel.state.statusMessage)
     }
 
@@ -928,7 +929,11 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.load()
 
         assertEquals("file://photo-edited.jpg", viewModel.state.activePhotoUri)
-        assertNull(viewModel.state.visionDescription, "No vision description yet for edited photo")
+        assertEquals(
+            "Cached description for the edited photo via real analyzer.",
+            viewModel.state.visionDescription,
+            "Cached vision description for the active edited photo is shown after load",
+        )
 
         viewModel.analyzeVisionDescription()
 
@@ -3031,6 +3036,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         var capturedTargetPlatform: TargetPlatform? = null
         var capturedUserRefinement: String? = null
         var capturedReuseVisionDescription: Boolean? = null
+        private var executionSequence = 0L
 
         private fun defaultMediaAsset(): MediaAsset =
             defaultMediaAsset ?: MediaAsset(
@@ -3070,6 +3076,9 @@ class ManualPostDraftWorkspaceViewModelTest {
                 return result
             }
 
+            // Strictly increasing timestamps so the most recent request/result wins
+            // maxByOrNull-based projections even when executions happen within one millisecond.
+            val now = EpochClock.Default.nowMillis() + executionSequence++
             val createdRequest = resultDraft?.photoEditRequests?.lastOrNull()
                 ?: PhotoEditRequest(
                     id = PhotoEditRequestId("photo-edit-request-executor"),
@@ -3082,7 +3091,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     userRefinement = userRefinement?.trim()?.takeIf { it.isNotEmpty() },
                     subjectDescription = null,
                     targetPlatform = targetPlatform,
-                    createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                    createdAtEpochMillis = now,
                 )
             val createdResult = resultDraft?.photoEditResults?.lastOrNull()
                 ?: PhotoEditResult(
@@ -3096,7 +3105,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                     ),
                     summary = "Executor result.",
                     modelName = "executor-model",
-                    createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                    createdAtEpochMillis = now,
                 )
             val createdEntry = com.digitumdei.shotquill.shared.domain.PromptHistoryEntry(
                 id = com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId("prompt-executor"),
@@ -3105,9 +3114,9 @@ class ManualPostDraftWorkspaceViewModelTest {
                 prompt = "assembled prompt",
                 responseSummary = "Executor result.",
                 modelName = "executor-model",
-                createdAtEpochMillis = EpochClock.Default.nowMillis(),
+                createdAtEpochMillis = now,
             )
-            val baseDraft = resultDraft ?: defaultDraft ?: PostDraft(
+            val baseDraft = resultDraft ?: defaultDraft ?: repository?.get(draftId) ?: PostDraft(
                 id = draftId,
                 format = PostFormat.SingleImage,
                 status = DraftStatus.PhotoAdded,
@@ -3127,7 +3136,7 @@ class ManualPostDraftWorkspaceViewModelTest {
                 updatedAt = Instant.fromEpochMilliseconds(0L),
             )
             val updatedDraft = baseDraft.copy(
-                status = if (baseDraft.status == DraftStatus.PhotoAdded) DraftStatus.PhotoEdited else baseDraft.status,
+                status = if (baseDraft.status.canTransitionTo(DraftStatus.PhotoEdited)) DraftStatus.PhotoEdited else baseDraft.status,
                 selectedMediaAssetId = createdResult.editedMediaAsset.id,
                 photoEditRequests = baseDraft.photoEditRequests + createdRequest,
                 photoEditResults = baseDraft.photoEditResults + createdResult,
