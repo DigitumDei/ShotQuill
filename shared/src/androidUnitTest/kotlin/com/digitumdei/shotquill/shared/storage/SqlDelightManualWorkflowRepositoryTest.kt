@@ -1496,6 +1496,20 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.close()
     }
 
+    @Test fun `updateSelectedMediaAsset rejects media asset not attached to any draft`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val orphanId = MediaAssetId("orphan-media")
+        repository.save(sampleMediaAsset().copy(id = orphanId, uri = "file://orphan.jpg"))
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertFalse(repository.updateSelectedMediaAsset(PostDraftId("draft-1"), orphanId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        driver.close()
+    }
+
     @Test fun `updateSelectedMediaAsset rejects media asset not in media_assets`() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
