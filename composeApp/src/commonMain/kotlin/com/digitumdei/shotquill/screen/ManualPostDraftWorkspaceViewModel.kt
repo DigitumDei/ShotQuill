@@ -475,11 +475,8 @@ class ManualPostDraftWorkspaceViewModel(
         val operationUpdatedAt = operationUpdatedAt(draft, now)
         when (postDraftRepository.updateSelectedMediaAsset(draftId, latestResult.editedMediaAsset.id, operationUpdatedAt)) {
             UpdateSelectionResult.Success -> {
-                val updated = draft.copy(
-                    selectedMediaAssetId = latestResult.editedMediaAsset.id,
-                    updatedAt = operationUpdatedAt,
-                )
-                state = updated.toState("Using edited photo", state.isPromptHistoryVisible)
+                state = postDraftRepository.get(draftId)?.toState("Using edited photo", state.isPromptHistoryVisible)
+                    ?: unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.DraftNotFound -> {
                 state = unloadedState(statusMessage = "Draft not found")
@@ -506,11 +503,8 @@ class ManualPostDraftWorkspaceViewModel(
         val operationUpdatedAt = operationUpdatedAt(draft, now)
         when (postDraftRepository.updateSelectedMediaAsset(draftId, null, operationUpdatedAt)) {
             UpdateSelectionResult.Success -> {
-                val updated = draft.copy(
-                    selectedMediaAssetId = null,
-                    updatedAt = operationUpdatedAt,
-                )
-                state = updated.toState("Using original photo", state.isPromptHistoryVisible)
+                state = postDraftRepository.get(draftId)?.toState("Using original photo", state.isPromptHistoryVisible)
+                    ?: unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.DraftNotFound -> {
                 state = unloadedState(statusMessage = "Draft not found")
