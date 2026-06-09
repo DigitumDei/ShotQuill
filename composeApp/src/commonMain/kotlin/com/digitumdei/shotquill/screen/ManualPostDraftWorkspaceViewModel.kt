@@ -14,7 +14,6 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
-import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PostDraft
@@ -519,15 +518,9 @@ class ManualPostDraftWorkspaceViewModel(
         statusMessage: String?,
         isPromptHistoryVisible: Boolean,
     ): ManualPostDraftWorkspaceState {
-        val originalPhoto = mediaItems
-            .firstOrNull { it.mediaAsset.type == MediaType.Photo }
-            ?.mediaAsset
+        val originalPhoto = mediaItems.minByOrNull { it.order }?.mediaAsset
         val editedPhoto = photoEditResults.maxByOrNull { it.createdAtEpochMillis }?.editedMediaAsset
-        val activePhoto = try {
-            primaryMediaAsset()
-        } catch (_: IllegalStateException) {
-            null
-        }
+        val activePhoto = primaryMediaAsset()
         val captionText = caption?.text ?: captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
         val altText = altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
         val canMutateDraft = status in mutableDraftStatuses

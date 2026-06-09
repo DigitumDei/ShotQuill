@@ -46,15 +46,6 @@ class PostTextGenerationPipeline(
 ) : PostTextGenerator {
     private val operationSequence = AtomicCounter(0)
 
-    private fun generateText(
-        draftId: PostDraftId,
-        targetPlatform: TargetPlatform,
-    ): PostTextGenerationResult = generateText(
-        draftId = draftId,
-        targetPlatform = targetPlatform,
-        reuseVisionDescription = true,
-    )
-
     override fun generateText(
         draftId: PostDraftId,
         targetPlatform: TargetPlatform,
