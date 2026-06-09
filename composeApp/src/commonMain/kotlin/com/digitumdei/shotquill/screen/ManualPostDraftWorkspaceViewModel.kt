@@ -310,7 +310,16 @@ class ManualPostDraftWorkspaceViewModel(
                 state = result.draft.toState("Generated caption and alt text", state.isPromptHistoryVisible)
             }
             is PostTextGenerationResult.Failure -> {
-                state = draft.toState(result.error.statusMessage(), state.isPromptHistoryVisible)
+                when (result.error) {
+                    is PostTextGenerationError.ImageLoadFailure -> {
+                        state = state.copy(
+                            statusMessage = result.error.statusMessage(),
+                        )
+                    }
+                    else -> {
+                        state = draft.toState(result.error.statusMessage(), state.isPromptHistoryVisible)
+                    }
+                }
             }
         }
     }

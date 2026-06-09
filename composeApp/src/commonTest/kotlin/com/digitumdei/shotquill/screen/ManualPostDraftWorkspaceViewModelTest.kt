@@ -1236,10 +1236,12 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canGeneratePostText, "Can retry generation")
         assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Can still edit photo")
         assertTrue(viewModel.state.isPromptHistoryVisible, "Prompt history visibility preserved")
-        assertEquals(EditIntent.ImproveLighting, viewModel.state.photoEditForm.selectedIntent)
-        assertEquals(RealismLevel.Photoreal, viewModel.state.photoEditForm.selectedRealismLevel)
-        assertEquals(TargetPlatform.InstagramFeedSquare, viewModel.state.photoEditForm.selectedTargetPlatform)
-        assertEquals(QualityTier.Standard, viewModel.state.photoEditForm.selectedQualityTier)
+        assertEquals(EditIntent.RemoveObject, viewModel.state.photoEditForm.selectedIntent, "Edit intent preserved")
+        assertEquals("Softer contrast", viewModel.state.photoEditForm.userRefinementText, "Refinement text preserved")
+        assertEquals(RealismLevel.Photoreal, viewModel.state.photoEditForm.selectedRealismLevel, "Realism level preserved")
+        assertEquals(TargetPlatform.BlueskyPost, viewModel.state.photoEditForm.selectedTargetPlatform, "Target platform preserved")
+        assertEquals(QualityTier.High, viewModel.state.photoEditForm.selectedQualityTier, "Quality tier preserved")
+        assertEquals(PhotoEditFormOperationState.Idle, viewModel.state.photoEditForm.operationState, "Operation state idle")
     }
 
     private fun sampleDraft(): PostDraft =
