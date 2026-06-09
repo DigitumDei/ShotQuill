@@ -10,6 +10,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import java.io.File
+import java.io.IOException
 
 class AndroidPhotoEditMediaSaverTest {
     private val tmpDir = createTempDir("shotquill-edited-media-test-")
@@ -181,13 +182,14 @@ class AndroidPhotoEditMediaSaverTest {
         val destFile = File(destDir, "${editedId.value}.jpg")
         destDir.mkdirs()
 
-        val failingSaver = AndroidPhotoEditMediaSaver(
-            filesDir = tmpDir,
-            onWriteFile = { file ->
+        class FailingWriteSaver(filesDir: File) : AndroidPhotoEditMediaSaver(filesDir) {
+            override fun writeBytesToFile(bytes: ByteArray, file: File) {
                 file.writeBytes(byteArrayOf(0, 0, 0))
-                throw java.io.IOException("Simulated write failure")
-            },
-        )
+                throw IOException("Simulated write failure")
+            }
+        }
+
+        val failingSaver = FailingWriteSaver(filesDir = tmpDir)
 
         val result = failingSaver.save(
             bytes = byteArrayOf(1, 2, 3),

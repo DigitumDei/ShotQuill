@@ -8,9 +8,8 @@ import com.digitumdei.shotquill.shared.workflow.SaveEditedImageResult
 import java.io.File
 import java.io.FileOutputStream
 
-class AndroidPhotoEditMediaSaver(
+open class AndroidPhotoEditMediaSaver(
     private val filesDir: File,
-    private val onWriteFile: ((File) -> Unit)? = null,
 ) : PhotoEditMediaSaver {
     override fun save(
         bytes: ByteArray,
@@ -35,13 +34,7 @@ class AndroidPhotoEditMediaSaver(
         }
 
         return try {
-            if (onWriteFile != null) {
-                onWriteFile(destFile)
-            } else {
-                FileOutputStream(destFile).use { output ->
-                    output.write(bytes)
-                }
-            }
+            writeBytesToFile(bytes, destFile)
             val (width, height) = MediaFileManager.readImageDimensions(destFile.absolutePath)
             SaveEditedImageResult.Success(
                 MediaAsset(
@@ -57,6 +50,12 @@ class AndroidPhotoEditMediaSaver(
         } catch (e: Exception) {
             destFile.delete()
             SaveEditedImageResult.Failure(e.message ?: "Unknown error saving edited image")
+        }
+    }
+
+    open fun writeBytesToFile(bytes: ByteArray, file: File) {
+        FileOutputStream(file).use { output ->
+            output.write(bytes)
         }
     }
 }
