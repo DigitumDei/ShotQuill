@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import org.robolectric.RuntimeEnvironment
 
 class AndroidDatabaseDriverUpgradeTest {
@@ -60,12 +61,20 @@ class AndroidDatabaseDriverUpgradeTest {
             QueryResult.Value(Unit)
         }, 0)
         val colNames = columns.map { it.first }
-        assert(
+        assertTrue(
             "selected_media_asset_id" in colNames,
-            { "selected_media_asset_id must be present after upgrade, found: $colNames" },
+            "selected_media_asset_id must be present after upgrade, found: $colNames",
         )
         val colIdx = colNames.indexOf("selected_media_asset_id")
-        assert(colIdx > colNames.indexOf("updated_at_epoch_millis"), { "selected_media_asset_id must appear after updated_at_epoch_millis in migrated schema, but it was at index $colIdx" })
+        assertTrue(
+            colIdx > colNames.indexOf("updated_at_epoch_millis"),
+            "selected_media_asset_id must appear after updated_at_epoch_millis in migrated schema, but it was at index $colIdx",
+        )
+
+        driver.execute(null, "UPDATE post_drafts SET selected_media_asset_id = 'media-1', updated_at_epoch_millis = 1700000070000 WHERE id = 'draft-1'", 0)
+        val reselected = repository.get(PostDraftId("draft-1"))
+        assertNotNull(reselected, "Draft must still be readable after setting selection")
+        assertEquals("media-1", reselected.selectedMediaAssetId?.value, "selectedMediaAssetId must be settable on migrated database")
 
         driver.close()
         dbPath.delete()
