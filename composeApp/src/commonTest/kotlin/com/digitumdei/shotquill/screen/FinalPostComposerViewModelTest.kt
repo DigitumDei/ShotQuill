@@ -66,7 +66,7 @@ class FinalPostComposerViewModelTest {
             id = CaptionResultId("caption-result-2"),
             requestId = CaptionRequestId("caption-request-2"),
             draftId = draftId,
-            targetPlatform = TargetPlatform.TikTok,
+            targetPlatform = TargetPlatform.FacebookPost,
             caption = "Newer caption",
             shortCaption = "Newer short",
             hashtags = listOf("#new"),
@@ -104,7 +104,7 @@ class FinalPostComposerViewModelTest {
             assertEquals("Newer short", shortCaption)
             assertEquals(listOf("#new"), hashtags)
             assertEquals("Newer alt text", altText)
-            assertEquals(TargetPlatform.TikTok, targetPlatform)
+            assertEquals(TargetPlatform.FacebookPost, targetPlatform)
             assertTrue(isLoaded)
         }
     }
