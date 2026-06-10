@@ -75,6 +75,19 @@ internal enum class AppScreen {
 internal fun appScreenFromSaveable(value: String): AppScreen =
     AppScreen.entries.firstOrNull { it.name == value } ?: AppScreen.NewPost
 
+internal fun finalComposerUnavailableMessage(
+    hasManualWorkflowRepository: Boolean,
+    hasDraftId: Boolean,
+    hasClipboardWriter: Boolean,
+    hasPostShareLauncher: Boolean,
+): String = when {
+    !hasManualWorkflowRepository -> "Draft repository not available"
+    !hasDraftId -> "Draft ID not available"
+    !hasClipboardWriter -> "Clipboard writer not available"
+    !hasPostShareLauncher -> "Share launcher not available"
+    else -> "Final composer dependencies not available"
+}
+
 @Composable
 fun App(
     settingsRepository: LocalSettingsRepository? = null,
@@ -242,7 +255,12 @@ fun App(
                             onPickFromGallery = onPickFromGallery ?: {},
                             onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
                             captureResult = null,
-                            errorMessage = "Draft repository not available",
+                            errorMessage = finalComposerUnavailableMessage(
+                                hasManualWorkflowRepository = manualWorkflowRepository != null,
+                                hasDraftId = draftId != null,
+                                hasClipboardWriter = clipboardWriter != null,
+                                hasPostShareLauncher = postShareLauncher != null,
+                            ),
                             onDismissResult = {},
                             onDismissError = {
                                 currentScreen = AppScreen.NewPost.name
