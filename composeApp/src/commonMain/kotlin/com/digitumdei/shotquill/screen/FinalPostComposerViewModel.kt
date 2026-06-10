@@ -65,7 +65,9 @@ class FinalPostComposerViewModel(
     }
 
     fun updateCaption(text: String) {
-        state = state.copy(caption = text)
+        if (!state.isLoaded) return
+        val newCanShare = text.isNotBlank() && state.selectedPhotoUri != null
+        state = state.copy(caption = text, actions = state.actions.copy(canShare = newCanShare))
         val existing = repository.getFinalPostContent(draftId)
         val now = clock.nowMillis()
         repository.saveFinalPostContent(
@@ -79,6 +81,7 @@ class FinalPostComposerViewModel(
     }
 
     fun updateAltText(text: String) {
+        if (!state.isLoaded) return
         state = state.copy(altText = text)
         val existing = repository.getFinalPostContent(draftId)
         val now = clock.nowMillis()
@@ -156,6 +159,10 @@ class FinalPostComposerViewModel(
     }
 
     fun shareOrExport() {
+        if (!state.actions.canShare) {
+            state = state.copy(statusMessage = "Cannot share: caption and photo are required")
+            return
+        }
         val draft = repository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
             return
@@ -174,7 +181,7 @@ class FinalPostComposerViewModel(
             createdAtEpochMillis = now,
             completedAtEpochMillis = null,
         )
-        val transitioned = if (draft.status == DraftStatus.ReadyToShare) {
+        val transitioned = if (draft.status == DraftStatus.ReadyToShare || draft.status == DraftStatus.Shared) {
             draft.copy(updatedAt = updatedAt)
         } else {
             draft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
@@ -195,7 +202,11 @@ class FinalPostComposerViewModel(
                 status = ExportStatus.Exported,
                 completedAtEpochMillis = now,
             )
-            val sharedDraft = draftWithExport.transitionTo(DraftStatus.Shared, updatedAt)
+            val sharedDraft = if (draft.status == DraftStatus.Shared) {
+                draftWithExport
+            } else {
+                draftWithExport.transitionTo(DraftStatus.Shared, updatedAt)
+            }
             repository.save(
                 sharedDraft.copy(
                     exportRecords = sharedDraft.exportRecords.map {
