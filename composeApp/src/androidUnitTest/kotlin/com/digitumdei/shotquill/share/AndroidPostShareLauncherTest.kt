@@ -37,6 +37,7 @@ class AndroidPostShareLauncherTest {
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
         assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     @Test
@@ -59,6 +60,7 @@ class AndroidPostShareLauncherTest {
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
         assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     @Test
@@ -80,6 +82,7 @@ class AndroidPostShareLauncherTest {
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
         assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     @Test
