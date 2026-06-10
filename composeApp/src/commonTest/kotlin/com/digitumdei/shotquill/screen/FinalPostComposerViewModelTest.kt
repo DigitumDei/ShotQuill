@@ -601,7 +601,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Post shared", viewModel.state.statusMessage)
+        assertEquals("Share sheet opened", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
@@ -662,7 +662,7 @@ class FinalPostComposerViewModelTest {
 
         viewModel.shareOrExport()
 
-        assertEquals("Cannot share: caption and photo are required", viewModel.state.statusMessage)
+        assertEquals("Cannot open share sheet: caption and photo are required", viewModel.state.statusMessage)
     }
 
     private class FakeClipboardWriter : ClipboardWriter {

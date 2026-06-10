@@ -300,7 +300,7 @@ fun ManualPostDraftWorkspaceContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canShareOrExport,
         ) {
-            Text("Share or export")
+            Text("Open share sheet")
         }
 
         OutlinedButton(

@@ -1523,7 +1523,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.ReadyToShare, stored?.status)
         assertEquals(emptyList(), stored?.exportRecords)
-        assertEquals("Share/export ready", viewModel.state.statusMessage)
+        assertEquals("Ready to open share sheet", viewModel.state.statusMessage)
     }
 
     @Test

@@ -214,7 +214,7 @@ fun FinalPostComposerContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canShare,
         ) {
-            Text("Share")
+            Text("Open share sheet")
         }
     }
 }

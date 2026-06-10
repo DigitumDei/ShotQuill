@@ -160,7 +160,7 @@ class FinalPostComposerViewModel(
 
     fun shareOrExport() {
         if (!state.actions.canShare) {
-            state = state.copy(statusMessage = "Cannot share: caption and photo are required")
+            state = state.copy(statusMessage = "Cannot open share sheet: caption and photo are required")
             return
         }
         val draft = repository.get(draftId) ?: run {
@@ -214,7 +214,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Post shared")
+            state = repository.get(draftId)?.toState(statusMessage = "Share sheet opened")
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {
             val failedExport = exportRecord.copy(

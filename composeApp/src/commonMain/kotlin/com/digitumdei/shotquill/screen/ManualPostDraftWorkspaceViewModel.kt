@@ -416,7 +416,7 @@ class ManualPostDraftWorkspaceViewModel(
         }
         if (!state.actions.canShareOrExport || !draft.canUpdateOrTransitionTo(DraftStatus.ReadyToShare)) {
             state = draft.toState(
-                statusMessage = "Cannot share/export while status is ${draft.status.wireValue}",
+                statusMessage = "Cannot open share sheet while status is ${draft.status.wireValue}",
                 isPromptHistoryVisible = state.isPromptHistoryVisible,
             )
             return
@@ -429,7 +429,7 @@ class ManualPostDraftWorkspaceViewModel(
             draft.transitionTo(DraftStatus.ReadyToShare, operationUpdatedAt)
         }
         postDraftRepository.save(transitioned)
-        state = transitioned.toState("Share/export ready", state.isPromptHistoryVisible)
+        state = transitioned.toState("Ready to open share sheet", state.isPromptHistoryVisible)
     }
 
     fun togglePromptHistory() {
