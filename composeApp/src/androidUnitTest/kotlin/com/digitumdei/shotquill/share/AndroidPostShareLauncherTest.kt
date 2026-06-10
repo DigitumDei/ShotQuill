@@ -40,7 +40,24 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns false when the share intent cannot be constructed`() {
+    fun `share launches chooser and returns true for text only share`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+
+        val result = launcher.share(null, "Caption text")
+
+        assertTrue(result)
+        val chooser = assertNotNull(recordingContext.startedIntent)
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        assertNotNull(shareIntent)
+        assertEquals(Intent.ACTION_SEND, shareIntent.action)
+        assertEquals("text/plain", shareIntent.type)
+        assertNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+    }
+
+    @Test
+    fun `share returns false when the share payload cannot be constructed`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
         val outsideFile = File.createTempFile("shotquill-share-", ".jpg").apply {
