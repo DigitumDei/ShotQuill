@@ -330,10 +330,15 @@ class FinalPostComposerViewModelTest {
         val draft = sampleDraft().copy(
             status = DraftStatus.PhotoEdited,
             captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
             photoEditResults = listOf(photoEditResult),
         )
         val repository = FakeManualWorkflowRepository(draft)
-        val viewModel = createViewModel(repository)
+        val shareLauncher = FakePostShareLauncher(success = true)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
 
         viewModel.load()
         viewModel.updateCaption("")
@@ -345,6 +350,22 @@ class FinalPostComposerViewModelTest {
 
         assertEquals("", viewModel.state.caption)
         assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.load()
+
+        assertEquals("", viewModel.state.caption)
+        assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.selectOriginalPhoto()
+
+        assertEquals("", viewModel.state.caption)
+        assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.shareOrExport()
+
+        assertEquals("Cannot open share sheet: caption and photo are required", viewModel.state.statusMessage)
+        assertNull(shareLauncher.lastText)
+        assertNull(shareLauncher.lastImageUri)
 
         viewModel.persistFinalPostContent()
 
