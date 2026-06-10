@@ -58,6 +58,18 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
+    fun `share returns false when the image file does not exist`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+        val missingFile = File(applicationContext.filesDir, "media/originals/missing.jpg")
+
+        val result = launcher.share("file://${missingFile.absolutePath}", "Caption text")
+
+        assertFalse(result)
+        assertNull(recordingContext.startedIntent)
+    }
+
+    @Test
     fun `share returns false when the chooser cannot be launched`() {
         val throwingContext = ThrowingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(throwingContext)
