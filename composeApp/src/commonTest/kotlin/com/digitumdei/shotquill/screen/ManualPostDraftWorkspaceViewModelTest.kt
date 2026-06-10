@@ -11,7 +11,6 @@ import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
-import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -1510,7 +1509,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun persistsPendingExportAndMovesDraftReadyToShare() {
+    fun movesDraftReadyToShareOnShareOrExport() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val viewModel = ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
@@ -1523,9 +1522,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         val stored = repository.get(draftId)
         assertEquals(DraftStatus.ReadyToShare, stored?.status)
-        assertEquals(1, stored?.exportRecords?.size)
-        assertEquals(ExportStatus.Pending, stored?.exportRecords?.single()?.status)
-        assertEquals(TargetPlatform.InstagramFeedSquare, stored?.exportRecords?.single()?.targetPlatform)
+        assertEquals(emptyList(), stored?.exportRecords)
         assertEquals("Share/export ready", viewModel.state.statusMessage)
     }
 

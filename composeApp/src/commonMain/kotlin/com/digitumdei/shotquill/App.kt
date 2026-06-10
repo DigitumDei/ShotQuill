@@ -228,12 +228,12 @@ fun App(
 
                 AppScreen.FinalComposer -> {
                     val draftId = currentDraftId
-                    if (manualWorkflowRepository != null && draftId != null) {
+                    if (manualWorkflowRepository != null && draftId != null && clipboardWriter != null && postShareLauncher != null) {
                         FinalPostComposerScreen(
                             draftId = PostDraftId(draftId),
                             repository = manualWorkflowRepository,
-                            clipboardWriter = clipboardWriter ?: return@Surface,
-                            postShareLauncher = postShareLauncher ?: return@Surface,
+                            clipboardWriter = clipboardWriter,
+                            postShareLauncher = postShareLauncher,
                             onBack = { currentScreen = AppScreen.DraftWorkspace.name },
                         )
                     } else {
