@@ -3,6 +3,8 @@ package com.digitumdei.shotquill.share
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.net.Uri
+import android.os.Parcelable
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,7 +23,7 @@ class AndroidPostShareLauncherTest {
     @Test
     fun `share launches chooser and returns true for a valid shareable image`() {
         val recordingContext = RecordingContext(applicationContext)
-        val launcher = AndroidPostShareLauncher(recordingContext)
+        val launcher = recordingLauncher(recordingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/shareable.jpg").apply {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(0x01, 0x02, 0x03))
@@ -32,18 +34,18 @@ class AndroidPostShareLauncherTest {
         assertTrue(result)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
         assertNotNull(shareIntent)
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
-        assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertNotNull(shareIntent.parcelableExtra<Uri>(Intent.EXTRA_STREAM))
         assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     @Test
     fun `share launches chooser for a percent-encoded file uri`() {
         val recordingContext = RecordingContext(applicationContext)
-        val launcher = AndroidPostShareLauncher(recordingContext)
+        val launcher = recordingLauncher(recordingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/share file.jpg").apply {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(0x0A, 0x0B, 0x0C))
@@ -55,18 +57,18 @@ class AndroidPostShareLauncherTest {
         assertTrue(result)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
         assertNotNull(shareIntent)
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
-        assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertNotNull(shareIntent.parcelableExtra<Uri>(Intent.EXTRA_STREAM))
         assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     @Test
     fun `share launches chooser for a raw file uri containing a literal percent`() {
         val recordingContext = RecordingContext(applicationContext)
-        val launcher = AndroidPostShareLauncher(recordingContext)
+        val launcher = recordingLauncher(recordingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/bad%2.jpg").apply {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(0x0D, 0x0E, 0x0F))
@@ -77,11 +79,11 @@ class AndroidPostShareLauncherTest {
         assertTrue(result)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
         assertNotNull(shareIntent)
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("image/*", shareIntent.type)
-        assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertNotNull(shareIntent.parcelableExtra<Uri>(Intent.EXTRA_STREAM))
         assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
@@ -95,17 +97,19 @@ class AndroidPostShareLauncherTest {
         assertTrue(result)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
         assertNotNull(shareIntent)
         assertEquals(Intent.ACTION_SEND, shareIntent.action)
         assertEquals("text/plain", shareIntent.type)
-        assertNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+        assertNull(shareIntent.parcelableExtra<Uri>(Intent.EXTRA_STREAM))
     }
 
     @Test
     fun `share returns false when the share payload cannot be constructed`() {
         val recordingContext = RecordingContext(applicationContext)
-        val launcher = AndroidPostShareLauncher(recordingContext)
+        val launcher = AndroidPostShareLauncher(recordingContext) {
+            throw IllegalArgumentException("outside configured share roots")
+        }
         val outsideFile = File.createTempFile("shotquill-share-", ".jpg").apply {
             writeBytes(byteArrayOf(0x04, 0x05, 0x06))
         }
@@ -158,7 +162,7 @@ class AndroidPostShareLauncherTest {
     @Test
     fun `share returns false when the chooser cannot be launched`() {
         val throwingContext = ThrowingContext(applicationContext)
-        val launcher = AndroidPostShareLauncher(throwingContext)
+        val launcher = recordingLauncher(throwingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/launch-failure.jpg").apply {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(0x07, 0x08, 0x09))
@@ -168,6 +172,17 @@ class AndroidPostShareLauncherTest {
 
         assertFalse(result)
         assertNotNull(throwingContext.startedIntent)
+    }
+
+    private fun recordingLauncher(context: Context): AndroidPostShareLauncher {
+        return AndroidPostShareLauncher(context) { imageFile ->
+            Uri.parse("content://com.digitumdei.shotquill.fileprovider/${imageFile.name}")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private inline fun <reified T : Parcelable> Intent.parcelableExtra(name: String): T? {
+        return getParcelableExtra(name) as? T
     }
 
     private open class RecordingContext(base: Context) : ContextWrapper(base) {

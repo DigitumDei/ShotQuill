@@ -9,6 +9,13 @@ import java.io.File
 
 class AndroidPostShareLauncher(
     private val context: Context,
+    private val contentUriForFile: (File) -> Uri = { imageFile ->
+        FileProvider.getUriForFile(
+            context,
+            "${BuildConfig.APPLICATION_ID}.fileprovider",
+            imageFile,
+        )
+    },
 ) : PostShareLauncher {
     override fun share(imageUri: String?, text: String): Boolean {
         return try {
@@ -27,11 +34,7 @@ class AndroidPostShareLauncher(
                 if (!imageFile.exists() || !imageFile.isFile) {
                     return null
                 }
-                val contentUri = FileProvider.getUriForFile(
-                    context,
-                    "${BuildConfig.APPLICATION_ID}.fileprovider",
-                    imageFile,
-                )
+                val contentUri = contentUriForFile(imageFile)
                 Intent(Intent.ACTION_SEND).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_TEXT, text)
