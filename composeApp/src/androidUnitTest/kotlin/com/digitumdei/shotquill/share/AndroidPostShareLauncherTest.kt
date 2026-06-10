@@ -62,6 +62,27 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
+    fun `share launches chooser for a raw file uri containing a literal percent`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+        val imageFile = File(applicationContext.filesDir, "media/originals/bad%2.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(0x0D, 0x0E, 0x0F))
+        }
+
+        val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
+
+        assertTrue(result)
+        val chooser = assertNotNull(recordingContext.startedIntent)
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        assertNotNull(shareIntent)
+        assertEquals(Intent.ACTION_SEND, shareIntent.action)
+        assertEquals("image/*", shareIntent.type)
+        assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+    }
+
+    @Test
     fun `share launches chooser and returns true for text only share`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
@@ -120,15 +141,12 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns false when the file uri contains a malformed percent escape`() {
+    fun `share returns false when the file uri cannot be resolved`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
-        val malformedFile = File(applicationContext.filesDir, "media/originals/bad%2.jpg").apply {
-            parentFile?.mkdirs()
-            writeBytes(byteArrayOf(0x0D, 0x0E, 0x0F))
-        }
+        val unresolvedFile = File(applicationContext.filesDir, "media/originals/missing%2.jpg")
 
-        val result = launcher.share("file://${malformedFile.absolutePath}", "Caption text")
+        val result = launcher.share("file://${unresolvedFile.absolutePath}", "Caption text")
 
         assertFalse(result)
         assertNull(recordingContext.startedIntent)

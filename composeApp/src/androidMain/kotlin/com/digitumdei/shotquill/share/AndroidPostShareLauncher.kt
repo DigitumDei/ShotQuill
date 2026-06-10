@@ -54,11 +54,7 @@ class AndroidPostShareLauncher(
         }
 
         val encodedPath = parsedUri.encodedPath ?: return null
-        if (!hasValidPercentEncoding(encodedPath)) {
-            return null
-        }
-
-        val decodedPath = Uri.decode(encodedPath)
+        val decodedPath = decodeFilePath(encodedPath)
 
         if (decodedPath.isBlank()) {
             return null
@@ -67,22 +63,26 @@ class AndroidPostShareLauncher(
         return File(decodedPath)
     }
 
-    private fun hasValidPercentEncoding(value: String): Boolean {
+    private fun decodeFilePath(encodedPath: String): String {
+        val decodedPath = StringBuilder(encodedPath.length)
         var index = 0
-        while (index < value.length) {
-            if (value[index] == '%') {
-                if (index + 2 >= value.length) {
-                    return false
-                }
-                if (!value[index + 1].isHexDigit() || !value[index + 2].isHexDigit()) {
-                    return false
-                }
+        while (index < encodedPath.length) {
+            val currentChar = encodedPath[index]
+            if (
+                currentChar == '%' &&
+                index + 2 < encodedPath.length &&
+                encodedPath[index + 1].isHexDigit() &&
+                encodedPath[index + 2].isHexDigit()
+            ) {
+                val decodedChar = encodedPath.substring(index + 1, index + 3).toInt(16).toChar()
+                decodedPath.append(decodedChar)
                 index += 3
                 continue
             }
+            decodedPath.append(currentChar)
             index++
         }
-        return true
+        return decodedPath.toString()
     }
 
     private fun Char.isHexDigit(): Boolean {
