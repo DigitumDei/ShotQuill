@@ -11,9 +11,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
-import com.digitumdei.shotquill.shared.domain.ExportRecord
-import com.digitumdei.shotquill.shared.domain.ExportRecordId
-import com.digitumdei.shotquill.shared.domain.ExportStatus
+
 import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
@@ -426,29 +424,13 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val now = clock.nowMillis()
         val operationUpdatedAt = operationUpdatedAt(draft, now)
-        val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
-        val idSuffix = nextIdSuffix(now)
-        val exportRecord = ExportRecord(
-            id = ExportRecordId("export-$idSuffix"),
-            draftId = draft.id,
-            targetPlatform = platform,
-            status = ExportStatus.Pending,
-            destinationUri = null,
-            errorMessage = null,
-            createdAtEpochMillis = now,
-            completedAtEpochMillis = null,
-        )
         val transitioned = if (draft.status == DraftStatus.ReadyToShare) {
             draft.copy(updatedAt = operationUpdatedAt)
         } else {
             draft.transitionTo(DraftStatus.ReadyToShare, operationUpdatedAt)
         }
-        val updated = transitioned.copy(
-            targetPlatforms = draft.targetPlatforms + platform,
-            exportRecords = draft.exportRecords + exportRecord,
-        )
-        postDraftRepository.save(updated)
-        state = updated.toState("Share/export ready", state.isPromptHistoryVisible)
+        postDraftRepository.save(transitioned)
+        state = transitioned.toState("Share/export ready", state.isPromptHistoryVisible)
     }
 
     fun togglePromptHistory() {

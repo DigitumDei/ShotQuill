@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.digitumdei.shotquill.clipboard.AndroidClipboardWriter
 import com.digitumdei.shotquill.media.AndroidPhotoEditMediaSaver
 import com.digitumdei.shotquill.media.ContentResolverMediaImporter
 import com.digitumdei.shotquill.media.FilePhotoEditImageSource
@@ -19,6 +20,7 @@ import com.digitumdei.shotquill.media.MediaFileManager
 import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
+import com.digitumdei.shotquill.share.AndroidPostShareLauncher
 import com.digitumdei.shotquill.shared.ai.AiProviderFactory
 import com.digitumdei.shotquill.shared.ai.UrlConnectionOpenAiHttpTransport
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
@@ -71,6 +73,8 @@ class MainActivity : ComponentActivity() {
             aiProvider = aiProvider,
             imageSource = FileVisionImageSource(),
         )
+        val clipboardWriter = AndroidClipboardWriter(this)
+        val postShareLauncher = AndroidPostShareLauncher(this)
 
         setContent {
             val cleanupScope = rememberCoroutineScope()
@@ -114,6 +118,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
+                clipboardWriter = clipboardWriter,
+                postShareLauncher = postShareLauncher,
             )
         }
     }
