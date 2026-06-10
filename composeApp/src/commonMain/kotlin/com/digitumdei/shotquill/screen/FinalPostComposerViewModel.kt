@@ -176,6 +176,13 @@ class FinalPostComposerViewModel(
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
+        if (!draft.canEnterShareFlow()) {
+            state = state.copy(
+                actions = state.actions.copy(canShare = false),
+                statusMessage = "Cannot open share sheet while status is ${draft.status.wireValue}",
+            )
+            return
+        }
         val now = clock.nowMillis()
         val updatedAt = operationUpdatedAt(draft, now)
         val idSuffix = nextIdSuffix(now)
@@ -322,4 +329,9 @@ class FinalPostComposerViewModel(
     private fun String?.normalizedCaption(): String? = takeIf { !it.isNullOrBlank() }
 
     private fun String.normalizedHashtag(): String = if (startsWith("#")) this else "#$this"
+
+    private fun PostDraft.canEnterShareFlow(): Boolean =
+        status == DraftStatus.ReadyToShare ||
+            status == DraftStatus.Shared ||
+            status.canTransitionTo(DraftStatus.ReadyToShare)
 }

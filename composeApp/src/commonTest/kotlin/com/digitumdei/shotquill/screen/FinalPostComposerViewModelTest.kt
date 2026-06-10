@@ -1045,6 +1045,42 @@ class FinalPostComposerViewModelTest {
         assertEquals("Cannot open share sheet: caption and photo are required", viewModel.state.statusMessage)
     }
 
+    @Test
+    fun `shareOrExport on Archived draft stops before illegal transition`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.Archived,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = true)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Cannot open share sheet while status is archived", viewModel.state.statusMessage)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.Archived, updatedDraft.status)
+        assertTrue(updatedDraft.exportRecords.isEmpty())
+        assertNull(shareLauncher.lastImageUri)
+        assertNull(shareLauncher.lastText)
+    }
+
     private class FakeClipboardWriter : ClipboardWriter {
         var lastLabel: String? = null
         var lastText: String? = null
