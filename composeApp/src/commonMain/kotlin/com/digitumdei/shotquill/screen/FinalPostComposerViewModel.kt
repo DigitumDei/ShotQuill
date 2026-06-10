@@ -69,7 +69,7 @@ class FinalPostComposerViewModel(
     fun updateCaption(text: String) {
         if (!state.isLoaded) return
         pendingCaption = text
-        val newCanShare = text.isNotBlank() && state.selectedPhotoUri != null
+        val newCanShare = text.isValidCaption() && state.selectedPhotoUri != null
         state = state.copy(caption = text, actions = state.actions.copy(canShare = newCanShare))
     }
 
@@ -85,7 +85,10 @@ class FinalPostComposerViewModel(
         repository.saveFinalPostContent(
             FinalPostContent(
                 draftId = draftId,
-                editedCaption = pendingCaption ?: existingContent?.editedCaption,
+                editedCaption = when {
+                    pendingCaption != null -> pendingCaption.normalizedCaption()
+                    else -> existingContent?.editedCaption.normalizedCaption()
+                },
                 editedAltText = pendingAltText ?: existingContent?.editedAltText,
                 updatedAtEpochMillis = clock.nowMillis(),
             ),
@@ -161,8 +164,12 @@ class FinalPostComposerViewModel(
     }
 
     fun shareOrExport() {
-        if (!state.actions.canShare) {
-            state = state.copy(statusMessage = "Cannot open share sheet: caption and photo are required")
+        val caption = state.caption.normalizedCaption()
+        if (!state.actions.canShare || caption == null || state.selectedPhotoUri == null) {
+            state = state.copy(
+                actions = state.actions.copy(canShare = false),
+                statusMessage = "Cannot open share sheet: caption and photo are required",
+            )
             return
         }
         val draft = repository.get(draftId) ?: run {
@@ -194,7 +201,6 @@ class FinalPostComposerViewModel(
         )
         repository.save(draftWithExport)
 
-        val caption = state.caption ?: ""
         val hashtagText = state.hashtags.joinToString(" ")
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
         val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
@@ -262,7 +268,7 @@ class FinalPostComposerViewModel(
             isLoaded = true,
             statusMessage = statusMessage,
             actions = FinalPostComposerActions(
-                canShare = effectiveCaption(content) != null && activeAsset?.uri != null,
+                canShare = effectiveCaption(content).isValidCaption() && activeAsset?.uri != null,
                 canSelectEdited = editedAsset != null,
             ),
         )
@@ -275,7 +281,7 @@ class FinalPostComposerViewModel(
             caption = caption,
             altText = altText,
             actions = actions.copy(
-                canShare = caption?.isNotBlank() == true && selectedPhotoUri != null,
+                canShare = caption.isValidCaption() && selectedPhotoUri != null,
             ),
         )
     }
@@ -310,4 +316,8 @@ class FinalPostComposerViewModel(
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence++}"
+
+    private fun String?.isValidCaption(): Boolean = !isNullOrBlank()
+
+    private fun String?.normalizedCaption(): String? = takeIf { !it.isNullOrBlank() }
 }

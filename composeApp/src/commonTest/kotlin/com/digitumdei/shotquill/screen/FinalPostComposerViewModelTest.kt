@@ -301,6 +301,66 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `blank caption stays non-shareable and is normalized away on persistence`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Generated short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val editedMediaAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-1"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val photoEditResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-1"),
+            requestId = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = draftId,
+            editedMediaAsset = editedMediaAsset,
+            summary = "Improved",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            captionResults = listOf(captionResult),
+            photoEditResults = listOf(photoEditResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateCaption("")
+
+        assertEquals("", viewModel.state.caption)
+        assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("", viewModel.state.caption)
+        assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.persistFinalPostContent()
+
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertNull(repository.lastSavedFinalPostContent?.editedCaption)
+
+        val reloadedViewModel = createViewModel(repository)
+        reloadedViewModel.load()
+
+        with(reloadedViewModel.state) {
+            assertEquals("Generated caption", caption)
+            assertTrue(actions.canShare)
+        }
+    }
+
+    @Test
     fun `updateAltText updates state without synchronously touching repository`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),

@@ -207,7 +207,7 @@ fun FinalPostComposerContent(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
                 onClick = onCopyCaption,
-                enabled = state.caption != null,
+                enabled = !state.caption.isNullOrBlank(),
             ) {
                 Text("Copy caption")
             }
