@@ -120,22 +120,39 @@ fun FinalPostComposerContent(
             Text(it, style = MaterialTheme.typography.bodyMedium)
         }
 
+        WorkspaceSection("Selected photo", state.selectedPhotoUri ?: "No photo selected")
+
         WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
 
         WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(
-                onClick = onSelectOriginalPhoto,
-                enabled = state.isLoaded,
-            ) {
-                Text("Original")
-            }
-            OutlinedButton(
-                onClick = onSelectEditedPhoto,
-                enabled = state.actions.canSelectEdited,
-            ) {
-                Text("Edited")
+            if (state.isShowingEdited) {
+                OutlinedButton(
+                    onClick = onSelectOriginalPhoto,
+                    enabled = state.isLoaded,
+                ) {
+                    Text("Original")
+                }
+                Button(
+                    onClick = onSelectEditedPhoto,
+                    enabled = state.actions.canSelectEdited,
+                ) {
+                    Text("Edited")
+                }
+            } else {
+                Button(
+                    onClick = onSelectOriginalPhoto,
+                    enabled = state.isLoaded,
+                ) {
+                    Text("Original")
+                }
+                OutlinedButton(
+                    onClick = onSelectEditedPhoto,
+                    enabled = state.actions.canSelectEdited,
+                ) {
+                    Text("Edited")
+                }
             }
         }
 
