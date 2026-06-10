@@ -1110,8 +1110,6 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'text_generated', 'Generated caption', NULL, 1700000000000, 1700000060000)", 0)
         driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
         driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'instagram_feed_square')", 0)
-        driver.execute(null, "INSERT INTO caption_results(id, request_id, draft_id, target_platform, caption, short_caption, model_name, created_at_epoch_millis) VALUES('cr-1', 'cr-1', 'draft-1', 'instagram_feed_square', 'Generated caption', 'Short caption', 'caption-model', 1700000000000)", 0)
-        driver.execute(null, "INSERT INTO alt_text_results(id, draft_id, media_asset_id, alt_text, model_name, created_at_epoch_millis) VALUES('at-1', 'draft-1', 'media-1', 'Generated alt text', 'alt-text-model', 1700000000000)", 0)
 
         ShotQuillDatabase.Schema.migrate(driver, 1, 2)
 
