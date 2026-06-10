@@ -31,6 +31,7 @@ kover {
                     "*AndroidBrandProfileRepositoryFactory*",
                     "com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreenKt",
                     "com.digitumdei.shotquill.screen.NewPostScreenKt",
+                    "com.digitumdei.shotquill.screen.FinalPostComposerScreenKt",
                     "com.digitumdei.shotquill.shared.db.*",
                 )
             }
