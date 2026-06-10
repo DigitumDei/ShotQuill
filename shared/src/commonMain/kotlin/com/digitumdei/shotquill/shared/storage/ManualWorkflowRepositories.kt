@@ -25,6 +25,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import kotlinx.datetime.Instant
 
 interface MediaAssetRepository {
@@ -106,6 +107,8 @@ interface ManualWorkflowRepository :
     fun savePhotoEditResult(photoEditResult: PhotoEditResult)
     fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry)
     fun saveExportRecord(exportRecord: ExportRecord)
+    fun saveFinalPostContent(finalPostContent: FinalPostContent)
+    fun getFinalPostContent(draftId: PostDraftId): FinalPostContent?
     fun savePhotoEditSuccess(
         draftId: PostDraftId,
         editedMediaAsset: MediaAsset,

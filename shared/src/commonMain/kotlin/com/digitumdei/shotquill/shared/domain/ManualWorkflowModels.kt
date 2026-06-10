@@ -19,6 +19,7 @@ data class PostDraft(
     val photoEditResults: List<PhotoEditResult>,
     val promptHistory: List<PromptHistoryEntry>,
     val exportRecords: List<ExportRecord>,
+    val finalPostContent: FinalPostContent? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
 ) {

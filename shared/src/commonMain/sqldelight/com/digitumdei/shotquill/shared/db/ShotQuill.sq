@@ -120,6 +120,13 @@ CREATE TABLE alt_text_results (
   created_at_epoch_millis INTEGER NOT NULL
 );
 
+CREATE TABLE final_post_content (
+  draft_id TEXT NOT NULL PRIMARY KEY REFERENCES post_drafts(id) ON DELETE CASCADE,
+  edited_caption TEXT,
+  edited_alt_text TEXT,
+  updated_at_epoch_millis INTEGER NOT NULL
+);
+
 CREATE TABLE photo_edit_requests (
   id TEXT NOT NULL PRIMARY KEY,
   draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
@@ -473,6 +480,20 @@ ORDER BY created_at_epoch_millis ASC;
 selectAltTextResultById:
 SELECT * FROM alt_text_results WHERE id = ?;
 
+upsertFinalPostContent:
+INSERT INTO final_post_content(draft_id, edited_caption, edited_alt_text, updated_at_epoch_millis)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(draft_id) DO UPDATE SET
+  edited_caption = excluded.edited_caption,
+  edited_alt_text = excluded.edited_alt_text,
+  updated_at_epoch_millis = excluded.updated_at_epoch_millis;
+
+deleteFinalPostContentByDraftId:
+DELETE FROM final_post_content WHERE draft_id = ?;
+
+selectFinalPostContentByDraftId:
+SELECT * FROM final_post_content WHERE draft_id = ?;
+
 upsertPhotoEditRequest:
 INSERT INTO photo_edit_requests(
   id,
@@ -626,6 +647,9 @@ DELETE FROM photo_edit_requests;
 
 deleteAllAltTextResults:
 DELETE FROM alt_text_results;
+
+deleteAllFinalPostContent:
+DELETE FROM final_post_content;
 
 deleteAllCaptionResultHashtags:
 DELETE FROM caption_result_hashtags;

@@ -38,6 +38,7 @@ import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
@@ -3334,6 +3335,11 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {}
         override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {}
         override fun saveExportRecord(exportRecord: ExportRecord) {}
+        override fun saveFinalPostContent(finalPostContent: FinalPostContent) {
+            drafts[finalPostContent.draftId] = drafts[finalPostContent.draftId]!!.copy(finalPostContent = finalPostContent)
+        }
+        override fun getFinalPostContent(draftId: PostDraftId): FinalPostContent? =
+            drafts[draftId]?.finalPostContent
         override fun savePhotoEditSuccess(
             draftId: PostDraftId,
             editedMediaAsset: MediaAsset,

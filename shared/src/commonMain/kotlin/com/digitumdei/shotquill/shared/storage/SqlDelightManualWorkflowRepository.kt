@@ -18,6 +18,7 @@ import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MaskRegion
@@ -148,6 +149,7 @@ class SqlDelightManualWorkflowRepository(
             postDraft.photoEditResults.forEach { savePhotoEditResult(it) }
             postDraft.promptHistory.forEach { savePromptHistoryEntry(it) }
             postDraft.exportRecords.forEach { saveExportRecord(it) }
+            postDraft.finalPostContent?.let { saveFinalPostContent(it) }
         }
     }
 
@@ -202,6 +204,7 @@ class SqlDelightManualWorkflowRepository(
             photoEditResults = selectPhotoEditResults(id),
             promptHistory = selectPromptHistoryEntries(id),
             exportRecords = selectExportRecords(id),
+            finalPostContent = selectFinalPostContent(id),
             createdAt = Instant.fromEpochMilliseconds(draft.createdAt),
             updatedAt = Instant.fromEpochMilliseconds(draft.updatedAt),
         )
@@ -455,6 +458,18 @@ class SqlDelightManualWorkflowRepository(
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
+    override fun saveFinalPostContent(finalPostContent: FinalPostContent) {
+        queries.upsertFinalPostContent(
+            draft_id = finalPostContent.draftId.value,
+            edited_caption = finalPostContent.editedCaption,
+            edited_alt_text = finalPostContent.editedAltText,
+            updated_at_epoch_millis = finalPostContent.updatedAtEpochMillis,
+        )
+    }
+
+    override fun getFinalPostContent(draftId: PostDraftId): FinalPostContent? =
+        selectFinalPostContent(draftId)
+
     override fun savePhotoEditSuccess(
         draftId: PostDraftId,
         editedMediaAsset: MediaAsset,
@@ -575,6 +590,7 @@ class SqlDelightManualWorkflowRepository(
             queries.deleteAllPhotoEditResults()
             queries.deleteAllPhotoEditRequests()
             queries.deleteAllAltTextResults()
+            queries.deleteAllFinalPostContent()
             queries.deleteAllCaptionResultHashtags()
             queries.deleteAllCaptionResults()
             queries.deleteAllCaptionRequests()
@@ -597,6 +613,7 @@ class SqlDelightManualWorkflowRepository(
         queries.deletePhotoEditResultsByDraftId(id.value)
         queries.deletePhotoEditRequestsByDraftId(id.value)
         queries.deleteAltTextResultsByDraftId(id.value)
+        queries.deleteFinalPostContentByDraftId(id.value)
         queries.deleteCaptionResultHashtagsByDraftId(id.value)
         queries.deleteCaptionResultsByDraftId(id.value)
         queries.deleteCaptionRequestsByDraftId(id.value)
@@ -801,6 +818,21 @@ class SqlDelightManualWorkflowRepository(
             ->
             ManualWorkflowStorageMapper.exportRecord(recordId, draftId, targetPlatform, status, destinationUri, errorMessage, createdAt, completedAt)
         }.executeAsList()
+
+    private fun selectFinalPostContent(id: PostDraftId): FinalPostContent? =
+        queries.selectFinalPostContentByDraftId(id.value) {
+                draftId,
+                editedCaption,
+                editedAltText,
+                updatedAt,
+            ->
+            FinalPostContent(
+                draftId = PostDraftId(draftId),
+                editedCaption = editedCaption,
+                editedAltText = editedAltText,
+                updatedAtEpochMillis = updatedAt,
+            )
+        }.executeAsOneOrNull()
 
     private fun mediaAsset(
         id: String,

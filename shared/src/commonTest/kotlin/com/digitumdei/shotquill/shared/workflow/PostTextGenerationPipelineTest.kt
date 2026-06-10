@@ -27,6 +27,7 @@ import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -746,6 +747,11 @@ class PostTextGenerationPipelineTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun saveFinalPostContent(finalPostContent: FinalPostContent) {
+            save(drafts.getValue(finalPostContent.draftId).copy(finalPostContent = finalPostContent))
+        }
+        override fun getFinalPostContent(draftId: PostDraftId): FinalPostContent? =
+            drafts[draftId]?.finalPostContent
         override fun savePhotoEditSuccess(
             draftId: PostDraftId,
             editedMediaAsset: MediaAsset,
