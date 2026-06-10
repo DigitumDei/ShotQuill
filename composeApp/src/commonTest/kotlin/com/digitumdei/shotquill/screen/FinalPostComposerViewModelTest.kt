@@ -1005,6 +1005,46 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `shareOrExport failure from TextGenerated persists ReadyToShare status and Failed export record after refresh`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = false)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.isLoaded)
+        assertEquals("Caption", viewModel.state.caption)
+        assertEquals(3, repository.getCount)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.ReadyToShare, updatedDraft.status)
+        assertEquals(1, updatedDraft.exportRecords.size)
+        val exportRecord = updatedDraft.exportRecords.first()
+        assertEquals(ExportStatus.Failed, exportRecord.status)
+        assertEquals("Unable to open share sheet", exportRecord.errorMessage)
+    }
+
+    @Test
     fun `shareOrExport failure on already Shared draft keeps draft Shared and records Failed export`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),
