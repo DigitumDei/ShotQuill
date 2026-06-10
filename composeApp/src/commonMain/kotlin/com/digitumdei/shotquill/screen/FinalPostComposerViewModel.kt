@@ -81,11 +81,12 @@ class FinalPostComposerViewModel(
 
     fun persistFinalPostContent() {
         if (!state.isLoaded) return
+        val existingContent = repository.getFinalPostContent(draftId)
         repository.saveFinalPostContent(
             FinalPostContent(
                 draftId = draftId,
-                editedCaption = pendingCaption ?: state.caption,
-                editedAltText = pendingAltText ?: state.altText,
+                editedCaption = pendingCaption ?: existingContent?.editedCaption,
+                editedAltText = pendingAltText ?: existingContent?.editedAltText,
                 updatedAtEpochMillis = clock.nowMillis(),
             ),
         )

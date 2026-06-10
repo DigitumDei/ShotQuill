@@ -260,9 +260,18 @@ class FinalPostComposerViewModelTest {
             modelName = "fake",
             createdAtEpochMillis = 1_700_000_010_000L,
         )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
         val draft = sampleDraft().copy(
             status = DraftStatus.TextGenerated,
             captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
             selectedMediaAssetId = mediaAssetId,
         )
         val repository = FakeManualWorkflowRepository(draft)
@@ -280,13 +289,30 @@ class FinalPostComposerViewModelTest {
 
         viewModel.persistFinalPostContent()
 
-        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentGetCount)
         assertEquals(1, repository.finalPostContentSaveCount)
         assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
+        assertNull(repository.lastSavedFinalPostContent?.editedAltText)
+
+        val reloadedViewModel = createViewModel(repository)
+        reloadedViewModel.load()
+
+        assertEquals("Generated alt text", reloadedViewModel.state.altText)
     }
 
     @Test
     fun `updateAltText updates state without synchronously touching repository`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-1"),
             draftId = draftId,
@@ -297,6 +323,7 @@ class FinalPostComposerViewModelTest {
         )
         val draft = sampleDraft().copy(
             status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
             altTextResults = listOf(altTextResult),
         )
         val repository = FakeManualWorkflowRepository(draft)
@@ -311,9 +338,109 @@ class FinalPostComposerViewModelTest {
 
         viewModel.persistFinalPostContent()
 
-        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertNull(repository.lastSavedFinalPostContent?.editedCaption)
+        assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
+
+        val reloadedViewModel = createViewModel(repository)
+        reloadedViewModel.load()
+
+        assertEquals("Generated caption", reloadedViewModel.state.caption)
+    }
+
+    @Test
+    fun `editing only alt text keeps generated caption out of editedCaption`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateAltText("Manual alt text")
+        viewModel.persistFinalPostContent()
+
+        assertEquals(1, repository.finalPostContentGetCount)
         assertEquals(1, repository.finalPostContentSaveCount)
         assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
+        assertNull(repository.lastSavedFinalPostContent?.editedCaption)
+
+        val reloadedViewModel = createViewModel(repository)
+        reloadedViewModel.load()
+
+        with(reloadedViewModel.state) {
+            assertEquals("Generated caption", caption)
+            assertEquals("Manual alt text", altText)
+        }
+    }
+
+    @Test
+    fun `editing only caption keeps generated alt text out of editedAltText`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateCaption("Manual caption")
+        viewModel.persistFinalPostContent()
+
+        assertEquals(1, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
+        assertNull(repository.lastSavedFinalPostContent?.editedAltText)
+
+        val reloadedViewModel = createViewModel(repository)
+        reloadedViewModel.load()
+
+        with(reloadedViewModel.state) {
+            assertEquals("Manual caption", caption)
+            assertEquals("Generated alt text", altText)
+        }
     }
 
     @Test
