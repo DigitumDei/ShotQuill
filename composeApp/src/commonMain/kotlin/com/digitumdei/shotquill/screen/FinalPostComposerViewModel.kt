@@ -198,19 +198,19 @@ class FinalPostComposerViewModel(
         val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
         if (chooserLaunched) {
-            val completedExport = exportRecord.copy(
+            val exportedRecord = exportRecord.copy(
                 status = ExportStatus.Exported,
                 completedAtEpochMillis = now,
             )
-            val sharedDraft = if (draft.status == DraftStatus.Shared) {
+            val persistedDraft = if (draft.status == DraftStatus.Shared) {
                 draftWithExport
             } else {
                 draftWithExport.transitionTo(DraftStatus.Shared, updatedAt)
             }
             repository.save(
-                sharedDraft.copy(
-                    exportRecords = sharedDraft.exportRecords.map {
-                        if (it.id == exportRecord.id) completedExport else it
+                persistedDraft.copy(
+                    exportRecords = persistedDraft.exportRecords.map {
+                        if (it.id == exportRecord.id) exportedRecord else it
                     },
                 ),
             )
