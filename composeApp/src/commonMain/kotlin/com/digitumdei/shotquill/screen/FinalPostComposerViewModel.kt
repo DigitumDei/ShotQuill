@@ -195,9 +195,9 @@ class FinalPostComposerViewModel(
         val caption = state.caption ?: ""
         val hashtagText = state.hashtags.joinToString(" ")
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
-        val shareSuccess = postShareLauncher.share(state.selectedPhotoUri, composedText)
+        val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
-        if (shareSuccess) {
+        if (chooserLaunched) {
             val completedExport = exportRecord.copy(
                 status = ExportStatus.Exported,
                 completedAtEpochMillis = now,
@@ -219,7 +219,7 @@ class FinalPostComposerViewModel(
         } else {
             val failedExport = exportRecord.copy(
                 status = ExportStatus.Failed,
-                errorMessage = "Share was cancelled or failed",
+                errorMessage = "Unable to open share sheet",
                 completedAtEpochMillis = now,
             )
             repository.save(
@@ -229,7 +229,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = state.copy(statusMessage = "Share was cancelled or failed")
+            state = state.copy(statusMessage = "Unable to open share sheet")
         }
     }
 

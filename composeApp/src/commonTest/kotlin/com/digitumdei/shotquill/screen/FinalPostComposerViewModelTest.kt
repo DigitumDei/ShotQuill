@@ -587,7 +587,7 @@ class FinalPostComposerViewModelTest {
             createdAtEpochMillis = 1_700_000_010_000L,
         )
         val draft = sampleDraft().copy(
-            status = DraftStatus.TextGenerated,
+            status = DraftStatus.ReadyToShare,
             captionResults = listOf(captionResult),
             selectedMediaAssetId = mediaAssetId,
         )
@@ -626,7 +626,7 @@ class FinalPostComposerViewModelTest {
             createdAtEpochMillis = 1_700_000_010_000L,
         )
         val draft = sampleDraft().copy(
-            status = DraftStatus.TextGenerated,
+            status = DraftStatus.ReadyToShare,
             captionResults = listOf(captionResult),
             selectedMediaAssetId = mediaAssetId,
         )
@@ -640,12 +640,13 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Share was cancelled or failed", viewModel.state.statusMessage)
+        assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.ReadyToShare, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
         val exportRecord = updatedDraft.exportRecords.first()
         assertEquals(ExportStatus.Failed, exportRecord.status)
-        assertEquals("Share was cancelled or failed", exportRecord.errorMessage)
+        assertEquals("Unable to open share sheet", exportRecord.errorMessage)
     }
 
     @Test

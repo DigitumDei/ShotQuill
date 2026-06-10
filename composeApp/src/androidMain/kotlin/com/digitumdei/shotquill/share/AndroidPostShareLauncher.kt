@@ -10,24 +10,24 @@ class AndroidPostShareLauncher(
     private val context: Context,
 ) : PostShareLauncher {
     override fun share(imageUri: String?, text: String): Boolean {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = if (imageUri != null) "image/*" else "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
-            if (imageUri != null) {
-                val imageFile = File(imageUri.removePrefix("file://"))
-                if (imageFile.exists()) {
-                    val contentUri = FileProvider.getUriForFile(
-                        context,
-                        "${BuildConfig.APPLICATION_ID}.fileprovider",
-                        imageFile,
-                    )
-                    putExtra(Intent.EXTRA_STREAM, contentUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = if (imageUri != null) "image/*" else "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+                if (imageUri != null) {
+                    val imageFile = File(imageUri.removePrefix("file://"))
+                    if (imageFile.exists()) {
+                        val contentUri = FileProvider.getUriForFile(
+                            context,
+                            "${BuildConfig.APPLICATION_ID}.fileprovider",
+                            imageFile,
+                        )
+                        putExtra(Intent.EXTRA_STREAM, contentUri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
                 }
             }
-        }
-        val chooser = Intent.createChooser(intent, null)
-        return try {
+            val chooser = Intent.createChooser(intent, null)
             context.startActivity(chooser)
             true
         } catch (_: Exception) {
