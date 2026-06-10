@@ -14,6 +14,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.effectiveAltText
 import com.digitumdei.shotquill.shared.domain.effectiveCaption
+import com.digitumdei.shotquill.shared.domain.effectiveShortCaption
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
@@ -270,7 +271,7 @@ class FinalPostComposerViewModel(
             selectedPhotoUri = activeAsset?.uri,
             isShowingEdited = editedAsset != null && activeAsset?.id == editedAsset.id,
             caption = effectiveCaption(content),
-            shortCaption = latestCaptionResult?.shortCaption,
+            shortCaption = effectiveShortCaption(content),
             altText = effectiveAltText(content),
             hashtags = latestCaptionResult?.hashtags ?: emptyList(),
             targetPlatform = platform,

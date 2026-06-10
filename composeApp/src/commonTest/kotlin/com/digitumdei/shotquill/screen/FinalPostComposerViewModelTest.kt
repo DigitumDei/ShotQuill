@@ -151,7 +151,7 @@ class FinalPostComposerViewModelTest {
         with(viewModel.state) {
             assertEquals("Manual caption", caption)
             assertEquals("Manual alt text", altText)
-            assertEquals("Generated short", shortCaption)
+            assertNull(shortCaption)
             assertEquals(listOf("#generated"), hashtags)
             assertTrue(isLoaded)
         }
