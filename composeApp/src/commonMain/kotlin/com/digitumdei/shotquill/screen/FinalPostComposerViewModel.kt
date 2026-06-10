@@ -68,29 +68,21 @@ class FinalPostComposerViewModel(
         if (!state.isLoaded) return
         val newCanShare = text.isNotBlank() && state.selectedPhotoUri != null
         state = state.copy(caption = text, actions = state.actions.copy(canShare = newCanShare))
-        val existing = repository.getFinalPostContent(draftId)
-        val now = clock.nowMillis()
-        repository.saveFinalPostContent(
-            FinalPostContent(
-                draftId = draftId,
-                editedCaption = text,
-                editedAltText = existing?.editedAltText,
-                updatedAtEpochMillis = now,
-            ),
-        )
     }
 
     fun updateAltText(text: String) {
         if (!state.isLoaded) return
         state = state.copy(altText = text)
-        val existing = repository.getFinalPostContent(draftId)
-        val now = clock.nowMillis()
+    }
+
+    fun persistFinalPostContent() {
+        if (!state.isLoaded) return
         repository.saveFinalPostContent(
             FinalPostContent(
                 draftId = draftId,
-                editedCaption = existing?.editedCaption,
-                editedAltText = text,
-                updatedAtEpochMillis = now,
+                editedCaption = state.caption,
+                editedAltText = state.altText,
+                updatedAtEpochMillis = clock.nowMillis(),
             ),
         )
     }

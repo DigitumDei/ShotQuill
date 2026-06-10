@@ -66,6 +66,10 @@ fun FinalPostComposerScreen(
         }
     }
 
+    fun queueFinalPostContentPersistence() {
+        refresh { persistFinalPostContent() }
+    }
+
     LaunchedEffect(viewModel) {
         operationMutex.withLock {
             withContext(Dispatchers.IO) {
@@ -78,8 +82,14 @@ fun FinalPostComposerScreen(
         state = state,
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onSelectEditedPhoto = { refresh { selectEditedPhoto() } },
-        onUpdateCaption = { viewModel.updateCaption(it) },
-        onUpdateAltText = { viewModel.updateAltText(it) },
+        onUpdateCaption = {
+            viewModel.updateCaption(it)
+            queueFinalPostContentPersistence()
+        },
+        onUpdateAltText = {
+            viewModel.updateAltText(it)
+            queueFinalPostContentPersistence()
+        },
         onCopyCaption = { viewModel.copyCaption() },
         onCopyAltText = { viewModel.copyAltText() },
         onShare = { refresh { shareOrExport() } },

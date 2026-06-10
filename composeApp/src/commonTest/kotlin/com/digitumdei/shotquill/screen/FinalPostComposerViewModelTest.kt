@@ -248,7 +248,7 @@ class FinalPostComposerViewModelTest {
     // ===== Manual edit tests =====
 
     @Test
-    fun `updateCaption updates state and persists FinalPostContent`() {
+    fun `updateCaption updates state without synchronously touching repository`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),
             requestId = CaptionRequestId("caption-request-1"),
@@ -275,12 +275,18 @@ class FinalPostComposerViewModelTest {
             assertEquals("Manual caption", caption)
             assertTrue(actions.canShare)
         }
-        val persisted = repository.getFinalPostContent(draftId)
-        assertEquals("Manual caption", persisted?.editedCaption)
+        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(0, repository.finalPostContentSaveCount)
+
+        viewModel.persistFinalPostContent()
+
+        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
     }
 
     @Test
-    fun `updateAltText updates state and persists FinalPostContent`() {
+    fun `updateAltText updates state without synchronously touching repository`() {
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-1"),
             draftId = draftId,
@@ -300,8 +306,14 @@ class FinalPostComposerViewModelTest {
         viewModel.updateAltText("Manual alt text")
 
         assertEquals("Manual alt text", viewModel.state.altText)
-        val persisted = repository.getFinalPostContent(draftId)
-        assertEquals("Manual alt text", persisted?.editedAltText)
+        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(0, repository.finalPostContentSaveCount)
+
+        viewModel.persistFinalPostContent()
+
+        assertEquals(0, repository.finalPostContentGetCount)
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
     }
 
     @Test
@@ -336,6 +348,7 @@ class FinalPostComposerViewModelTest {
         firstVm.load()
         firstVm.updateCaption("Persistent caption")
         firstVm.updateAltText("Persistent alt text")
+        firstVm.persistFinalPostContent()
 
         val secondVm = createViewModel(repository)
         secondVm.load()
@@ -378,10 +391,10 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.updateAltText("Manual alt text")
         viewModel.updateCaption("Manual caption")
+        viewModel.persistFinalPostContent()
 
-        val persisted = repository.getFinalPostContent(draftId)
-        assertEquals("Manual caption", persisted?.editedCaption)
-        assertEquals("Manual alt text", persisted?.editedAltText)
+        assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
+        assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
     }
 
     @Test
@@ -416,10 +429,10 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.updateCaption("Manual caption")
         viewModel.updateAltText("Manual alt text")
+        viewModel.persistFinalPostContent()
 
-        val persisted = repository.getFinalPostContent(draftId)
-        assertEquals("Manual caption", persisted?.editedCaption)
-        assertEquals("Manual alt text", persisted?.editedAltText)
+        assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
+        assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
     }
 
     // ===== Image switching tests =====
@@ -838,6 +851,12 @@ class FinalPostComposerViewModelTest {
             initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
         private val storedVisionDescriptions = mutableListOf<VisionDescription>()
         private val storedPromptHistory = mutableListOf<PromptHistoryEntry>()
+        var finalPostContentGetCount = 0
+            private set
+        var finalPostContentSaveCount = 0
+            private set
+        var lastSavedFinalPostContent: FinalPostContent? = null
+            private set
 
         init {
             initialDraft?.visionDescriptions?.let { storedVisionDescriptions.addAll(it) }
@@ -914,10 +933,15 @@ class FinalPostComposerViewModelTest {
         override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {}
         override fun saveExportRecord(exportRecord: ExportRecord) {}
         override fun saveFinalPostContent(finalPostContent: FinalPostContent) {
+            finalPostContentSaveCount++
+            lastSavedFinalPostContent = finalPostContent
             drafts[finalPostContent.draftId] = drafts[finalPostContent.draftId]!!.copy(finalPostContent = finalPostContent)
         }
         override fun getFinalPostContent(draftId: PostDraftId): FinalPostContent? =
-            drafts[draftId]?.finalPostContent
+            run {
+                finalPostContentGetCount++
+                drafts[draftId]?.finalPostContent
+            }
         override fun savePhotoEditSuccess(
             draftId: PostDraftId,
             editedMediaAsset: MediaAsset,
