@@ -23,6 +23,7 @@ kover {
                     "com.digitumdei.shotquill.AppKt*",
                     "com.digitumdei.shotquill.AppScreen",
                     "*MainActivity*",
+                    "com.digitumdei.shotquill.clipboard.AndroidClipboardWriter*",
                     "com.digitumdei.shotquill.media.MediaCaptureHandler*",
                     "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
                     "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
