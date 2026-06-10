@@ -11,6 +11,15 @@ class PhotoEditPromptAssemblerTest {
     private val mediaAssetId = MediaAssetId("media-1")
     private val photoEditRequestId = PhotoEditRequestId("photo-edit-request-1")
 
+    private fun assembleFromRequest(request: PhotoEditRequest): String = PhotoEditPromptAssembler.buildPrompt(
+        intent = request.intent,
+        realismLevel = request.realismLevel,
+        qualityTier = request.qualityTier,
+        targetPlatform = request.targetPlatform,
+        subjectDescription = request.subjectDescription,
+        userRefinement = request.userRefinement,
+    )
+
     @Test
     fun assemblesFullyPopulatedRequestWithExactOutput() {
         val request = samplePhotoEditRequest(
@@ -22,10 +31,10 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "Focus on the coffee cup",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         val expected = buildString {
-            append("Edit this image: Improve the lighting and exposure of the image. Make the image brighter while keeping it realistic.")
+            append("Edit this image: Improve the lighting and exposure of the image.")
             append(" Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details.")
             append(" Use high quality tier.")
             append(" Frame the result for Instagram Feed Square at 1:1, 1080x1080px, and fit the content to the frame.")
@@ -40,8 +49,8 @@ class PhotoEditPromptAssemblerTest {
     fun deterministicOutputsAreIdenticalAcrossRepeatedCalls() {
         val request = samplePhotoEditRequest()
 
-        val first = PhotoEditPromptAssembler.assemble(request)
-        val second = PhotoEditPromptAssembler.assemble(request)
+        val first = assembleFromRequest(request)
+        val second = assembleFromRequest(request)
 
         assertEquals(first, second)
     }
@@ -50,7 +59,7 @@ class PhotoEditPromptAssemblerTest {
     fun outputIsNaturalProseWithoutLabelledKeyValueSections() {
         val request = samplePhotoEditRequest()
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertFalse(prompt.contains("subjectDescription:"))
         assertFalse(prompt.contains("userRefinement:"))
@@ -69,7 +78,7 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "Keep the background soft",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Keep the background soft.")
     }
@@ -78,7 +87,7 @@ class PhotoEditPromptAssemblerTest {
     fun omitsUserRefinementWhenNull() {
         val request = samplePhotoEditRequest(userRefinement = null)
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertFalse(prompt.contains("Focus on the coffee cup"))
     }
@@ -89,7 +98,7 @@ class PhotoEditPromptAssemblerTest {
             subjectDescription = "A red bicycle leaning against a wall",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "The subject is A red bicycle leaning against a wall.")
         assertContains(prompt, "Preserve the subject's appearance.")
@@ -99,7 +108,7 @@ class PhotoEditPromptAssemblerTest {
     fun omitsSubjectDescriptionWhenNull() {
         val request = samplePhotoEditRequest(subjectDescription = null)
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertFalse(prompt.contains("The subject is"))
         assertFalse(prompt.contains("Preserve the subject"))
@@ -109,7 +118,7 @@ class PhotoEditPromptAssemblerTest {
     fun includesAspectRatioAndDimensionsAndFramingForSizedPreset() {
         val request = samplePhotoEditRequest(targetPlatform = TargetPlatform.InstagramPortrait)
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Instagram Portrait")
         assertContains(prompt, "4:5")
@@ -121,7 +130,7 @@ class PhotoEditPromptAssemblerTest {
     fun includesOnlyFramingWithoutDimensionsForOriginalPreset() {
         val request = samplePhotoEditRequest(targetPlatform = TargetPlatform.Original)
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Original (no resize)")
         assertContains(prompt, "preserve the original dimensions without resizing")
@@ -133,7 +142,7 @@ class PhotoEditPromptAssemblerTest {
         for (platform in TargetPlatform.entries) {
             val request = samplePhotoEditRequest(targetPlatform = platform)
 
-            val prompt = PhotoEditPromptAssembler.assemble(request)
+            val prompt = assembleFromRequest(request)
 
             assertContains(prompt, platform.platformPreset.displayName)
             assertContains(prompt, platform.platformPreset.defaultFramingBehavior.naturalDescription)
@@ -145,7 +154,7 @@ class PhotoEditPromptAssemblerTest {
         for (realism in RealismLevel.entries) {
             val request = samplePhotoEditRequest(realismLevel = realism)
 
-            val prompt = PhotoEditPromptAssembler.assemble(request)
+            val prompt = assembleFromRequest(request)
 
             assertContains(prompt, "Apply a ${realism.adjective} edit.")
             assertContains(prompt, realism.promptIntent)
@@ -157,7 +166,7 @@ class PhotoEditPromptAssemblerTest {
         for (tier in QualityTier.entries) {
             val request = samplePhotoEditRequest(qualityTier = tier)
 
-            val prompt = PhotoEditPromptAssembler.assemble(request)
+            val prompt = assembleFromRequest(request)
 
             assertContains(prompt, "Use ${tier.wireValue} quality tier.")
         }
@@ -181,48 +190,9 @@ class PhotoEditPromptAssemblerTest {
         for (intent in EditIntent.entries) {
             val expectedSnippet = expectations.getValue(intent)
             val request = samplePhotoEditRequest(intent = intent)
-            val prompt = PhotoEditPromptAssembler.assemble(request)
+            val prompt = assembleFromRequest(request)
             assertContains(prompt, expectedSnippet, message = "EditIntent.${intent.name} should produce expected instruction")
         }
-    }
-
-    @Test
-    fun trimsPromptWhitespace() {
-        val request = samplePhotoEditRequest(prompt = "  Make it brighter  ")
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "Make it brighter.")
-    }
-
-    @Test
-    fun normalizesPromptEndingWithExclamation() {
-        val request = samplePhotoEditRequest(prompt = "Make it brighter!")
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "Make it brighter.")
-        assertFalse(prompt.contains("!."))
-    }
-
-    @Test
-    fun normalizesPromptEndingWithQuestionMark() {
-        val request = samplePhotoEditRequest(prompt = "Crop tighter?")
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "Crop tighter.")
-        assertFalse(prompt.contains("?."))
-    }
-
-    @Test
-    fun omitsPromptTextWhenNormalizationRemovesAllCharacters() {
-        val request = samplePhotoEditRequest(prompt = "?!...")
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "Edit this image: Improve the lighting and exposure of the image.")
-        assertFalse(prompt.contains(". ."))
     }
 
     @Test
@@ -231,7 +201,7 @@ class PhotoEditPromptAssemblerTest {
             subjectDescription = "A cat on a sofa!",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "The subject is A cat on a sofa.")
         assertFalse(prompt.contains("!."))
@@ -243,7 +213,7 @@ class PhotoEditPromptAssemblerTest {
             subjectDescription = "?!...",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertFalse(prompt.contains("The subject is"))
         assertFalse(prompt.contains("Preserve the subject"))
@@ -256,7 +226,7 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "Focus on the coffee cup?",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Focus on the coffee cup.")
         assertFalse(prompt.contains("?."))
@@ -268,7 +238,7 @@ class PhotoEditPromptAssemblerTest {
             userRefinement = "?!...",
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertFalse(prompt.contains(" ."))
         assertFalse(prompt.endsWith(" "))
@@ -278,7 +248,7 @@ class PhotoEditPromptAssemblerTest {
     fun trimsSubjectDescriptionWhitespace() {
         val request = samplePhotoEditRequest(subjectDescription = "  A cat on a sofa  ")
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "The subject is A cat on a sofa.")
     }
@@ -287,44 +257,9 @@ class PhotoEditPromptAssemblerTest {
     fun trimsUserRefinementWhitespace() {
         val request = samplePhotoEditRequest(userRefinement = "  Crop tighter  ")
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Crop tighter.")
-    }
-
-    @Test
-    fun includesMaskRegionWhenPresent() {
-        val request = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.25f, 0.1f, 0.5f, 0.5f)),
-        )
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "The edit is constrained to the region spanning")
-        assertContains(prompt, "0.25 to 0.75 horizontally")
-        assertContains(prompt, "0.1 to 0.6 vertically")
-        assertContains(prompt, "in normalized coordinates")
-    }
-
-    @Test
-    fun includesPixelMaskRegionWithNaturalCoordinates() {
-        val request = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Pixel(100, 200, 400, 400)),
-        )
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertContains(prompt, "The edit is constrained to the pixel region from (100, 200) to (500, 600).")
-    }
-
-    @Test
-    fun omitsMaskRegionWhenNull() {
-        val request = samplePhotoEditRequest(maskRegion = null)
-
-        val prompt = PhotoEditPromptAssembler.assemble(request)
-
-        assertFalse(prompt.contains("constrained to the region"))
-        assertFalse(prompt.contains("pixel region"))
     }
 
     @Test
@@ -333,16 +268,14 @@ class PhotoEditPromptAssemblerTest {
             intent = EditIntent.AddLogoOverlay,
             subjectDescription = "A storefront with a blank sign area",
             userRefinement = "Place the logo in the top-right corner",
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.7f, 0.0f, 0.3f, 0.2f)),
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Overlay a logo or watermark onto the image")
         assertContains(prompt, "The subject is A storefront with a blank sign area.")
         assertContains(prompt, "Preserve the subject's appearance.")
         assertContains(prompt, "Place the logo in the top-right corner.")
-        assertContains(prompt, "The edit is constrained to the region spanning")
     }
 
     @Test
@@ -351,38 +284,88 @@ class PhotoEditPromptAssemblerTest {
             intent = EditIntent.RemoveObject,
             subjectDescription = "A parked red car with a scratch on the door",
             userRefinement = "Remove the scratch completely and fill naturally",
-            maskRegion = MaskRegion(MaskBounds.Pixel(300, 400, 150, 50)),
         )
 
-        val prompt = PhotoEditPromptAssembler.assemble(request)
+        val prompt = assembleFromRequest(request)
 
         assertContains(prompt, "Remove the specified object or element from the image")
         assertContains(prompt, "The subject is A parked red car with a scratch on the door.")
         assertContains(prompt, "Preserve the subject's appearance.")
         assertContains(prompt, "Remove the scratch completely and fill naturally.")
-        assertContains(prompt, "The edit is constrained to the pixel region from (300, 400) to (450, 450).")
     }
 
     @Test
-    fun maskRegionDescriptionIsNaturalProseNoColonLabels() {
-        val normalized = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Normalized(0.1f, 0.2f, 0.3f, 0.4f)),
-        )
-        val pixel = samplePhotoEditRequest(
-            maskRegion = MaskRegion(MaskBounds.Pixel(50, 60, 100, 200)),
+    fun persistedRequestPromptMatchesBuildPromptOutput() {
+        val assembledPrompt = PhotoEditPromptAssembler.buildPrompt(
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            subjectDescription = "A coffee cup on a wooden table",
+            userRefinement = "Focus on the coffee cup",
         )
 
-        val normalizedPrompt = PhotoEditPromptAssembler.assemble(normalized)
-        val pixelPrompt = PhotoEditPromptAssembler.assemble(pixel)
+        val persisted = PhotoEditRequest(
+            id = photoEditRequestId,
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            prompt = assembledPrompt,
+            userRefinement = "Focus on the coffee cup",
+            subjectDescription = "A coffee cup on a wooden table",
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            createdAtEpochMillis = createdAt,
+        )
 
-        assertFalse(normalizedPrompt.contains("maskRegion:"))
-        assertFalse(normalizedPrompt.contains("MaskBounds."))
-        assertFalse(normalizedPrompt.contains("Normalized("))
-        assertFalse(normalizedPrompt.contains("left="))
-        assertFalse(pixelPrompt.contains("maskRegion:"))
-        assertFalse(pixelPrompt.contains("MaskBounds."))
-        assertFalse(pixelPrompt.contains("Pixel("))
-        assertFalse(pixelPrompt.contains("left="))
+        val rebuilt = PhotoEditPromptAssembler.buildPrompt(
+            intent = persisted.intent,
+            realismLevel = persisted.realismLevel,
+            qualityTier = persisted.qualityTier,
+            targetPlatform = persisted.targetPlatform,
+            subjectDescription = persisted.subjectDescription,
+            userRefinement = persisted.userRefinement,
+        )
+
+        assertEquals(persisted.prompt, rebuilt, "Persisted assembled prompt must match fresh build — no double-assembly")
+    }
+
+    @Test
+    fun persistedRequestWithAllOptionsRoundTripsThroughBuildPrompt() {
+        val assembled = PhotoEditPromptAssembler.buildPrompt(
+            intent = EditIntent.RemoveObject,
+            realismLevel = RealismLevel.Stylized,
+            qualityTier = QualityTier.Draft,
+            targetPlatform = TargetPlatform.InstagramPortrait,
+            subjectDescription = "A person standing in front of a wall",
+            userRefinement = "Keep the person centered",
+        )
+
+        val persisted = PhotoEditRequest(
+            id = photoEditRequestId,
+            draftId = draftId,
+            sourceMediaAssetId = mediaAssetId,
+            intent = EditIntent.RemoveObject,
+            realismLevel = RealismLevel.Stylized,
+            qualityTier = QualityTier.Draft,
+            prompt = assembled,
+            userRefinement = "Keep the person centered",
+            subjectDescription = "A person standing in front of a wall",
+            targetPlatform = TargetPlatform.InstagramPortrait,
+            createdAtEpochMillis = createdAt,
+        )
+
+        val rebuilt = PhotoEditPromptAssembler.buildPrompt(
+            intent = persisted.intent,
+            realismLevel = persisted.realismLevel,
+            qualityTier = persisted.qualityTier,
+            targetPlatform = persisted.targetPlatform,
+            subjectDescription = persisted.subjectDescription,
+            userRefinement = persisted.userRefinement,
+        )
+
+        assertEquals(persisted.prompt, rebuilt)
     }
 
     private fun samplePhotoEditRequest(
@@ -393,7 +376,6 @@ class PhotoEditPromptAssemblerTest {
         qualityTier: QualityTier = QualityTier.Standard,
         subjectDescription: String? = null,
         userRefinement: String? = null,
-        maskRegion: MaskRegion? = null,
     ): PhotoEditRequest = PhotoEditRequest(
         id = photoEditRequestId,
         draftId = draftId,
@@ -405,7 +387,6 @@ class PhotoEditPromptAssemblerTest {
         userRefinement = userRefinement,
         subjectDescription = subjectDescription,
         targetPlatform = targetPlatform,
-        maskRegion = maskRegion,
         createdAtEpochMillis = createdAt,
     )
 }

@@ -49,7 +49,8 @@ CREATE TABLE post_drafts (
   caption_text TEXT,
   brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL,
   created_at_epoch_millis INTEGER NOT NULL,
-  updated_at_epoch_millis INTEGER NOT NULL
+  updated_at_epoch_millis INTEGER NOT NULL,
+  selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL
 );
 
 CREATE TABLE post_draft_target_platforms (
@@ -254,23 +255,30 @@ INSERT INTO post_drafts(
   status,
   caption_text,
   brand_profile_id,
+  selected_media_asset_id,
   created_at_epoch_millis,
   updated_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   format = excluded.format,
   status = excluded.status,
   caption_text = excluded.caption_text,
   brand_profile_id = excluded.brand_profile_id,
+  selected_media_asset_id = excluded.selected_media_asset_id,
   created_at_epoch_millis = excluded.created_at_epoch_millis,
   updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
 selectPostDraftById:
-SELECT * FROM post_drafts WHERE id = ?;
+SELECT id, format, status, caption_text, brand_profile_id, selected_media_asset_id, created_at_epoch_millis, updated_at_epoch_millis FROM post_drafts WHERE id = ?;
 
 updatePostDraftStatus:
 UPDATE post_drafts
 SET status = ?, updated_at_epoch_millis = ?
+WHERE id = ?;
+
+updatePostDraftUpdatedAt:
+UPDATE post_drafts
+SET updated_at_epoch_millis = ?
 WHERE id = ?;
 
 updatePostDraftGeneratedText:
@@ -278,6 +286,12 @@ UPDATE post_drafts
 SET status = ?,
     caption_text = ?,
     brand_profile_id = ?,
+    updated_at_epoch_millis = ?
+WHERE id = ?;
+
+updatePostDraftSelectedMediaAsset:
+UPDATE post_drafts
+SET selected_media_asset_id = ?,
     updated_at_epoch_millis = ?
 WHERE id = ?;
 
@@ -310,6 +324,10 @@ FROM post_draft_media_items
 JOIN media_assets ON media_assets.id = post_draft_media_items.media_asset_id
 WHERE post_draft_media_items.draft_id = ?
 ORDER BY post_draft_media_items.media_order ASC;
+
+selectDraftOriginalMediaAssetId:
+SELECT media_asset_id FROM post_draft_media_items
+WHERE draft_id = ? AND media_asset_id = ?;
 
 deletePostDraftCaptionHashtags:
 DELETE FROM post_draft_caption_hashtags WHERE draft_id = ?;
@@ -522,6 +540,10 @@ FROM photo_edit_results
 JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
 WHERE photo_edit_results.draft_id = ?
 ORDER BY photo_edit_results.created_at_epoch_millis ASC;
+
+selectDraftEditedMediaAssetId:
+SELECT edited_media_asset_id FROM photo_edit_results
+WHERE draft_id = ? AND edited_media_asset_id = ?;
 
 selectPhotoEditResultById:
 SELECT photo_edit_results.*, media_assets.type, media_assets.uri, media_assets.mime_type,

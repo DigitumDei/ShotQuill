@@ -41,7 +41,9 @@ interface PostDraftRepository {
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean
+    fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean
     fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean
+    fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult
 }
 
 interface VisionDescriptionRepository {
@@ -104,6 +106,21 @@ interface ManualWorkflowRepository :
     fun savePhotoEditResult(photoEditResult: PhotoEditResult)
     fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry)
     fun saveExportRecord(exportRecord: ExportRecord)
+    fun savePhotoEditSuccess(
+        draftId: PostDraftId,
+        editedMediaAsset: MediaAsset,
+        editRequest: PhotoEditRequest,
+        editResult: PhotoEditResult,
+        promptHistoryEntry: PromptHistoryEntry,
+        targetStatus: DraftStatus,
+        updatedAt: Instant,
+    ): PostDraft?
+    fun savePhotoEditFailure(
+        draftId: PostDraftId,
+        editRequest: PhotoEditRequest,
+        promptHistoryEntry: PromptHistoryEntry,
+        updatedAt: Instant,
+    ): PostDraft?
     fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,

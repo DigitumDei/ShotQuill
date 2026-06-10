@@ -17,6 +17,10 @@ class AndroidDatabaseDriverFactory(
                     super.onConfigure(db)
                     db.setForeignKeyConstraintsEnabled(true)
                 }
+
+                override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                    super.onUpgrade(db, oldVersion, newVersion)
+                }
             },
         )
 }

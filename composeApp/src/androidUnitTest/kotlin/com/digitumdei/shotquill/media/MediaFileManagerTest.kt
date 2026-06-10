@@ -1,7 +1,11 @@
 package com.digitumdei.shotquill.media
 
+import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.MediaType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -94,7 +98,7 @@ class MediaFileManagerTest {
     @Test
     fun createCameraCaptureFileCreatesFileInCorrectDir() {
         val file = mgr.createCameraCaptureFile()
-        assertTrue(file.absolutePath.contains("media/originals/camera"))
+        assertTrue(file.absolutePath.replace('\\', '/').contains("media/originals/camera"))
         assertTrue(file.name.endsWith(".jpg"))
         assertTrue(file.name.startsWith("img_"))
         assertTrue(file.name.contains("_camera_"))
@@ -163,6 +167,97 @@ class MediaFileManagerTest {
         val result = mgr.handleCameraCapture(captureFile)
 
         assertTrue(result.createdAtEpochMillis in before..after || result.createdAtEpochMillis == captureFile.lastModified())
+    }
+
+    @Test
+    fun readMediaAssetBytesReturnsFileContents() {
+        val testFile = File(tmpDir, "test_photo.jpg")
+        val content = byteArrayOf(0x48, 0x65, 0x6C, 0x6C, 0x6F)
+        testFile.writeBytes(content)
+        val asset = MediaAsset(
+            id = MediaAssetId("test-1"),
+            type = MediaType.Photo,
+            uri = "file://${testFile.absolutePath}",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val result = MediaFileManager.readMediaAssetBytes(asset)
+        assertTrue(result.contentEquals(content))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForUnsupportedUriScheme() {
+        val asset = MediaAsset(
+            id = MediaAssetId("test-3"),
+            type = MediaType.Photo,
+            uri = "content://com.example.provider/photos/1",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Unsupported URI scheme"))
+        assertTrue(ex.message!!.contains("content"))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForSchemeOnlyUri() {
+        val asset = MediaAsset(
+            id = MediaAssetId("test-4"),
+            type = MediaType.Photo,
+            uri = "file://",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("URI is missing a file path"))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForPlainPathWithoutScheme() {
+        val testFile = File(tmpDir, "test_noscheme.jpg")
+        testFile.writeBytes(byteArrayOf(1, 2, 3))
+        val asset = MediaAsset(
+            id = MediaAssetId("test-5"),
+            type = MediaType.Photo,
+            uri = testFile.absolutePath,
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Unsupported URI scheme"))
+    }
+
+    @Test
+    fun readMediaAssetBytesThrowsForMissingFile() {
+        val missingFile = File(tmpDir, "nonexistent.jpg")
+        val asset = MediaAsset(
+            id = MediaAssetId("test-6"),
+            type = MediaType.Photo,
+            uri = "file://${missingFile.absolutePath}",
+            mimeType = "image/jpeg",
+            widthPx = 100,
+            heightPx = 100,
+            createdAtEpochMillis = 1000L,
+        )
+        val ex = assertFailsWith<IllegalArgumentException> {
+            MediaFileManager.readMediaAssetBytes(asset)
+        }
+        assertTrue(ex.message!!.contains("Source file not found"))
+        assertTrue(ex.message!!.contains(missingFile.absolutePath))
     }
 
 

@@ -2,7 +2,6 @@ package com.digitumdei.shotquill.shared.ai
 
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
-import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequest
 import com.digitumdei.shotquill.shared.domain.PhotoEditRequestId
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -30,16 +29,11 @@ class AiProviderContractTest {
     }
 
     @Test
-    fun fakeProviderEditPhotoSummaryDerivedFromAssembledPrompt() {
+    fun fakeProviderEditPhotoSummaryDerivedFromRequestPrompt() {
         val provider = FakeAiProvider()
         val request = sampleEditGenerationRequest()
 
-        val rawPrompt = request.editRequest.prompt
-        val assembledPrompt = PhotoEditPromptAssembler.assemble(request.editRequest)
-        assertTrue(
-            assembledPrompt.contains("Edit this image:"),
-            "assembled prompt should contain prose not present in raw prompt",
-        )
+        val assembledPrompt = request.editRequest.prompt
 
         val result = provider.editPhoto(request)
         val success = assertIs<AiProviderResult.Success<PhotoEditOutput>>(result)
@@ -47,9 +41,9 @@ class AiProviderContractTest {
         assertNotNull(summary)
 
         assertTrue(
-            summary.contains("Edit this image:"),
-            "FakeAiProvider summary should be derived from the assembled prompt, not the raw prompt. " +
-                "Expected 'Edit this image:' (from assembled prompt) in summary but got: $summary",
+            summary.contains(assembledPrompt.take(50)),
+            "FakeAiProvider summary should be derived from editRequest.prompt (the assembled prompt). " +
+                "Expected prompt text in summary but got: $summary",
         )
         assertTrue(
             summary.startsWith("Fake improve_lighting edit for original:"),
@@ -139,11 +133,10 @@ internal fun sampleEditGenerationRequest(): PhotoEditGenerationRequest =
             intent = EditIntent.ImproveLighting,
             realismLevel = RealismLevel.Photoreal,
             qualityTier = QualityTier.Standard,
-            prompt = "Improve lighting while preserving the subject.",
+            prompt = "Edit this image: Improve the lighting and exposure of the image. Improve lighting while preserving the subject. Apply a photorealistic edit. Preserve natural camera realism and avoid visibly generated or illustrated details. Use standard quality tier. Frame the result for Original (no resize) using preserve the original dimensions without resizing.",
             userRefinement = null,
             subjectDescription = null,
             targetPlatform = TargetPlatform.Original,
-            maskRegion = null,
             createdAtEpochMillis = 1_700_000_000_000L,
         ),
         sourceImage = sampleImageInput(),

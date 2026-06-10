@@ -33,6 +33,18 @@ class VisionDescriptionAnalyzer(
         val draft = repository.get(draftId) ?: return VisionDescriptionAnalysisResult.Failure(
             VisionDescriptionAnalysisError.DraftNotFound,
         )
+        return analyzePrimaryPhoto(draft, reuseCached)
+    }
+
+    /**
+     * Analyze using an already-fetched draft snapshot. Callers that have fetched the draft
+     * should pass it directly so the analyzed asset matches the snapshot they operate on,
+     * even if the stored selection changes mid-execution.
+     */
+    fun analyzePrimaryPhoto(
+        draft: PostDraft,
+        reuseCached: Boolean = true,
+    ): VisionDescriptionAnalysisResult {
         val mediaAsset = draft.primaryMediaAsset()
 
         if (reuseCached) {
@@ -42,7 +54,13 @@ class VisionDescriptionAnalyzer(
         }
 
         val prompt = VisionDescriptionPromptFactory.buildPrompt(mediaAsset)
-        val image = imageSource.load(mediaAsset)
+        val sourceImageResult = imageSource.load(mediaAsset)
+        if (sourceImageResult is SourceImageResult.Failure) {
+            return VisionDescriptionAnalysisResult.Failure(
+                VisionDescriptionAnalysisError.ImageLoadFailure(sourceImageResult.message),
+            )
+        }
+        val image = (sourceImageResult as SourceImageResult.Success).image
         return when (val providerResult = aiProvider.describeVision(
             VisionDescriptionRequest(
                 draftId = draft.id,
@@ -85,14 +103,16 @@ class VisionDescriptionAnalyzer(
         repository.listVisionDescriptionsForDraft(draft.id)
             .filter { it.mediaAssetId == mediaAsset.id }
             .maxByOrNull { it.createdAtEpochMillis }
-            ?: draft.visionDescription?.takeIf { it.mediaAssetId == mediaAsset.id }
+            ?: draft.visionDescriptions
+                .filter { it.mediaAssetId == mediaAsset.id }
+                .maxByOrNull { it.createdAtEpochMillis }
 
     private fun nextIdSuffix(nowEpochMillis: Long): String =
         "$nowEpochMillis-${operationSequence.getAndIncrement()}"
 }
 
 fun interface VisionImageSource {
-    fun load(mediaAsset: MediaAsset): AiImageInput
+    fun load(mediaAsset: MediaAsset): SourceImageResult
 }
 
 sealed class VisionDescriptionAnalysisResult {
@@ -109,4 +129,5 @@ sealed class VisionDescriptionAnalysisResult {
 sealed class VisionDescriptionAnalysisError {
     data object DraftNotFound : VisionDescriptionAnalysisError()
     data class Provider(val error: AiError) : VisionDescriptionAnalysisError()
+    data class ImageLoadFailure(val message: String) : VisionDescriptionAnalysisError()
 }

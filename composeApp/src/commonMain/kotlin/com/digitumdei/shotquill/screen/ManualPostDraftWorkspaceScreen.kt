@@ -33,6 +33,8 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
+import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,9 +50,11 @@ fun ManualPostDraftWorkspaceScreen(
     defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
     defaultQualityTier: QualityTier = QualityTier.Standard,
     postTextGenerator: PostTextGenerator? = null,
+    photoEditExecutor: PhotoEditExecutor? = null,
+    analyzeVision: AnalyzeVision? = null,
     onNavigateToNewPost: () -> Unit,
 ) {
-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator) {
+    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
@@ -58,6 +62,8 @@ fun ManualPostDraftWorkspaceScreen(
             defaultRealismLevel = defaultRealismLevel,
             defaultQualityTier = defaultQualityTier,
             postTextGenerator = postTextGenerator,
+            photoEditExecutor = photoEditExecutor,
+            analyzeVision = analyzeVision,
         )
     }
     val state = viewModel.state
@@ -95,6 +101,8 @@ fun ManualPostDraftWorkspaceScreen(
         onAnalyzeVision = { refresh { analyzeVisionDescription() } },
         onGeneratePostText = { refresh { generatePostText() } },
         onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
+        onSelectEditedPhoto = { refresh { selectEditedPhoto() } },
+        onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
         onShareOrExport = { refresh { markShareOrExportStarted() } },
@@ -114,6 +122,8 @@ fun ManualPostDraftWorkspaceContent(
     onAnalyzeVision: () -> Unit,
     onGeneratePostText: () -> Unit,
     onEditPhotoWithAi: () -> Unit,
+    onSelectEditedPhoto: () -> Unit,
+    onSelectOriginalPhoto: () -> Unit,
     onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
     onShareOrExport: () -> Unit,
@@ -151,6 +161,21 @@ fun ManualPostDraftWorkspaceContent(
 
         WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
         WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
+        WorkspaceSection("Active photo", state.activePhotoUri ?: state.originalPhotoUri ?: "No active photo")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = onSelectOriginalPhoto,
+                enabled = state.actions.canSelectOriginalPhoto,
+            ) {
+                Text("Use original")
+            }
+            OutlinedButton(
+                onClick = onSelectEditedPhoto,
+                enabled = state.actions.canSelectEditedPhoto,
+            ) {
+                Text("Use edited")
+            }
+        }
         WorkspaceSection("Vision description", state.visionDescription ?: "No vision description yet")
         WorkspaceSection("Generated caption", state.generatedCaption ?: "No caption generated yet")
         WorkspaceSection("Generated alt text", state.generatedAltText ?: "No alt text generated yet")

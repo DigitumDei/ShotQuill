@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.media
 
 import android.graphics.BitmapFactory
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.shared.domain.MediaAsset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -45,6 +46,17 @@ class MediaFileManager(
             } catch (_: Exception) {
                 Pair(null, null)
             }
+        }
+
+        fun readMediaAssetBytes(mediaAsset: MediaAsset): ByteArray {
+            require(mediaAsset.uri.startsWith("file://")) {
+                "Unsupported URI scheme: expected file:// but got ${mediaAsset.uri.substringBefore("://", "").ifEmpty { mediaAsset.uri }}"
+            }
+            val filePath = mediaAsset.uri.removePrefix("file://")
+            require(filePath.isNotEmpty()) { "URI is missing a file path: ${mediaAsset.uri}" }
+            val file = File(filePath)
+            require(file.exists()) { "Source file not found: ${file.absolutePath}" }
+            return file.readBytes()
         }
 
         fun guessMimeType(fileName: String): String {

@@ -71,6 +71,13 @@ data class AltTextGenerationRequest(
 data class PhotoEditGenerationRequest(
     val editRequest: PhotoEditRequest,
     val sourceImage: AiImageInput,
+    /**
+     * Deferred scaffolding. Mask-scoped photo editing is not implemented in the current
+     * issue scope - no production caller populates this field, and the provider-level
+     * mask upload path in [com.digitumdei.shotquill.shared.ai.OpenAiProvider] is
+     * unreachable. Retained so the request shape is ready when mask-region support is
+     * added.
+     */
     val maskImage: AiImageInput? = null,
 )
 

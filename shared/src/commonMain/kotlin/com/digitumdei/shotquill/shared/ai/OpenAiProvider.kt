@@ -1,6 +1,5 @@
 package com.digitumdei.shotquill.shared.ai
 
-import com.digitumdei.shotquill.shared.domain.PhotoEditPromptAssembler
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlin.io.encoding.Base64
@@ -193,9 +192,17 @@ class OpenAiProvider(
             append("}}]}]}")
         }
 
+    /**
+     * Builds a multipart body for the OpenAI images/edits endpoint.
+     *
+     * The optional [PhotoEditGenerationRequest.maskImage] multipart field is deferred
+     * scaffolding - no production caller populates it in the current issue scope.
+     * The mask upload path is unreachable until mask-region support is implemented
+     * end-to-end from [com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionPipeline].
+     */
     private fun buildImageEditBody(request: PhotoEditGenerationRequest): MultipartBody {
         val boundary = "shotquill-openai-boundary"
-        val prompt = buildEditPrompt(request)
+        val prompt = request.editRequest.prompt
         val bytes = buildList {
             addMultipartText(boundary, "model", config.imageEditModel)
             addMultipartText(boundary, "prompt", prompt)
@@ -209,9 +216,6 @@ class OpenAiProvider(
             redactedBody = "multipart image edit request: model=${config.imageEditModel}, prompt=${prompt.take(120)}, image=[REDACTED_IMAGE_PAYLOAD]",
         )
     }
-
-    private fun buildEditPrompt(request: PhotoEditGenerationRequest): String =
-        PhotoEditPromptAssembler.assemble(request.editRequest)
 }
 
 data class OpenAiProviderConfig(

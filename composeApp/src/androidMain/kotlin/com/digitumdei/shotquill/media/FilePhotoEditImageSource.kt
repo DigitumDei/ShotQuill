@@ -2,11 +2,11 @@ package com.digitumdei.shotquill.media
 
 import com.digitumdei.shotquill.shared.ai.AiImageInput
 import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.workflow.PhotoEditImageSource
 import com.digitumdei.shotquill.shared.workflow.SourceImageResult
-import com.digitumdei.shotquill.shared.workflow.VisionImageSource
 import java.io.File
 
-class FileVisionImageSource : VisionImageSource {
+class FilePhotoEditImageSource : PhotoEditImageSource {
     override fun load(mediaAsset: MediaAsset): SourceImageResult {
         return try {
             val bytes = MediaFileManager.readMediaAssetBytes(mediaAsset)
@@ -19,7 +19,7 @@ class FileVisionImageSource : VisionImageSource {
                 ),
             )
         } catch (e: Exception) {
-            SourceImageResult.Failure(e.message ?: "Unknown error loading vision image")
+            SourceImageResult.Failure(e.message ?: "Unknown error loading source image")
         }
     }
 }

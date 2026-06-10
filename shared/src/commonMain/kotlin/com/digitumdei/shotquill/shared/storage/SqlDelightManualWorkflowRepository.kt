@@ -115,6 +115,7 @@ class SqlDelightManualWorkflowRepository(
                 status = postDraft.status.wireValue,
                 caption_text = postDraft.caption?.text,
                 brand_profile_id = postDraft.brandProfile?.id?.value,
+                selected_media_asset_id = postDraft.selectedMediaAssetId?.value,
                 created_at_epoch_millis = postDraft.createdAt.toEpochMilliseconds(),
                 updated_at_epoch_millis = postDraft.updatedAt.toEpochMilliseconds(),
             )
@@ -139,7 +140,7 @@ class SqlDelightManualWorkflowRepository(
                 )
             }
             deleteOwnedDraftRows(postDraft.id)
-            postDraft.visionDescription?.let { saveVisionDescription(it) }
+            postDraft.visionDescriptions.forEach { saveVisionDescription(it) }
             postDraft.captionRequests.forEach { saveCaptionRequest(it) }
             postDraft.captionResults.forEach { saveCaptionResult(it) }
             postDraft.altTextResults.forEach { saveAltTextResult(it) }
@@ -151,13 +152,14 @@ class SqlDelightManualWorkflowRepository(
     }
 
     override fun get(id: PostDraftId): PostDraft? {
-        val draft = queries.selectPostDraftById(id.value) { draftId, format, status, captionText, brandProfileId, createdAt, updatedAt ->
+        val draft = queries.selectPostDraftById(id.value) { draftId, format, status, captionText, brandProfileId, selectedMediaAssetId, createdAt, updatedAt ->
             DraftRow(
                 id = draftId,
                 format = format,
                 status = status,
                 captionText = captionText,
                 brandProfileId = brandProfileId,
+                selectedMediaAssetId = selectedMediaAssetId,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
             )
@@ -184,6 +186,7 @@ class SqlDelightManualWorkflowRepository(
             format = PostFormat.valueOf(draft.format),
             status = ManualWorkflowStorageMapper.enumFromWire(draft.status, DraftStatus::fromWireValue),
             mediaItems = mediaItems,
+            selectedMediaAssetId = draft.selectedMediaAssetId?.let(::MediaAssetId),
             caption = draft.captionText?.let {
                 CaptionDraft(it, queries.selectPostDraftCaptionHashtags(id.value).executeAsList())
             },
@@ -191,7 +194,7 @@ class SqlDelightManualWorkflowRepository(
                 .executeAsList()
                 .mapTo(linkedSetOf()) { ManualWorkflowStorageMapper.enumFromWire(it, TargetPlatform::fromWireValue) },
             brandProfile = draft.brandProfileId?.let { selectBrandProfile(BrandProfileId(it)) },
-            visionDescription = selectVisionDescriptions(id).lastOrNull(),
+            visionDescriptions = selectVisionDescriptions(id),
             captionRequests = selectCaptionRequests(id),
             captionResults = selectCaptionResults(id),
             altTextResults = selectAltTextResults(id),
@@ -213,6 +216,30 @@ class SqlDelightManualWorkflowRepository(
             id = id.value,
         )
         return true
+    }
+
+    override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+        if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return false
+        queries.updatePostDraftUpdatedAt(
+            updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+            id = id.value,
+        )
+        return true
+    }
+
+    override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+        if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) return UpdateSelectionResult.DraftNotFound
+        if (mediaAssetId != null) {
+            val isDraftOriginalMedia = queries.selectDraftOriginalMediaAssetId(id.value, mediaAssetId.value).executeAsOneOrNull() != null
+            val isDraftEditedMedia = queries.selectDraftEditedMediaAssetId(id.value, mediaAssetId.value).executeAsOneOrNull() != null
+            if (!isDraftOriginalMedia && !isDraftEditedMedia) return UpdateSelectionResult.AssetNotOwnedByDraft
+        }
+        queries.updatePostDraftSelectedMediaAsset(
+            selected_media_asset_id = mediaAssetId?.value,
+            updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+            id = id.value,
+        )
+        return UpdateSelectionResult.Success
     }
 
     override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean {
@@ -427,6 +454,65 @@ class SqlDelightManualWorkflowRepository(
         queries.selectExportRecordById(id.value, ManualWorkflowStorageMapper::exportRecord).executeAsOneOrNull()
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
+
+    override fun savePhotoEditSuccess(
+        draftId: PostDraftId,
+        editedMediaAsset: MediaAsset,
+        editRequest: PhotoEditRequest,
+        editResult: PhotoEditResult,
+        promptHistoryEntry: PromptHistoryEntry,
+        targetStatus: DraftStatus,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
+            save(editedMediaAsset)
+            savePhotoEditRequest(editRequest)
+            savePhotoEditResult(editResult)
+            savePromptHistoryEntry(promptHistoryEntry)
+            if (targetStatus != currentDraft.status) {
+                currentDraft.transitionTo(targetStatus, updatedAt)
+                queries.updatePostDraftStatus(
+                    status = targetStatus.wireValue,
+                    updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                    id = draftId.value,
+                )
+            } else {
+                queries.updatePostDraftUpdatedAt(
+                    updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                    id = draftId.value,
+                )
+            }
+            queries.updatePostDraftSelectedMediaAsset(
+                selected_media_asset_id = editedMediaAsset.id.value,
+                updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
+
+    override fun savePhotoEditFailure(
+        draftId: PostDraftId,
+        editRequest: PhotoEditRequest,
+        promptHistoryEntry: PromptHistoryEntry,
+        updatedAt: Instant,
+    ): PostDraft? {
+        var savedDraft: PostDraft? = null
+        queries.transaction {
+            val currentDraft = get(draftId) ?: return@transaction
+            savePhotoEditRequest(editRequest)
+            savePromptHistoryEntry(promptHistoryEntry)
+            queries.updatePostDraftUpdatedAt(
+                updated_at_epoch_millis = updatedAt.toEpochMilliseconds(),
+                id = draftId.value,
+            )
+            savedDraft = get(draftId)
+        }
+        return savedDraft
+    }
 
     override fun recordPostTextGeneration(
         draftId: PostDraftId,
@@ -741,6 +827,7 @@ private data class DraftRow(
     val status: String,
     val captionText: String?,
     val brandProfileId: String?,
+    val selectedMediaAssetId: String?,
     val createdAt: Long,
     val updatedAt: Long,
 )

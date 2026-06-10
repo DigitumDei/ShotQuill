@@ -47,6 +47,7 @@ import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.InMemoryBrandProfileRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,7 +80,7 @@ class PostTextGenerationPipelineTest {
         assertTrue(success.captionResult.caption.startsWith("Fake instagram_feed_square caption"))
         assertTrue(success.captionResult.shortCaption?.startsWith("Fake short caption") == true)
         assertTrue(success.altTextResult.altText.startsWith("Fake alt text for media-1"))
-        assertEquals(success.visionDescription, stored.visionDescription)
+        assertEquals(success.visionDescription, stored.visionDescriptions.firstOrNull())
         assertEquals(1, stored.captionRequests.size)
         assertEquals(1, stored.captionResults.size)
         assertEquals(1, stored.altTextResults.size)
@@ -304,7 +305,10 @@ class PostTextGenerationPipelineTest {
 
         assertIs<PostTextGenerationResult.Success>(result)
         assertEquals(1, provider.visionCalls)
-        assertEquals("Recorded vision.", repository.get(draftId)?.visionDescription?.description)
+        assertEquals(
+            "Recorded vision.",
+            repository.get(draftId)?.visionDescriptions?.maxByOrNull { it.createdAtEpochMillis }?.description,
+        )
     }
 
     @Test
@@ -357,6 +361,98 @@ class PostTextGenerationPipelineTest {
         assertEquals(3, stored.promptHistory.size)
     }
 
+    @Test
+    fun usesVisionAssetForAltTextWhenSelectionChangesMidExecution() {
+        val editedMediaAsset = MediaAsset(
+            id = MediaAssetId("media-edited-mid"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited-mid.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080,
+            heightPx = 1350,
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = mediaAssetId,
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-mid"),
+                    requestId = PhotoEditRequestId("photo-edit-request-mid"),
+                    draftId = draftId,
+                    editedMediaAsset = editedMediaAsset,
+                    summary = "Mid-execution edit.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = object : FakeManualWorkflowRepository(draft) {
+            private var getCount2 = 0
+            override fun get(id: PostDraftId): PostDraft? {
+                getCount2++
+                val fetched = super.get(id) ?: return null
+                if (getCount2 == 2) {
+                    return fetched.copy(selectedMediaAssetId = editedMediaAsset.id)
+                }
+                return fetched
+            }
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(mediaAssetId, success.visionDescription.mediaAssetId)
+        assertEquals(mediaAssetId, success.altTextResult.mediaAssetId,
+            "Alt-text asset must match vision asset even when selection changes mid-execution")
+    }
+
+    @Test
+    fun usesEditedAssetForVisionAndAltTextWhenSelected() {
+        val editedMediaAssetId = MediaAssetId("media-edited-1")
+        val editedMediaAsset = MediaAsset(
+            id = editedMediaAssetId,
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+            mimeType = "image/jpeg",
+            widthPx = 1080,
+            heightPx = 1350,
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = editedMediaAssetId,
+            photoEditResults = listOf(
+                PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-1"),
+                    requestId = PhotoEditRequestId("photo-edit-request-1"),
+                    draftId = draftId,
+                    editedMediaAsset = editedMediaAsset,
+                    summary = "Adjusted brightness.",
+                    modelName = "fake",
+                    createdAtEpochMillis = 1_700_000_030_000L,
+                ),
+            ),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = FakeAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val success = assertIs<PostTextGenerationResult.Success>(result)
+        assertEquals(editedMediaAssetId, success.visionDescription.mediaAssetId)
+        assertEquals(editedMediaAssetId, success.altTextResult.mediaAssetId)
+    }
+
     private fun pipeline(
         repository: ManualWorkflowRepository,
         settingsRepository: InMemoryLocalSettingsRepository,
@@ -386,7 +482,7 @@ class PostTextGenerationPipelineTest {
             modelName = "cached-model",
             createdAtEpochMillis = 1_700_000_050_000L,
         )
-        return sampleDraft().copy(visionDescription = visionDescription)
+        return sampleDraft().copy(visionDescriptions = listOf(visionDescription))
     }
 
     private fun sampleDraft(): PostDraft =
@@ -411,7 +507,7 @@ class PostTextGenerationPipelineTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -425,10 +521,12 @@ class PostTextGenerationPipelineTest {
 
     private fun fakeImageSource(): VisionImageSource =
         VisionImageSource {
-            AiImageInput(
-                bytes = "image-bytes".encodeToByteArray(),
-                mimeType = it.mimeType ?: "image/jpeg",
-                fileName = "${it.id.value}.jpg",
+            SourceImageResult.Success(
+                AiImageInput(
+                    bytes = "image-bytes".encodeToByteArray(),
+                    mimeType = it.mimeType ?: "image/jpeg",
+                    fileName = "${it.id.value}.jpg",
+                ),
             )
         }
 
@@ -511,21 +609,30 @@ class PostTextGenerationPipelineTest {
             error("Not used")
     }
 
-    private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
+    private open class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        private val mediaAssets = mutableMapOf<MediaAssetId, MediaAsset>()
         var deleteBeforeDraftGetNumber: Int? = null
         private var draftGetCount = 0
 
-        override fun save(mediaAsset: MediaAsset) = Unit
-        override fun get(id: MediaAssetId): MediaAsset? = drafts.values
-            .flatMap { draft -> draft.mediaItems.map { it.mediaAsset } }
-            .firstOrNull { it.id == id }
+        init {
+            initialDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            initialDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
+        }
+
+        override fun save(mediaAsset: MediaAsset) {
+            mediaAssets[mediaAsset.id] = mediaAsset
+        }
+
+        override fun get(id: MediaAssetId): MediaAsset? = mediaAssets[id]
 
         override fun save(brandProfile: BrandProfile) = Unit
         override fun get(id: BrandProfileId): BrandProfile? = null
 
         override fun save(postDraft: PostDraft) {
             drafts[postDraft.id] = postDraft
+            postDraft.mediaItems.forEach { mediaAssets[it.mediaAsset.id] = it.mediaAsset }
+            postDraft.photoEditResults.forEach { mediaAssets[it.editedMediaAsset.id] = it.editedMediaAsset }
         }
 
         override fun get(id: PostDraftId): PostDraft? {
@@ -536,18 +643,29 @@ class PostTextGenerationPipelineTest {
             return drafts[id]
         }
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
+        override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean {
+            val draft = drafts[id] ?: return false
+            drafts[id] = draft.copy(updatedAt = updatedAt)
+            return true
+        }
         override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
+
+        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: Instant): UpdateSelectionResult {
+            val draft = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
+            drafts[id] = draft.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
+            return UpdateSelectionResult.Success
+        }
 
         override fun save(visionDescription: VisionDescription) = saveVisionDescription(visionDescription)
         override fun saveVisionDescription(visionDescription: VisionDescription) = save(
-            drafts.getValue(visionDescription.draftId).copy(visionDescription = visionDescription),
+            drafts.getValue(visionDescription.draftId).copy(visionDescriptions = drafts.getValue(visionDescription.draftId).visionDescriptions + visionDescription),
         )
 
         override fun get(id: VisionDescriptionId): VisionDescription? =
-            drafts.values.mapNotNull { it.visionDescription }.firstOrNull { it.id == id }
+            drafts.values.flatMap { it.visionDescriptions }.firstOrNull { it.id == id }
 
         override fun listVisionDescriptionsForDraft(id: PostDraftId): List<VisionDescription> =
-            drafts[id]?.visionDescription?.let(::listOf).orEmpty()
+            drafts[id]?.visionDescriptions.orEmpty()
 
         override fun save(captionRequest: CaptionRequest) = saveCaptionRequest(captionRequest)
         override fun getCaptionRequest(id: CaptionRequestId): CaptionRequest? = drafts.values
@@ -605,9 +723,12 @@ class PostTextGenerationPipelineTest {
         override fun listPhotoEditResultsForDraft(id: PostDraftId): List<PhotoEditResult> =
             drafts[id]?.photoEditResults.orEmpty()
 
-        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) = save(
-            drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
-        )
+        override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {
+            mediaAssets[photoEditResult.editedMediaAsset.id] = photoEditResult.editedMediaAsset
+            save(
+                drafts.getValue(photoEditResult.draftId).let { it.copy(photoEditResults = it.photoEditResults + photoEditResult) },
+            )
+        }
 
         override fun save(promptHistoryEntry: PromptHistoryEntry) = savePromptHistoryEntry(promptHistoryEntry)
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = drafts.values
@@ -625,6 +746,46 @@ class PostTextGenerationPipelineTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+        override fun savePhotoEditSuccess(
+            draftId: PostDraftId,
+            editedMediaAsset: MediaAsset,
+            editRequest: PhotoEditRequest,
+            editResult: PhotoEditResult,
+            promptHistoryEntry: PromptHistoryEntry,
+            targetStatus: DraftStatus,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            val draftWithRecords = draft.copy(
+                photoEditRequests = draft.photoEditRequests + editRequest,
+                photoEditResults = draft.photoEditResults + editResult,
+                promptHistory = draft.promptHistory + promptHistoryEntry,
+            )
+            val candidate = if (targetStatus != draft.status) {
+                draftWithRecords.transitionTo(targetStatus, updatedAt).copy(
+                    selectedMediaAssetId = editedMediaAsset.id,
+                )
+            } else {
+                draftWithRecords.copy(updatedAt = updatedAt, selectedMediaAssetId = editedMediaAsset.id)
+            }
+            mediaAssets[editedMediaAsset.id] = editedMediaAsset
+            drafts[draftId] = candidate
+            return candidate
+        }
+        override fun savePhotoEditFailure(
+            draftId: PostDraftId,
+            editRequest: PhotoEditRequest,
+            promptHistoryEntry: PromptHistoryEntry,
+            updatedAt: Instant,
+        ): PostDraft? {
+            val draft = drafts[draftId] ?: return null
+            drafts[draftId] = draft.copy(
+                updatedAt = updatedAt,
+                photoEditRequests = draft.photoEditRequests + editRequest,
+                promptHistory = draft.promptHistory + promptHistoryEntry,
+            )
+            return drafts[draftId]
+        }
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,
@@ -654,7 +815,10 @@ class PostTextGenerationPipelineTest {
             return drafts[draftId]
         }
 
-        override fun clearAll() = drafts.clear()
+        override fun clearAll() {
+            drafts.clear()
+            mediaAssets.clear()
+        }
 
         private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
             when {

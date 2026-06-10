@@ -22,7 +22,7 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntry
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
-import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
+
 import com.digitumdei.shotquill.shared.settings.ActiveBrandProfileStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
@@ -46,15 +46,6 @@ class PostTextGenerationPipeline(
 ) : PostTextGenerator {
     private val operationSequence = AtomicCounter(0)
 
-    fun generateText(
-        draftId: PostDraftId,
-        targetPlatform: TargetPlatform,
-    ): PostTextGenerationResult = generateText(
-        draftId = draftId,
-        targetPlatform = targetPlatform,
-        reuseVisionDescription = true,
-    )
-
     override fun generateText(
         draftId: PostDraftId,
         targetPlatform: TargetPlatform,
@@ -76,12 +67,13 @@ class PostTextGenerationPipeline(
                 aiProvider = aiProvider,
                 imageSource = imageSource,
                 clock = clock,
-            ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
+            ).analyzePrimaryPhoto(draft, reuseCached = reuseVisionDescription)
         ) {
             is VisionDescriptionAnalysisResult.Failure -> return PostTextGenerationResult.Failure(
                 when (val error = result.error) {
                     VisionDescriptionAnalysisError.DraftNotFound -> PostTextGenerationError.DraftNotFound
                     is VisionDescriptionAnalysisError.Provider -> PostTextGenerationError.Provider(error.error)
+                    is VisionDescriptionAnalysisError.ImageLoadFailure -> PostTextGenerationError.ImageLoadFailure(error.message)
                 },
             )
             is VisionDescriptionAnalysisResult.Success -> result.visionDescription
@@ -116,7 +108,7 @@ class PostTextGenerationPipeline(
             val result = aiProvider.generateAltText(
                 AltTextGenerationRequest(
                     draftId = draftId,
-                    mediaAssetId = currentDraft.primaryMediaAsset().id,
+                    mediaAssetId = visionDescription.mediaAssetId,
                     prompt = altTextPrompt,
                 ),
             )
@@ -152,7 +144,7 @@ class PostTextGenerationPipeline(
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-result-$idSuffix"),
             draftId = draftId,
-            mediaAssetId = currentDraft.primaryMediaAsset().id,
+            mediaAssetId = visionDescription.mediaAssetId,
             altText = altTextOutput.altText.trim(),
             modelName = altTextOutput.modelName,
             createdAtEpochMillis = now,
@@ -260,4 +252,5 @@ sealed class PostTextGenerationError {
     data object DraftNotFound : PostTextGenerationError()
     data class InvalidDraftStatus(val status: DraftStatus) : PostTextGenerationError()
     data class Provider(val error: AiError) : PostTextGenerationError()
+    data class ImageLoadFailure(val message: String) : PostTextGenerationError()
 }

@@ -43,11 +43,22 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SqlDelightManualWorkflowRepositoryTest {
+    companion object {
+        init {
+            // Force sqlite-jdbc driver registration with this classloader's DriverManager
+            // state. Without this, the first test in the class can fail with
+            // "No suitable driver found for jdbc:sqlite:" depending on which test class
+            // (e.g. a Robolectric-sandboxed one) initialized DriverManager first.
+            Class.forName("org.sqlite.JDBC")
+        }
+    }
+
     private val createdAt = 1_700_000_000_000L
     private val updatedAt = 1_700_000_060_000L
 
@@ -135,7 +146,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(MediaAssetId("media-1"), stored.mediaItems.single().mediaAsset.id)
         assertEquals(listOf("#coffee", "#work"), stored.caption?.hashtags)
         assertEquals(BrandProfileId("brand-1"), stored.brandProfile?.id)
-        assertEquals(VisionDescriptionId("vision-1"), stored.visionDescription?.id)
+        assertEquals(VisionDescriptionId("vision-1"), stored.visionDescriptions.firstOrNull()?.id)
         assertEquals(CaptionRequestId("caption-request-1"), stored.captionRequests.single().id)
         assertEquals(CaptionResultId("caption-result-1"), stored.captionResults.single().id)
         assertEquals(listOf("#coffee", "#work"), stored.captionResults.single().hashtags)
@@ -222,6 +233,434 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun savePhotoEditFailureReturnsNullAndRollsBackForMissingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-failure-1"))
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-failure-1"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditFailure(
+            draftId = PostDraftId("nonexistent-draft"),
+            editRequest = editRequest,
+            promptHistoryEntry = promptHistoryEntry,
+            updatedAt = timestamp,
+        )
+
+        assertNull(result)
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-failure-1")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-failure-1")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditFailurePersistsForExistingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-failure-2"))
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-failure-2"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditFailure(
+            draftId = PostDraftId("draft-1"),
+            editRequest = editRequest,
+            promptHistoryEntry = promptHistoryEntry,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(timestamp, result?.updatedAt)
+        assertNotNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-failure-2")))
+        assertNotNull(repository.get(PromptHistoryEntryId("prompt-failure-2")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessReturnsNullAndRollsBackForMissingDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-new"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-new.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(id = PhotoEditRequestId("photo-edit-success-missing"))
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-success-missing"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("nonexistent-draft"),
+            editedMediaAsset = editedAsset,
+            summary = "Should not persist.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(id = PromptHistoryEntryId("prompt-success-missing"))
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("nonexistent-draft"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNull(result)
+        assertNull(repository.get(MediaAssetId("media-edited-new")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-success-missing")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-success-missing")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-success-missing")))
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessRollsBackPartialWritesOnForeignKeyViolation() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+        ShotQuillDatabase.Schema.create(driver)
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val draftId = PostDraftId("draft-1")
+        val originalDraft = repository.get(draftId)!!
+        val originalStatus = originalDraft.status
+        val originalUpdatedAt = originalDraft.updatedAt
+        val originalSelectedMediaAssetId = originalDraft.selectedMediaAssetId
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-rollback"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-rollback.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-rollback"),
+            draftId = draftId,
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-rollback"),
+            requestId = editRequest.id,
+            draftId = draftId,
+            editedMediaAsset = editedAsset,
+            summary = "Should be rolled back.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-rollback"),
+            draftId = PostDraftId("missing-draft"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val exception = assertFailsWith<Exception> {
+            repository.savePhotoEditSuccess(
+                draftId = draftId,
+                editedMediaAsset = editedAsset,
+                editRequest = editRequest,
+                editResult = editResult,
+                promptHistoryEntry = promptHistoryEntry,
+                targetStatus = DraftStatus.PhotoEdited,
+                updatedAt = timestamp,
+            )
+        }
+        assertTrue(exception.message?.contains("FOREIGN KEY") == true)
+
+        assertNull(repository.get(MediaAssetId("media-edited-rollback")))
+        assertNull(repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-req-rollback")))
+        assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-res-rollback")))
+        assertNull(repository.get(PromptHistoryEntryId("prompt-rollback")))
+
+        val stored = repository.get(draftId)
+        assertNotNull(stored)
+        assertEquals(originalStatus, stored.status)
+        assertEquals(originalUpdatedAt, stored.updatedAt)
+        assertEquals(originalSelectedMediaAssetId, stored.selectedMediaAssetId)
+
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessPersistsAllRecordsAndReturnsRefreshedDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-success"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-success.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-request-success"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-success"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Successful edit.",
+            modelName = "edit-model-plus",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-success"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+        assertEquals(MediaAssetId("media-edited-success"), result?.selectedMediaAssetId)
+
+        val storedAsset = repository.get(MediaAssetId("media-edited-success"))
+        assertNotNull(storedAsset)
+        assertEquals(MediaType.EditedPhoto, storedAsset.type)
+        assertEquals("file://edited-success.jpg", storedAsset.uri)
+
+        val storedRequest = repository.getPhotoEditRequest(PhotoEditRequestId("photo-edit-request-success"))
+        assertNotNull(storedRequest)
+        assertEquals(editRequest.id, storedRequest.id)
+
+        val storedResult = repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-success"))
+        assertNotNull(storedResult)
+        assertEquals("Successful edit.", storedResult.summary)
+
+        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-success"))
+        assertNotNull(storedPrompt)
+        assertEquals(AiOperationType.PhotoEdit, storedPrompt.operationType)
+
+        val storedDraft = repository.get(PostDraftId("draft-1"))
+        assertNotNull(storedDraft)
+        assertEquals(MediaAssetId("media-edited-success"), storedDraft.selectedMediaAssetId)
+        assertTrue(storedDraft.photoEditResults.any { it.id == PhotoEditResultId("photo-edit-result-success") })
+        assertTrue(storedDraft.photoEditRequests.any { it.id == PhotoEditRequestId("photo-edit-request-success") })
+        assertTrue(storedDraft.promptHistory.any { it.id == PromptHistoryEntryId("prompt-success") })
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessTransitionsStatusAndSetsUpdatedAtWhenDifferent() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(status = DraftStatus.PhotoAdded, selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-transition"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-transition.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-transition"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-transition"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Transition edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-transition"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals(timestamp, stored?.updatedAt)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessKeepsStatusWhenTargetMatchesCurrent() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(status = DraftStatus.PhotoEdited, selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-same-status"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-same.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-same"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-same"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Same status edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-same"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(DraftStatus.PhotoEdited, result?.status)
+        assertEquals(timestamp, result?.updatedAt)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(DraftStatus.PhotoEdited, stored?.status)
+        assertEquals(timestamp, stored?.updatedAt)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessSetsSelectedMediaAssetIdToEditedAsset() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-selection"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-selection.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-selection"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-selection"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Selection edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-selection"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        assertEquals(MediaAssetId("media-edited-selection"), result?.selectedMediaAssetId)
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(MediaAssetId("media-edited-selection"), stored?.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test
+    fun savePhotoEditSuccessKeepsPreviousMediaAndHistoryWhenAppending() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = null))
+
+        val editedAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-append"),
+            type = MediaType.EditedPhoto,
+            uri = "file://edited-append.jpg",
+        )
+        val editRequest = samplePhotoEditRequest().copy(
+            id = PhotoEditRequestId("photo-edit-req-append"),
+            draftId = PostDraftId("draft-1"),
+        )
+        val editResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-res-append"),
+            requestId = editRequest.id,
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            summary = "Append edit.",
+            modelName = "edit-model",
+            createdAtEpochMillis = updatedAt,
+        )
+        val promptHistoryEntry = samplePromptHistoryEntry().copy(
+            id = PromptHistoryEntryId("prompt-append"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+        )
+        val timestamp = Instant.fromEpochMilliseconds(updatedAt + 10_000)
+
+        val result = repository.savePhotoEditSuccess(
+            draftId = PostDraftId("draft-1"),
+            editedMediaAsset = editedAsset,
+            editRequest = editRequest,
+            editResult = editResult,
+            promptHistoryEntry = promptHistoryEntry,
+            targetStatus = DraftStatus.PhotoEdited,
+            updatedAt = timestamp,
+        )
+
+        assertNotNull(result)
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertEquals(2, stored?.photoEditRequests?.size)
+        assertEquals(2, stored?.photoEditResults?.size)
+        assertEquals(2, stored?.promptHistory?.size)
+        assertEquals(1, stored?.mediaItems?.size)
+        assertEquals(1, stored?.captionRequests?.size)
+        assertEquals(1, stored?.captionResults?.size)
+        driver.close()
+    }
+
+    @Test
     fun returnsNullOrEmptyForMissingRecords() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
@@ -273,7 +712,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             caption = null,
             targetPlatforms = emptySet(),
             brandProfile = null,
-            visionDescription = null,
+            visionDescriptions = emptyList(),
             captionRequests = emptyList(),
             captionResults = emptyList(),
             altTextResults = emptyList(),
@@ -530,7 +969,7 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         val stored = repository.get(PostDraftId("draft-1"))
         assertNotNull(stored)
-        assertEquals("Updated desk scene.", stored.visionDescription?.description)
+        assertEquals("Updated desk scene.", stored.visionDescriptions.firstOrNull()?.description)
         assertEquals("Write a sharper caption.", stored.captionRequests.single().prompt)
         assertEquals("Brewed focus for the morning.", stored.captionResults.single().caption)
         assertEquals(listOf("#focus"), stored.captionResults.single().hashtags)
@@ -603,8 +1042,60 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
-    fun hasMigrationScaffoldForVersionOne() {
-        assertEquals(1, ShotQuillDatabase.Schema.version.toInt())
+    fun hasMigrationScaffoldForVersionTwo() {
+        assertEquals(2, ShotQuillDatabase.Schema.version.toInt())
+    }
+
+    @Test
+    fun v1ToV2MigrationAddsSelectedMediaAssetIdWithNullDefault() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+
+        createV1Schema(driver)
+
+        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
+        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-2', 'photo', 'file://photo2.jpg', 'image/jpeg', 1920, 1080, 1700000000000)", 0)
+        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'Carousel', 'photo_added', NULL, NULL, 1700000000000, 1700000060000)", 0)
+        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-2', 'SingleImage', 'draft', 'existing caption', NULL, 1700000000000, 1700000060000)", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-2', 1)", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-2', 'media-2', 0)", 0)
+        driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'instagram_feed_square')", 0)
+
+        ShotQuillDatabase.Schema.migrate(driver, 1, 2)
+
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val draft1 = repository.get(PostDraftId("draft-1"))
+        assertNotNull(draft1)
+        assertEquals(PostFormat.Carousel, draft1.format)
+        assertEquals(DraftStatus.PhotoAdded, draft1.status)
+        assertNull(draft1.caption)
+        assertEquals(2, draft1.mediaItems.size)
+        assertEquals(MediaAssetId("media-1"), draft1.mediaItems[0].mediaAsset.id)
+        assertTrue(draft1.targetPlatforms.contains(TargetPlatform.InstagramFeedSquare))
+        assertNull(draft1.selectedMediaAssetId)
+
+        val draft2 = repository.get(PostDraftId("draft-2"))
+        assertNotNull(draft2)
+        assertEquals(PostFormat.SingleImage, draft2.format)
+        assertEquals(DraftStatus.Draft, draft2.status)
+        assertEquals("existing caption", draft2.caption?.text)
+        assertNull(draft2.selectedMediaAssetId)
+
+        repository.updateSelectedMediaAsset(
+            id = PostDraftId("draft-1"),
+            mediaAssetId = MediaAssetId("media-1"),
+            updatedAt = Instant.fromEpochMilliseconds(1_700_000_070_000L),
+        )
+        val withSelection = repository.get(PostDraftId("draft-1"))
+        assertEquals(MediaAssetId("media-1"), withSelection?.selectedMediaAssetId)
+
+        driver.execute(null, "DELETE FROM media_assets WHERE id = 'media-1'", 0)
+        val afterCascade = repository.get(PostDraftId("draft-1"))
+        assertNull(afterCascade?.selectedMediaAssetId)
+
+        driver.close()
     }
 
     @Test
@@ -663,7 +1154,6 @@ class SqlDelightManualWorkflowRepositoryTest {
             userRefinement = null,
             subjectDescription = null,
             targetPlatform = TargetPlatform.InstagramStoryReel,
-            maskRegion = null,
             createdAtEpochMillis = createdAt,
         )
         repository.savePhotoEditRequest(request)
@@ -714,6 +1204,27 @@ class SqlDelightManualWorkflowRepositoryTest {
             ShotQuillDatabase.Schema.create(it)
         }
 
+    private fun createV1Schema(driver: JdbcSqliteDriver) {
+        driver.execute(null, "CREATE TABLE media_assets (id TEXT NOT NULL PRIMARY KEY, type TEXT NOT NULL, uri TEXT NOT NULL, mime_type TEXT, width_px INTEGER, height_px INTEGER, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE brand_profiles (id TEXT NOT NULL PRIMARY KEY, display_name TEXT NOT NULL, voice TEXT NOT NULL, audience TEXT, visual_style_notes TEXT, product_naming_notes TEXT, created_at_epoch_millis INTEGER NOT NULL, updated_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE brand_profile_default_hashtags (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (profile_id, hashtag_order))", 0)
+        driver.execute(null, "CREATE TABLE brand_profile_links (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, link TEXT NOT NULL, link_order INTEGER NOT NULL, PRIMARY KEY (profile_id, link_order))", 0)
+        driver.execute(null, "CREATE TABLE brand_image_assets (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT, asset_order INTEGER NOT NULL, PRIMARY KEY (profile_id, media_asset_id))", 0)
+        driver.execute(null, "CREATE TABLE post_drafts (id TEXT NOT NULL PRIMARY KEY, format TEXT NOT NULL, status TEXT NOT NULL, caption_text TEXT, brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL, created_at_epoch_millis INTEGER NOT NULL, updated_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE post_draft_target_platforms (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, platform TEXT NOT NULL, PRIMARY KEY (draft_id, platform))", 0)
+        driver.execute(null, "CREATE TABLE post_draft_media_items (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, media_order INTEGER NOT NULL, PRIMARY KEY (draft_id, media_asset_id), UNIQUE (draft_id, media_order))", 0)
+        driver.execute(null, "CREATE TABLE post_draft_caption_hashtags (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (draft_id, hashtag_order))", 0)
+        driver.execute(null, "CREATE TABLE vision_descriptions (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, description TEXT NOT NULL, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE caption_requests (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, prompt TEXT NOT NULL, tone TEXT, brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE caption_results (id TEXT NOT NULL PRIMARY KEY, request_id TEXT NOT NULL REFERENCES caption_requests(id) ON DELETE CASCADE, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, caption TEXT NOT NULL, short_caption TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE caption_result_hashtags (result_id TEXT NOT NULL REFERENCES caption_results(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (result_id, hashtag_order))", 0)
+        driver.execute(null, "CREATE TABLE alt_text_results (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, alt_text TEXT NOT NULL, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE photo_edit_requests (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, source_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, intent TEXT NOT NULL, realism_level TEXT NOT NULL, quality_tier TEXT NOT NULL, prompt TEXT NOT NULL, user_refinement TEXT, subject_description TEXT, target_platform TEXT NOT NULL, mask_region TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE photo_edit_results (id TEXT NOT NULL PRIMARY KEY, request_id TEXT NOT NULL REFERENCES photo_edit_requests(id) ON DELETE CASCADE, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, edited_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, summary TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE prompt_history_entries (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, operation_type TEXT NOT NULL, prompt TEXT NOT NULL, response_summary TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE export_records (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, status TEXT NOT NULL, destination_uri TEXT, error_message TEXT, created_at_epoch_millis INTEGER NOT NULL, completed_at_epoch_millis INTEGER)", 0)
+    }
+
     private fun samplePostDraft(): PostDraft = PostDraft(
         id = PostDraftId("draft-1"),
         format = PostFormat.SingleImage,
@@ -725,7 +1236,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         ),
         targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare, TargetPlatform.BlueskyPost),
         brandProfile = sampleBrandProfile(),
-        visionDescription = VisionDescription(
+        visionDescriptions = listOf(VisionDescription(
             id = VisionDescriptionId("vision-1"),
             draftId = PostDraftId("draft-1"),
             mediaAssetId = MediaAssetId("media-1"),
@@ -733,6 +1244,7 @@ class SqlDelightManualWorkflowRepositoryTest {
             modelName = "vision-model",
             createdAtEpochMillis = createdAt,
         ),
+    ),
         captionRequests = listOf(sampleCaptionRequest()),
         captionResults = listOf(sampleCaptionResult()),
         altTextResults = listOf(sampleAltTextResult()),
@@ -851,7 +1363,191 @@ class SqlDelightManualWorkflowRepositoryTest {
         userRefinement = "Focus on the coffee cup",
         subjectDescription = "A coffee cup on a wooden table",
         targetPlatform = TargetPlatform.InstagramFeedSquare,
-        maskRegion = null,
         createdAtEpochMillis = createdAt,
     )
+
+    @Test fun `saveToGetRoundTrip preserves selectedMediaAssetId`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val editedId = MediaAssetId("media-edited-1")
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = editedId))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `saveToGetRoundTrip defaults selectedMediaAssetId to null`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        assertNull(repository.get(PostDraftId("draft-1"))?.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `saveToGetRoundTrip preserves all draft columns with distinct sensitive values`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val draftCreatedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        val draftUpdatedAt = Instant.fromEpochMilliseconds(1_700_000_060_000L)
+        val selectedAssetId = MediaAssetId("media-selected-distinct")
+        val draft = samplePostDraft().copy(
+            createdAt = draftCreatedAt,
+            updatedAt = draftUpdatedAt,
+            selectedMediaAssetId = selectedAssetId,
+        )
+        repository.save(draft)
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(draftCreatedAt, stored.createdAt)
+        assertEquals(draftUpdatedAt, stored.updatedAt)
+        assertEquals(selectedAssetId, stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset sets non-null value and advances timestamp`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `selectionChangeDoesNotDisturbUnrelatedDraftState`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt)
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(original.format, stored.format)
+        assertEquals(original.status, stored.status)
+        assertEquals(original.caption, stored.caption)
+        assertEquals(original.mediaItems, stored.mediaItems)
+        assertEquals(original.targetPlatforms, stored.targetPlatforms)
+        assertEquals(original.brandProfile, stored.brandProfile)
+        assertEquals(original.visionDescriptions, stored.visionDescriptions)
+        assertEquals(original.captionRequests, stored.captionRequests)
+        assertEquals(original.captionResults, stored.captionResults)
+        assertEquals(original.altTextResults, stored.altTextResults)
+        assertEquals(original.photoEditRequests, stored.photoEditRequests)
+        assertEquals(original.photoEditResults, stored.photoEditResults)
+        assertEquals(original.promptHistory, stored.promptHistory)
+        assertEquals(original.exportRecords, stored.exportRecords)
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateUpdatedAt advances timestamp without changing status`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertTrue(repository.updateUpdatedAt(PostDraftId("draft-1"), newUpdatedAt))
+        assertFalse(repository.updateUpdatedAt(PostDraftId("missing"), newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(original.status, stored.status)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset with null clears selection and advances timestamp`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val editedId = MediaAssetId("media-edited-1")
+        repository.save(samplePostDraft().copy(selectedMediaAssetId = editedId))
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, original.selectedMediaAssetId)
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), null, newUpdatedAt))
+        assertEquals(UpdateSelectionResult.DraftNotFound, repository.updateSelectedMediaAsset(PostDraftId("missing"), null, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset rejects unrelated existing media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val foreignMediaId = MediaAssetId("media-2")
+        repository.save(sampleMediaAsset().copy(id = foreignMediaId, uri = "file://other.jpg"))
+        val otherDraft = samplePostDraft().copy(
+            id = PostDraftId("draft-2"),
+            mediaItems = listOf(PostMediaItem(sampleMediaAsset().copy(id = foreignMediaId), 0)),
+            photoEditResults = emptyList(),
+        )
+        repository.save(otherDraft)
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), foreignMediaId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset accepts draft-owned original media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val originalId = MediaAssetId("media-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), originalId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(originalId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset accepts draft-owned edited media asset`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        assertNull(original.selectedMediaAssetId)
+        val editedId = MediaAssetId("media-edited-1")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.Success, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), editedId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertEquals(editedId, stored.selectedMediaAssetId)
+        assertEquals(newUpdatedAt, stored.updatedAt)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset rejects media asset not attached to any draft`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val orphanId = MediaAssetId("orphan-media")
+        repository.save(sampleMediaAsset().copy(id = orphanId, uri = "file://orphan.jpg"))
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), orphanId, newUpdatedAt))
+        val stored = repository.get(PostDraftId("draft-1"))!!
+        assertNull(stored.selectedMediaAssetId)
+        driver.close()
+    }
+
+    @Test fun `updateSelectedMediaAsset rejects media asset not in media_assets`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val original = repository.get(PostDraftId("draft-1"))!!
+        val nonexistentId = MediaAssetId("no-such-media")
+        val newUpdatedAt = Instant.fromEpochMilliseconds(original.updatedAt.toEpochMilliseconds() + 10_000)
+        assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), nonexistentId, newUpdatedAt))
+        driver.close()
+    }
 }

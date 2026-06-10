@@ -1,0 +1,61 @@
+package com.digitumdei.shotquill.media
+
+import com.digitumdei.shotquill.shared.domain.MediaAsset
+import com.digitumdei.shotquill.shared.domain.MediaAssetId
+import com.digitumdei.shotquill.shared.domain.MediaType
+import com.digitumdei.shotquill.shared.workflow.PhotoEditMediaSaver
+import com.digitumdei.shotquill.shared.workflow.SaveEditedImageResult
+import java.io.File
+import java.io.FileOutputStream
+
+open class AndroidPhotoEditMediaSaver(
+    private val filesDir: File,
+) : PhotoEditMediaSaver {
+    override fun save(
+        bytes: ByteArray,
+        mimeType: String,
+        originalMediaAsset: MediaAsset,
+        mediaAssetId: MediaAssetId,
+        createdAtEpochMillis: Long,
+    ): SaveEditedImageResult {
+        val extension = MediaFileManager.mimeTypeToExtension(mimeType)
+        val destDir = File(filesDir, "media/edited")
+        if (!destDir.mkdirs() && !destDir.exists()) {
+            return SaveEditedImageResult.Failure("Failed to create directory: $destDir")
+        }
+        val fileName = "${mediaAssetId.value}$extension"
+        val destFile = File(destDir, fileName)
+
+        if (originalMediaAsset.uri == "file://${destFile.absolutePath}") {
+            return SaveEditedImageResult.Failure("Destination path matches original source file URI")
+        }
+        if (destFile.exists()) {
+            return SaveEditedImageResult.Failure("Destination file already exists: $destFile")
+        }
+
+        return try {
+            writeBytesToFile(bytes, destFile)
+            val (width, height) = MediaFileManager.readImageDimensions(destFile.absolutePath)
+            SaveEditedImageResult.Success(
+                MediaAsset(
+                    id = mediaAssetId,
+                    type = MediaType.EditedPhoto,
+                    uri = "file://${destFile.absolutePath}",
+                    mimeType = mimeType,
+                    widthPx = width,
+                    heightPx = height,
+                    createdAtEpochMillis = createdAtEpochMillis,
+                ),
+            )
+        } catch (e: Exception) {
+            destFile.delete()
+            SaveEditedImageResult.Failure(e.message ?: "Unknown error saving edited image")
+        }
+    }
+
+    open fun writeBytesToFile(bytes: ByteArray, file: File) {
+        FileOutputStream(file).use { output ->
+            output.write(bytes)
+        }
+    }
+}

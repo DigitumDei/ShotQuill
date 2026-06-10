@@ -7,10 +7,11 @@ data class PostDraft(
     val format: PostFormat,
     val status: DraftStatus,
     val mediaItems: List<PostMediaItem>,
+    val selectedMediaAssetId: MediaAssetId? = null,
     val caption: CaptionDraft?,
     val targetPlatforms: Set<TargetPlatform>,
     val brandProfile: BrandProfile?,
-    val visionDescription: VisionDescription?,
+    val visionDescriptions: List<VisionDescription>,
     val captionRequests: List<CaptionRequest>,
     val captionResults: List<CaptionResult>,
     val altTextResults: List<AltTextResult>,
@@ -45,9 +46,15 @@ data class PostDraft(
     }
 }
 
-fun PostDraft.primaryMediaAsset(): MediaAsset =
-    mediaItems.minByOrNull { it.order }?.mediaAsset
+fun PostDraft.primaryMediaAsset(): MediaAsset {
+    val selected = selectedMediaAssetId?.let { id ->
+        mediaItems.firstOrNull { it.mediaAsset.id == id }?.mediaAsset
+            ?: photoEditResults.firstOrNull { it.editedMediaAsset.id == id }?.editedMediaAsset
+    }
+    return selected
+        ?: mediaItems.minByOrNull { it.order }?.mediaAsset
         ?: error("Post draft must include at least one media item")
+}
 
 data class PostMediaItem(
     val mediaAsset: MediaAsset,
@@ -130,6 +137,12 @@ data class PhotoEditRequest(
     val userRefinement: String? = null,
     val subjectDescription: String? = null,
     val targetPlatform: TargetPlatform,
+    /**
+     * Persisted for future use. Mask-scoped editing is not implemented in the current
+     * issue scope - no execution path reads this field to build a mask image upload.
+     * Stored so drafts that include mask-region definitions survive round-trips through
+     * persistence until mask-region support is added end-to-end.
+     */
     val maskRegion: MaskRegion? = null,
     val createdAtEpochMillis: Long,
 ) {
