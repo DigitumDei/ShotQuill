@@ -168,7 +168,7 @@ class FinalPostComposerViewModelTest {
             assertNull(shortCaption)
             assertNull(altText)
             assertEquals(emptyList<String>(), hashtags)
-            assertNull(targetPlatform)
+            assertEquals(TargetPlatform.InstagramFeedSquare, targetPlatform)
             assertTrue(isLoaded)
             assertNull(statusMessage)
             assertFalse(actions.canShare)
