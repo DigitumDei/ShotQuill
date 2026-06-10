@@ -40,6 +40,28 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
+    fun `share launches chooser for a percent-encoded file uri`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+        val imageFile = File(applicationContext.filesDir, "media/originals/share file.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(0x0A, 0x0B, 0x0C))
+        }
+
+        val encodedUri = "file://${imageFile.absolutePath.replace(" ", "%20")}"
+        val result = launcher.share(encodedUri, "Caption text")
+
+        assertTrue(result)
+        val chooser = assertNotNull(recordingContext.startedIntent)
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        val shareIntent = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+        assertNotNull(shareIntent)
+        assertEquals(Intent.ACTION_SEND, shareIntent.action)
+        assertEquals("image/*", shareIntent.type)
+        assertNotNull(shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java))
+    }
+
+    @Test
     fun `share launches chooser and returns true for text only share`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
@@ -92,6 +114,17 @@ class AndroidPostShareLauncherTest {
         val missingFile = File(applicationContext.filesDir, "media/originals/missing.jpg")
 
         val result = launcher.share("file://${missingFile.absolutePath}", "Caption text")
+
+        assertFalse(result)
+        assertNull(recordingContext.startedIntent)
+    }
+
+    @Test
+    fun `share returns false when the file uri path cannot be decoded`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+
+        val result = launcher.share("file:///media/originals/bad%2", "Caption text")
 
         assertFalse(result)
         assertNull(recordingContext.startedIntent)

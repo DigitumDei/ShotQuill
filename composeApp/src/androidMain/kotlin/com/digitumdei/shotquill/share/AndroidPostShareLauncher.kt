@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.share
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.digitumdei.shotquill.BuildConfig
 import java.io.File
@@ -22,7 +23,7 @@ class AndroidPostShareLauncher(
     private fun buildChooserIntent(imageUri: String?, text: String): Intent? {
         val shareIntent =
             if (imageUri != null) {
-                val imageFile = File(imageUri.removePrefix("file://"))
+                val imageFile = resolveShareImageFile(imageUri) ?: return null
                 if (!imageFile.exists() || !imageFile.isFile) {
                     return null
                 }
@@ -44,5 +45,21 @@ class AndroidPostShareLauncher(
                 }
             }
         return Intent.createChooser(shareIntent, null)
+    }
+
+    private fun resolveShareImageFile(imageUri: String): File? {
+        val rawPath = imageUri.removePrefix("file://")
+        val decodedPath =
+            try {
+                Uri.decode(rawPath)
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+
+        if (decodedPath.isBlank()) {
+            return null
+        }
+
+        return File(decodedPath)
     }
 }
