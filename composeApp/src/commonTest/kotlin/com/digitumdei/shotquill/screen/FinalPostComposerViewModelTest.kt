@@ -701,6 +701,55 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `shareOrExport failure on already Shared draft keeps draft Shared and records Failed export`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val existingExport = ExportRecord(
+            id = ExportRecordId("export-existing"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            status = ExportStatus.Exported,
+            destinationUri = null,
+            errorMessage = null,
+            createdAtEpochMillis = 1_700_000_000_000L,
+            completedAtEpochMillis = 1_700_000_000_500L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.Shared,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+            targetPlatforms = setOf(TargetPlatform.InstagramFeedSquare),
+            exportRecords = listOf(existingExport),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = false)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.Shared, updatedDraft.status)
+        assertEquals(2, updatedDraft.exportRecords.size)
+        assertEquals(ExportStatus.Exported, updatedDraft.exportRecords[0].status)
+        assertEquals(ExportStatus.Failed, updatedDraft.exportRecords[1].status)
+        assertEquals("Unable to open share sheet", updatedDraft.exportRecords[1].errorMessage)
+    }
+
+    @Test
     fun `shareOrExport sets error when canShare is false`() {
         val draft = sampleDraft().copy(
             status = DraftStatus.PhotoAdded,

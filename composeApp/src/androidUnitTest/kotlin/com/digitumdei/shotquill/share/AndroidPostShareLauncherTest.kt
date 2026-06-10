@@ -75,6 +75,17 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
+    fun `share returns false when the image path is invalid`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+
+        val result = launcher.share("content://example/not-a-real-image.jpg", "Caption text")
+
+        assertFalse(result)
+        assertNull(recordingContext.startedIntent)
+    }
+
+    @Test
     fun `share returns false when the image file does not exist`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
