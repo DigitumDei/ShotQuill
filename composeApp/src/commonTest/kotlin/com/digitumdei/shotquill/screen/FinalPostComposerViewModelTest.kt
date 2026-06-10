@@ -972,6 +972,9 @@ class FinalPostComposerViewModelTest {
         viewModel.shareOrExport()
 
         assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.isLoaded)
+        assertEquals("Caption", viewModel.state.caption)
+        assertEquals(3, repository.getCount)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.ReadyToShare, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
@@ -1021,6 +1024,9 @@ class FinalPostComposerViewModelTest {
         viewModel.shareOrExport()
 
         assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.isLoaded)
+        assertEquals("Caption", viewModel.state.caption)
+        assertEquals(3, repository.getCount)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(2, updatedDraft.exportRecords.size)
@@ -1154,6 +1160,8 @@ class FinalPostComposerViewModelTest {
             initialDraft?.let { mutableMapOf(it.id to it) } ?: mutableMapOf()
         private val storedVisionDescriptions = mutableListOf<VisionDescription>()
         private val storedPromptHistory = mutableListOf<PromptHistoryEntry>()
+        var getCount = 0
+            private set
         var finalPostContentGetCount = 0
             private set
         var finalPostContentSaveCount = 0
@@ -1167,7 +1175,10 @@ class FinalPostComposerViewModelTest {
         }
 
         override fun save(postDraft: PostDraft) { drafts[postDraft.id] = postDraft }
-        override fun get(id: PostDraftId): PostDraft? = drafts[id]
+        override fun get(id: PostDraftId): PostDraft? {
+            getCount++
+            return drafts[id]
+        }
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
             val current = drafts[id] ?: return false
             drafts[id] = current.copy(status = status, updatedAt = updatedAt)

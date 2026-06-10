@@ -245,7 +245,9 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = state.copy(statusMessage = "Unable to open share sheet")
+            state = repository.get(draftId)?.toState(statusMessage = "Unable to open share sheet")
+                ?.withPendingTextOverrides()
+                ?: unloadedState(statusMessage = "Draft not found")
         }
     }
 
