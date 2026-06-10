@@ -201,7 +201,7 @@ class FinalPostComposerViewModel(
         )
         repository.save(draftWithExport)
 
-        val hashtagText = state.hashtags.joinToString(" ")
+        val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
         val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
@@ -320,4 +320,6 @@ class FinalPostComposerViewModel(
     private fun String?.isValidCaption(): Boolean = !isNullOrBlank()
 
     private fun String?.normalizedCaption(): String? = takeIf { !it.isNullOrBlank() }
+
+    private fun String.normalizedHashtag(): String = if (startsWith("#")) this else "#$this"
 }

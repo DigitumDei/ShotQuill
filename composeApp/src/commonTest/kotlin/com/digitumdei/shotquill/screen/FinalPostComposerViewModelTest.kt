@@ -862,6 +862,37 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `shareOrExport normalizes bare hashtags in the composed share payload`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("launch", "#ready"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.ReadyToShare,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = true)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Caption\n\n#launch #ready", shareLauncher.lastText)
+    }
+
+    @Test
     fun `shareOrExport on already Shared draft records another Exported handoff without changing status`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),
