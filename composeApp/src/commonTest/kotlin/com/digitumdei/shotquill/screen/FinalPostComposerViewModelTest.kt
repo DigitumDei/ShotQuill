@@ -1098,8 +1098,9 @@ class FinalPostComposerViewModelTest {
         )
 
         viewModel.load()
-        viewModel.shareOrExport()
+        val shareResult = runCatching { viewModel.shareOrExport() }
 
+        assertTrue(shareResult.isSuccess)
         assertEquals("Cannot open share sheet while status is archived", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Archived, updatedDraft.status)
