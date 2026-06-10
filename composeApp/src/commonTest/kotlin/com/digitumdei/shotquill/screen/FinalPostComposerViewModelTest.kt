@@ -16,6 +16,7 @@ import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
@@ -241,6 +242,444 @@ class FinalPostComposerViewModelTest {
             assertTrue(isShowingEdited)
             assertTrue(actions.canSelectEdited)
             assertFalse(actions.canShare)
+        }
+    }
+
+    // ===== Manual edit tests =====
+
+    @Test
+    fun `updateCaption updates state and persists FinalPostContent`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateCaption("Manual caption")
+
+        with(viewModel.state) {
+            assertEquals("Manual caption", caption)
+            assertTrue(actions.canShare)
+        }
+        val persisted = repository.getFinalPostContent(draftId)
+        assertEquals("Manual caption", persisted?.editedCaption)
+    }
+
+    @Test
+    fun `updateAltText updates state and persists FinalPostContent`() {
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateAltText("Manual alt text")
+
+        assertEquals("Manual alt text", viewModel.state.altText)
+        val persisted = repository.getFinalPostContent(draftId)
+        assertEquals("Manual alt text", persisted?.editedAltText)
+    }
+
+    @Test
+    fun `fresh viewmodel loaded after manual edit sees persisted edits`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val firstVm = createViewModel(repository)
+
+        firstVm.load()
+        firstVm.updateCaption("Persistent caption")
+        firstVm.updateAltText("Persistent alt text")
+
+        val secondVm = createViewModel(repository)
+        secondVm.load()
+
+        with(secondVm.state) {
+            assertEquals("Persistent caption", caption)
+            assertEquals("Persistent alt text", altText)
+        }
+    }
+
+    @Test
+    fun `editing caption does not clobber previously edited alt text`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Gen caption",
+            shortCaption = null,
+            hashtags = emptyList(),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Gen alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateAltText("Manual alt text")
+        viewModel.updateCaption("Manual caption")
+
+        val persisted = repository.getFinalPostContent(draftId)
+        assertEquals("Manual caption", persisted?.editedCaption)
+        assertEquals("Manual alt text", persisted?.editedAltText)
+    }
+
+    @Test
+    fun `editing alt text does not clobber previously edited caption`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Gen caption",
+            shortCaption = null,
+            hashtags = emptyList(),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Gen alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateCaption("Manual caption")
+        viewModel.updateAltText("Manual alt text")
+
+        val persisted = repository.getFinalPostContent(draftId)
+        assertEquals("Manual caption", persisted?.editedCaption)
+        assertEquals("Manual alt text", persisted?.editedAltText)
+    }
+
+    // ===== Image switching tests =====
+
+    @Test
+    fun `selectOriginalPhoto calls updateSelectedMediaAsset with null and flips isShowingEdited`() {
+        val editedMediaAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-1"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val photoEditResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-1"),
+            requestId = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = draftId,
+            editedMediaAsset = editedMediaAsset,
+            summary = "Improved",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            selectedMediaAssetId = editedMediaAsset.id,
+            photoEditResults = listOf(photoEditResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        assertTrue(viewModel.state.isShowingEdited)
+
+        viewModel.selectOriginalPhoto()
+
+        assertFalse(viewModel.state.isShowingEdited)
+        assertEquals(viewModel.state.originalPhotoUri, viewModel.state.selectedPhotoUri)
+        assertNull(repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals("Using original photo", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun `selectEditedPhoto selects latest edited asset and flips isShowingEdited`() {
+        val editedMediaAsset = sampleMediaAsset().copy(
+            id = MediaAssetId("media-edited-1"),
+            type = MediaType.EditedPhoto,
+            uri = "file://photo-edited.jpg",
+        )
+        val photoEditResult = PhotoEditResult(
+            id = PhotoEditResultId("photo-edit-result-1"),
+            requestId = PhotoEditRequestId("photo-edit-request-1"),
+            draftId = draftId,
+            editedMediaAsset = editedMediaAsset,
+            summary = "Improved",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_030_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoEdited,
+            photoEditResults = listOf(photoEditResult),
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        assertFalse(viewModel.state.isShowingEdited)
+
+        viewModel.selectEditedPhoto()
+
+        assertTrue(viewModel.state.isShowingEdited)
+        assertEquals("file://photo-edited.jpg", viewModel.state.selectedPhotoUri)
+        assertEquals(editedMediaAsset.id, repository.get(draftId)?.selectedMediaAssetId)
+        assertEquals("Using edited photo", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun `selectEditedPhoto sets error status when no edited asset exists`() {
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoAdded,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        val prevCaption = viewModel.state.caption
+
+        viewModel.selectEditedPhoto()
+
+        assertEquals("No edited photo available", viewModel.state.statusMessage)
+        assertEquals(prevCaption, viewModel.state.caption)
+    }
+
+    // ===== Copy tests =====
+
+    @Test
+    fun `copyCaption invokes clipboard with state caption and sets status message`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption to copy",
+            shortCaption = "Short",
+            hashtags = emptyList(),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+        )
+
+        viewModel.load()
+        viewModel.copyCaption()
+
+        assertEquals("caption", clipboard.lastLabel)
+        assertEquals("Caption to copy", clipboard.lastText)
+        assertEquals("Caption copied", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun `copyAltText invokes clipboard with state alt text and sets status message`() {
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Alt text to copy",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            altTextResults = listOf(altTextResult),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+        )
+
+        viewModel.load()
+        viewModel.copyAltText()
+
+        assertEquals("alt text", clipboard.lastLabel)
+        assertEquals("Alt text to copy", clipboard.lastText)
+        assertEquals("Alt text copied", viewModel.state.statusMessage)
+    }
+
+    // ===== Share tests =====
+
+    @Test
+    fun `shareOrExport with success creates Exported ExportRecord and transitions draft to Shared`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = true)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Post shared", viewModel.state.statusMessage)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.Shared, updatedDraft.status)
+        assertEquals(1, updatedDraft.exportRecords.size)
+        val exportRecord = updatedDraft.exportRecords.first()
+        assertEquals(ExportStatus.Exported, exportRecord.status)
+        assertEquals("file://photo.jpg", shareLauncher.lastImageUri)
+        assertTrue(shareLauncher.lastText?.contains("Caption") == true)
+        assertTrue(shareLauncher.lastText?.contains("#test") == true)
+    }
+
+    @Test
+    fun `shareOrExport with failure creates Failed ExportRecord and sets error message`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = emptyList(),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = false)
+        val viewModel = createViewModel(
+            repository = repository,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("Share was cancelled or failed", viewModel.state.statusMessage)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(1, updatedDraft.exportRecords.size)
+        val exportRecord = updatedDraft.exportRecords.first()
+        assertEquals(ExportStatus.Failed, exportRecord.status)
+        assertEquals("Share was cancelled or failed", exportRecord.errorMessage)
+    }
+
+    @Test
+    fun `shareOrExport sets error when canShare is false`() {
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoAdded,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        assertFalse(viewModel.state.actions.canShare)
+
+        viewModel.shareOrExport()
+
+        assertEquals("Cannot share: caption and photo are required", viewModel.state.statusMessage)
+    }
+
+    private class FakeClipboardWriter : ClipboardWriter {
+        var lastLabel: String? = null
+        var lastText: String? = null
+        override fun copy(label: String, text: String) {
+            lastLabel = label
+            lastText = text
+        }
+    }
+
+    private class FakePostShareLauncher(private val success: Boolean) : PostShareLauncher {
+        var lastImageUri: String? = null
+        var lastText: String? = null
+        override fun share(imageUri: String?, text: String): Boolean {
+            lastImageUri = imageUri
+            lastText = text
+            return success
         }
     }
 
