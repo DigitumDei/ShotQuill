@@ -120,11 +120,15 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns false when the file uri path cannot be decoded`() {
+    fun `share returns false when the file uri contains a malformed percent escape`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
+        val malformedFile = File(applicationContext.filesDir, "media/originals/bad%2.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(0x0D, 0x0E, 0x0F))
+        }
 
-        val result = launcher.share("file:///media/originals/bad%2", "Caption text")
+        val result = launcher.share("file://${malformedFile.absolutePath}", "Caption text")
 
         assertFalse(result)
         assertNull(recordingContext.startedIntent)

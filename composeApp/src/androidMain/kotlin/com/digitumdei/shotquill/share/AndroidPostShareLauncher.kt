@@ -48,18 +48,44 @@ class AndroidPostShareLauncher(
     }
 
     private fun resolveShareImageFile(imageUri: String): File? {
-        val rawPath = imageUri.removePrefix("file://")
-        val decodedPath =
-            try {
-                Uri.decode(rawPath)
-            } catch (_: IllegalArgumentException) {
-                return null
-            }
+        val parsedUri = Uri.parse(imageUri)
+        if (parsedUri.scheme != "file") {
+            return null
+        }
+
+        val encodedPath = parsedUri.encodedPath ?: return null
+        if (!hasValidPercentEncoding(encodedPath)) {
+            return null
+        }
+
+        val decodedPath = Uri.decode(encodedPath)
 
         if (decodedPath.isBlank()) {
             return null
         }
 
         return File(decodedPath)
+    }
+
+    private fun hasValidPercentEncoding(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            if (value[index] == '%') {
+                if (index + 2 >= value.length) {
+                    return false
+                }
+                if (!value[index + 1].isHexDigit() || !value[index + 2].isHexDigit()) {
+                    return false
+                }
+                index += 3
+                continue
+            }
+            index++
+        }
+        return true
+    }
+
+    private fun Char.isHexDigit(): Boolean {
+        return (this in '0'..'9') || (this in 'a'..'f') || (this in 'A'..'F')
     }
 }
