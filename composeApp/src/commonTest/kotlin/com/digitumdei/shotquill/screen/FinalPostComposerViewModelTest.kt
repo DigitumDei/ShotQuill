@@ -398,6 +398,55 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `repository refresh before persistence preserves pending manual edits`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Generated caption",
+            shortCaption = "Short",
+            hashtags = listOf("#gen"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val altTextResult = AltTextResult(
+            id = AltTextResultId("alt-text-1"),
+            draftId = draftId,
+            mediaAssetId = mediaAssetId,
+            altText = "Generated alt text",
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_020_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.TextGenerated,
+            captionResults = listOf(captionResult),
+            altTextResults = listOf(altTextResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        viewModel.updateCaption("Manual caption")
+        viewModel.updateAltText("Manual alt text")
+
+        viewModel.load()
+
+        with(viewModel.state) {
+            assertEquals("Manual caption", caption)
+            assertEquals("Manual alt text", altText)
+            assertTrue(actions.canShare)
+        }
+
+        viewModel.persistFinalPostContent()
+
+        assertEquals(1, repository.finalPostContentSaveCount)
+        assertEquals("Manual caption", repository.lastSavedFinalPostContent?.editedCaption)
+        assertEquals("Manual alt text", repository.lastSavedFinalPostContent?.editedAltText)
+    }
+
+    @Test
     fun `editing alt text does not clobber previously edited caption`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),

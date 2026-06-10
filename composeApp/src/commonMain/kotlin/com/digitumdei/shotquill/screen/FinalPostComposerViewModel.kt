@@ -54,6 +54,8 @@ class FinalPostComposerViewModel(
     var state: FinalPostComposerState by mutableStateOf(unloadedState())
         private set
     private var operationSequence = 0
+    @Volatile private var pendingCaption: String? = null
+    @Volatile private var pendingAltText: String? = null
 
     fun load() {
         val draft = repository.get(draftId)
@@ -61,17 +63,19 @@ class FinalPostComposerViewModel(
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
-        state = draft.toState()
+        state = draft.toState().withPendingTextOverrides()
     }
 
     fun updateCaption(text: String) {
         if (!state.isLoaded) return
+        pendingCaption = text
         val newCanShare = text.isNotBlank() && state.selectedPhotoUri != null
         state = state.copy(caption = text, actions = state.actions.copy(canShare = newCanShare))
     }
 
     fun updateAltText(text: String) {
         if (!state.isLoaded) return
+        pendingAltText = text
         state = state.copy(altText = text)
     }
 
@@ -80,11 +84,13 @@ class FinalPostComposerViewModel(
         repository.saveFinalPostContent(
             FinalPostContent(
                 draftId = draftId,
-                editedCaption = state.caption,
-                editedAltText = state.altText,
+                editedCaption = pendingCaption ?: state.caption,
+                editedAltText = pendingAltText ?: state.altText,
                 updatedAtEpochMillis = clock.nowMillis(),
             ),
         )
+        pendingCaption = null
+        pendingAltText = null
     }
 
     fun selectOriginalPhoto() {
@@ -97,6 +103,7 @@ class FinalPostComposerViewModel(
         when (repository.updateSelectedMediaAsset(draftId, null, updatedAt)) {
             UpdateSelectionResult.Success -> {
                 state = repository.get(draftId)?.toState(statusMessage = "Using original photo")
+                    ?.withPendingTextOverrides()
                     ?: unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.DraftNotFound -> {
@@ -115,6 +122,7 @@ class FinalPostComposerViewModel(
         }
         val latestResult = draft.photoEditResults.maxByOrNull { it.createdAtEpochMillis } ?: run {
             state = repository.get(draftId)?.toState(statusMessage = "No edited photo available")
+                ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
             return
         }
@@ -123,6 +131,7 @@ class FinalPostComposerViewModel(
         when (repository.updateSelectedMediaAsset(draftId, latestResult.editedMediaAsset.id, updatedAt)) {
             UpdateSelectionResult.Success -> {
                 state = repository.get(draftId)?.toState(statusMessage = "Using edited photo")
+                    ?.withPendingTextOverrides()
                     ?: unloadedState(statusMessage = "Draft not found")
             }
             UpdateSelectionResult.DraftNotFound -> {
@@ -207,6 +216,7 @@ class FinalPostComposerViewModel(
                 ),
             )
             state = repository.get(draftId)?.toState(statusMessage = "Share sheet opened")
+                ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {
             val failedExport = exportRecord.copy(
@@ -253,6 +263,18 @@ class FinalPostComposerViewModel(
             actions = FinalPostComposerActions(
                 canShare = effectiveCaption(content) != null && activeAsset?.uri != null,
                 canSelectEdited = editedAsset != null,
+            ),
+        )
+    }
+
+    private fun FinalPostComposerState.withPendingTextOverrides(): FinalPostComposerState {
+        val caption = pendingCaption ?: caption
+        val altText = pendingAltText ?: altText
+        return copy(
+            caption = caption,
+            altText = altText,
+            actions = actions.copy(
+                canShare = caption?.isNotBlank() == true && selectedPhotoUri != null,
             ),
         )
     }
