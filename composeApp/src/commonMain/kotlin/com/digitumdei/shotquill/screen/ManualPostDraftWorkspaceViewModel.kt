@@ -409,29 +409,6 @@ class ManualPostDraftWorkspaceViewModel(
         }
     }
 
-    fun markShareOrExportStarted() {
-        val draft = postDraftRepository.get(draftId) ?: run {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
-        }
-        if (!state.actions.canShareOrExport || !draft.canUpdateOrTransitionTo(DraftStatus.ReadyToShare)) {
-            state = draft.toState(
-                statusMessage = "Cannot prepare final share step while status is ${draft.status.wireValue}",
-                isPromptHistoryVisible = state.isPromptHistoryVisible,
-            )
-            return
-        }
-        val now = clock.nowMillis()
-        val operationUpdatedAt = operationUpdatedAt(draft, now)
-        val transitioned = if (draft.status == DraftStatus.ReadyToShare) {
-            draft.copy(updatedAt = operationUpdatedAt)
-        } else {
-            draft.transitionTo(DraftStatus.ReadyToShare, operationUpdatedAt)
-        }
-        postDraftRepository.save(transitioned)
-        state = transitioned.toState("Ready for final share step", state.isPromptHistoryVisible)
-    }
-
     fun togglePromptHistory() {
         state = state.copy(isPromptHistoryVisible = !state.isPromptHistoryVisible)
     }

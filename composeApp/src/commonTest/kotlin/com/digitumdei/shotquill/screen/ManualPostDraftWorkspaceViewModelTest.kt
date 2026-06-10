@@ -1509,24 +1509,6 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
-    fun movesDraftReadyToShareOnShareOrExport() {
-        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
-        val viewModel = ManualPostDraftWorkspaceViewModel(
-            draftId = draftId,
-            postDraftRepository = repository,
-            clock = FixedClock(1_700_000_600_000L),
-        )
-        viewModel.load()
-
-        viewModel.markShareOrExportStarted()
-
-        val stored = repository.get(draftId)
-        assertEquals(DraftStatus.ReadyToShare, stored?.status)
-        assertEquals(emptyList(), stored?.exportRecords)
-        assertEquals("Ready for final share step", viewModel.state.statusMessage)
-    }
-
-    @Test
     fun updatesStatusMessagesForCopyActions() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)

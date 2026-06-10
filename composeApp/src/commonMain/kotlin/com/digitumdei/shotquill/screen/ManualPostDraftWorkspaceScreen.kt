@@ -106,10 +106,7 @@ fun ManualPostDraftWorkspaceScreen(
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
-        onShareOrExport = {
-            refresh { markShareOrExportStarted() }
-            onNavigateToFinalComposer()
-        },
+        onShareOrExport = onNavigateToFinalComposer,
         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
         onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
