@@ -268,12 +268,12 @@ class FinalPostComposerViewModel(
             return
         }
         if (draft.status == DraftStatus.Archived) return
+        persistFinalPostContent()
         val now = clock.nowMillis()
         val updatedAt = operationUpdatedAt(draft, now)
         val transitioned = draft.transitionTo(DraftStatus.Archived, updatedAt)
         repository.save(transitioned)
         state = repository.get(draftId)?.toState(statusMessage = "Draft archived")
-            ?.withPendingTextOverrides()
             ?: unloadedState(statusMessage = "Draft not found")
     }
 
