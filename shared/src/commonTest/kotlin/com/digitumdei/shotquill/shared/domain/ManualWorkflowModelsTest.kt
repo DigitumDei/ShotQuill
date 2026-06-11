@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ManualWorkflowModelsTest {
@@ -82,6 +83,33 @@ class ManualWorkflowModelsTest {
         assertEquals("Morning focus, freshly brewed.", result.caption)
         assertEquals("Freshly brewed focus.", result.shortCaption)
         assertEquals(listOf("#coffee", "#work"), result.hashtags)
+    }
+
+    @Test
+    fun effectiveShortCaptionFollowsManualCaptionOverride() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = captionRequestId,
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Morning focus, freshly brewed.",
+            shortCaption = "Freshly brewed focus.",
+            hashtags = listOf("#coffee", "#work"),
+            modelName = "caption-model",
+            createdAtEpochMillis = createdAt,
+        )
+        val draft = samplePostDraft().copy(
+            captionResults = listOf(captionResult),
+        )
+        val finalPostContent = FinalPostContent(
+            draftId = draftId,
+            editedCaption = "Manual caption",
+            editedAltText = null,
+            updatedAtEpochMillis = updatedAt,
+        )
+
+        assertEquals("Freshly brewed focus.", draft.effectiveShortCaption(null))
+        assertNull(draft.effectiveShortCaption(finalPostContent))
     }
 
     @Test

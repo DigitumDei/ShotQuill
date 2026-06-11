@@ -53,6 +53,7 @@ fun ManualPostDraftWorkspaceScreen(
     photoEditExecutor: PhotoEditExecutor? = null,
     analyzeVision: AnalyzeVision? = null,
     onNavigateToNewPost: () -> Unit,
+    onNavigateToFinalComposer: () -> Unit = {},
 ) {
     val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
         ManualPostDraftWorkspaceViewModel(
@@ -105,7 +106,7 @@ fun ManualPostDraftWorkspaceScreen(
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
-        onShareOrExport = { refresh { markShareOrExportStarted() } },
+        onShareOrExport = onNavigateToFinalComposer,
         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
         onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
@@ -296,7 +297,7 @@ fun ManualPostDraftWorkspaceContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canShareOrExport,
         ) {
-            Text("Share or export")
+            Text("Review final share")
         }
 
         OutlinedButton(

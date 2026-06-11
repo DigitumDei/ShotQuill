@@ -19,6 +19,7 @@ data class PostDraft(
     val photoEditResults: List<PhotoEditResult>,
     val promptHistory: List<PromptHistoryEntry>,
     val exportRecords: List<ExportRecord>,
+    val finalPostContent: FinalPostContent? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
 ) {
@@ -221,4 +222,32 @@ data class BrandImageAsset(
     init {
         require(title.isNotBlank()) { "Brand image asset title cannot be blank" }
     }
+}
+
+data class FinalPostContent(
+    val draftId: PostDraftId,
+    val editedCaption: String?,
+    val editedAltText: String?,
+    val updatedAtEpochMillis: Long,
+) {
+    init {
+        require(updatedAtEpochMillis >= 0) { "updatedAtEpochMillis must be non-negative" }
+    }
+}
+
+fun PostDraft.effectiveCaption(finalPostContent: FinalPostContent?): String? {
+    val manualOverride = finalPostContent?.editedCaption
+    if (manualOverride != null) return manualOverride
+    return captionResults.maxByOrNull { it.createdAtEpochMillis }?.caption
+}
+
+fun PostDraft.effectiveShortCaption(finalPostContent: FinalPostContent?): String? {
+    if (finalPostContent?.editedCaption != null) return null
+    return captionResults.maxByOrNull { it.createdAtEpochMillis }?.shortCaption
+}
+
+fun PostDraft.effectiveAltText(finalPostContent: FinalPostContent?): String? {
+    val manualOverride = finalPostContent?.editedAltText
+    if (manualOverride != null) return manualOverride
+    return altTextResults.maxByOrNull { it.createdAtEpochMillis }?.altText
 }

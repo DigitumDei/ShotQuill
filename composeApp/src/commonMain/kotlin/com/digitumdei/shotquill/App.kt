@@ -35,8 +35,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.clipboard.ClipboardWriter
+import com.digitumdei.shotquill.screen.FinalPostComposerScreen
 import com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreen
 import com.digitumdei.shotquill.screen.NewPostScreen
+import com.digitumdei.shotquill.share.PostShareLauncher
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.EpochClock
@@ -66,10 +69,24 @@ internal enum class AppScreen {
     NewPost,
     DraftWorkspace,
     Settings,
+    FinalComposer,
 }
 
 internal fun appScreenFromSaveable(value: String): AppScreen =
     AppScreen.entries.firstOrNull { it.name == value } ?: AppScreen.NewPost
+
+internal fun finalComposerUnavailableMessage(
+    hasManualWorkflowRepository: Boolean,
+    hasDraftId: Boolean,
+    hasClipboardWriter: Boolean,
+    hasPostShareLauncher: Boolean,
+): String = when {
+    !hasManualWorkflowRepository -> "Draft repository not available"
+    !hasDraftId -> "Draft ID not available"
+    !hasClipboardWriter -> "Clipboard writer not available"
+    !hasPostShareLauncher -> "Share launcher not available"
+    else -> "Final composer dependencies not available"
+}
 
 @Composable
 fun App(
@@ -86,6 +103,8 @@ fun App(
     onClearCaptureResult: (() -> Unit)? = null,
     onClearCaptureError: (() -> Unit)? = null,
     onCleanupCapture: ((MediaCaptureResult) -> Unit)? = null,
+    clipboardWriter: ClipboardWriter? = null,
+    postShareLauncher: PostShareLauncher? = null,
 ) {
     val repository = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val profileRepository = brandProfileRepository ?: remember { InMemoryBrandProfileRepository() }
@@ -192,6 +211,9 @@ fun App(
                                 saveError = null
                                 lastProcessedUri = null
                             },
+                            onNavigateToFinalComposer = {
+                                currentScreen = AppScreen.FinalComposer.name
+                            },
                         )
                     } else {
                         NewPostScreen(
@@ -215,6 +237,37 @@ fun App(
                         brandProfileRepository = profileRepository,
                         onNavigateToNewPost = { currentScreen = AppScreen.NewPost.name },
                     )
+                }
+
+                AppScreen.FinalComposer -> {
+                    val draftId = currentDraftId
+                    if (manualWorkflowRepository != null && draftId != null && clipboardWriter != null && postShareLauncher != null) {
+                        FinalPostComposerScreen(
+                            draftId = PostDraftId(draftId),
+                            repository = manualWorkflowRepository,
+                            clipboardWriter = clipboardWriter,
+                            postShareLauncher = postShareLauncher,
+                            onBack = { currentScreen = AppScreen.DraftWorkspace.name },
+                        )
+                    } else {
+                        NewPostScreen(
+                            onCaptureFromCamera = onCaptureFromCamera ?: {},
+                            onPickFromGallery = onPickFromGallery ?: {},
+                            onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
+                            captureResult = null,
+                            errorMessage = finalComposerUnavailableMessage(
+                                hasManualWorkflowRepository = manualWorkflowRepository != null,
+                                hasDraftId = draftId != null,
+                                hasClipboardWriter = clipboardWriter != null,
+                                hasPostShareLauncher = postShareLauncher != null,
+                            ),
+                            onDismissResult = {},
+                            onDismissError = {
+                                currentScreen = AppScreen.NewPost.name
+                                currentDraftId = null
+                            },
+                        )
+                    }
                 }
             }
         }

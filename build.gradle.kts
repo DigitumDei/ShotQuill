@@ -23,12 +23,15 @@ kover {
                     "com.digitumdei.shotquill.AppKt*",
                     "com.digitumdei.shotquill.AppScreen",
                     "*MainActivity*",
+                    "com.digitumdei.shotquill.clipboard.AndroidClipboardWriter*",
+                    "com.digitumdei.shotquill.share.AndroidPostShareLauncher*",
                     "com.digitumdei.shotquill.media.MediaCaptureHandler*",
                     "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
                     "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
                     "*AndroidBrandProfileRepositoryFactory*",
                     "com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreenKt",
                     "com.digitumdei.shotquill.screen.NewPostScreenKt",
+                    "com.digitumdei.shotquill.screen.FinalPostComposerScreenKt",
                     "com.digitumdei.shotquill.shared.db.*",
                 )
             }

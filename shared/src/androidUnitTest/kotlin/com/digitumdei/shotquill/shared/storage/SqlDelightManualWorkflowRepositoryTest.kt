@@ -18,6 +18,7 @@ import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.ExportStatus
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.MaskBounds
 import com.digitumdei.shotquill.shared.domain.MaskRegion
 import com.digitumdei.shotquill.shared.domain.MediaAsset
@@ -1042,8 +1043,8 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
-    fun hasMigrationScaffoldForVersionTwo() {
-        assertEquals(2, ShotQuillDatabase.Schema.version.toInt())
+    fun hasMigrationScaffoldForVersionThree() {
+        assertEquals(3, ShotQuillDatabase.Schema.version.toInt())
     }
 
     @Test
@@ -1062,7 +1063,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-2', 'media-2', 0)", 0)
         driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'instagram_feed_square')", 0)
 
-        ShotQuillDatabase.Schema.migrate(driver, 1, 2)
+        ShotQuillDatabase.Schema.migrate(driver, 1, ShotQuillDatabase.Schema.version)
 
         val repository = SqlDelightManualWorkflowRepository(driver)
 
@@ -1094,6 +1095,45 @@ class SqlDelightManualWorkflowRepositoryTest {
         driver.execute(null, "DELETE FROM media_assets WHERE id = 'media-1'", 0)
         val afterCascade = repository.get(PostDraftId("draft-1"))
         assertNull(afterCascade?.selectedMediaAssetId)
+
+        driver.close()
+    }
+
+    @Test
+    fun v2ToV3MigrationAddsFinalPostContentTable() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+
+        createV1Schema(driver)
+
+        driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
+        driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'text_generated', 'Generated caption', NULL, 1700000000000, 1700000060000)", 0)
+        driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
+        driver.execute(null, "INSERT INTO post_draft_target_platforms(draft_id, platform) VALUES('draft-1', 'instagram_feed_square')", 0)
+
+        ShotQuillDatabase.Schema.migrate(driver, 1, 2)
+
+        ShotQuillDatabase.Schema.migrate(driver, 2, ShotQuillDatabase.Schema.version)
+
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        val content = FinalPostContent(
+            draftId = PostDraftId("draft-1"),
+            editedCaption = "Manually edited caption",
+            editedAltText = "Manually edited alt text",
+            updatedAtEpochMillis = 1_700_000_070_000L,
+        )
+        repository.saveFinalPostContent(content)
+
+        val stored = repository.getFinalPostContent(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        assertEquals("Manually edited caption", stored.editedCaption)
+        assertEquals("Manually edited alt text", stored.editedAltText)
+
+        val draft = repository.get(PostDraftId("draft-1"))
+        assertNotNull(draft)
+        assertEquals("Manually edited caption", draft.finalPostContent?.editedCaption)
+        assertEquals("Manually edited alt text", draft.finalPostContent?.editedAltText)
 
         driver.close()
     }

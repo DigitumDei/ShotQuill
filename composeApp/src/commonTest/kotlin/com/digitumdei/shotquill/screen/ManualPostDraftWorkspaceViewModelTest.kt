@@ -11,7 +11,6 @@ import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
-import com.digitumdei.shotquill.shared.domain.ExportStatus
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.MediaType
@@ -38,6 +37,7 @@ import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
@@ -1506,26 +1506,6 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.editPhotoWithAi()
         assertEquals("Draft not found", viewModel.state.statusMessage)
-    }
-
-    @Test
-    fun persistsPendingExportAndMovesDraftReadyToShare() {
-        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
-        val viewModel = ManualPostDraftWorkspaceViewModel(
-            draftId = draftId,
-            postDraftRepository = repository,
-            clock = FixedClock(1_700_000_600_000L),
-        )
-        viewModel.load()
-
-        viewModel.markShareOrExportStarted()
-
-        val stored = repository.get(draftId)
-        assertEquals(DraftStatus.ReadyToShare, stored?.status)
-        assertEquals(1, stored?.exportRecords?.size)
-        assertEquals(ExportStatus.Pending, stored?.exportRecords?.single()?.status)
-        assertEquals(TargetPlatform.InstagramFeedSquare, stored?.exportRecords?.single()?.targetPlatform)
-        assertEquals("Share/export ready", viewModel.state.statusMessage)
     }
 
     @Test
@@ -3334,6 +3314,11 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun savePhotoEditRequest(photoEditRequest: PhotoEditRequest) {}
         override fun savePhotoEditResult(photoEditResult: PhotoEditResult) {}
         override fun saveExportRecord(exportRecord: ExportRecord) {}
+        override fun saveFinalPostContent(finalPostContent: FinalPostContent) {
+            drafts[finalPostContent.draftId] = drafts[finalPostContent.draftId]!!.copy(finalPostContent = finalPostContent)
+        }
+        override fun getFinalPostContent(draftId: PostDraftId): FinalPostContent? =
+            drafts[draftId]?.finalPostContent
         override fun savePhotoEditSuccess(
             draftId: PostDraftId,
             editedMediaAsset: MediaAsset,

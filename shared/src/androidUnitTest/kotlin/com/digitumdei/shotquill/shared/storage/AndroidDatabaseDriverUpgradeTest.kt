@@ -59,7 +59,7 @@ class AndroidDatabaseDriverUpgradeTest {
 
     @Test
     fun schemaVersionMatchesMigrationScaffold() {
-        assertEquals(2, ShotQuillDatabase.Schema.version.toInt())
+        assertEquals(3, ShotQuillDatabase.Schema.version.toInt())
     }
 
     private fun createV1Schema(driver: JdbcSqliteDriver) {

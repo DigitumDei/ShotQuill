@@ -1812,6 +1812,12 @@ class PhotoEditExecutionPipelineTest {
         override fun listExportRecordsForDraft(id: PostDraftId): List<com.digitumdei.shotquill.shared.domain.ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: com.digitumdei.shotquill.shared.domain.ExportRecord) = Unit
 
+        override fun saveFinalPostContent(finalPostContent: com.digitumdei.shotquill.shared.domain.FinalPostContent) {
+            save(drafts.getValue(finalPostContent.draftId).copy(finalPostContent = finalPostContent))
+        }
+        override fun getFinalPostContent(draftId: PostDraftId): com.digitumdei.shotquill.shared.domain.FinalPostContent? =
+            drafts[draftId]?.finalPostContent
+
         override fun savePhotoEditSuccess(
             draftId: PostDraftId,
             editedMediaAsset: MediaAsset,
