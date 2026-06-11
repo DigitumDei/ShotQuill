@@ -56,7 +56,11 @@ class AndroidPostShareLauncher(
             return null
         }
 
-        val decodedPath = parsedUri.path
+        val decodedPath = try {
+            parsedUri.path
+        } catch (_: Exception) {
+            parsedUri.encodedPath?.let { Uri.decode(it) }
+        }
 
         if (decodedPath.isNullOrBlank()) {
             return null
