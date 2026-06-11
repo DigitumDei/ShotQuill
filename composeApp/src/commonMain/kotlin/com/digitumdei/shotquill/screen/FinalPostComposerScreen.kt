@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -27,6 +28,8 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,6 +58,7 @@ fun FinalPostComposerScreen(
     val state = viewModel.state
     val coroutineScope = rememberCoroutineScope()
     val operationMutex = remember(viewModel) { Mutex() }
+    val persistJob = remember { mutableStateOf<Job?>(null) }
 
     fun refresh(block: FinalPostComposerViewModel.() -> Unit) {
         coroutineScope.launch {
@@ -67,7 +71,15 @@ fun FinalPostComposerScreen(
     }
 
     fun queueFinalPostContentPersistence() {
-        refresh { persistFinalPostContent() }
+        persistJob.value?.cancel()
+        persistJob.value = coroutineScope.launch {
+            delay(500L)
+            operationMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    viewModel.persistFinalPostContent()
+                }
+            }
+        }
     }
 
     LaunchedEffect(viewModel) {

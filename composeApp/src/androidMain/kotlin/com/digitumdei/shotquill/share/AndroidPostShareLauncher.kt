@@ -56,39 +56,12 @@ class AndroidPostShareLauncher(
             return null
         }
 
-        val encodedPath = parsedUri.encodedPath ?: return null
-        val decodedPath = decodeFilePath(encodedPath)
+        val decodedPath = parsedUri.path
 
-        if (decodedPath.isBlank()) {
+        if (decodedPath.isNullOrBlank()) {
             return null
         }
 
         return File(decodedPath)
-    }
-
-    private fun decodeFilePath(encodedPath: String): String {
-        val decodedPath = StringBuilder(encodedPath.length)
-        var index = 0
-        while (index < encodedPath.length) {
-            val currentChar = encodedPath[index]
-            if (
-                currentChar == '%' &&
-                index + 2 < encodedPath.length &&
-                encodedPath[index + 1].isHexDigit() &&
-                encodedPath[index + 2].isHexDigit()
-            ) {
-                val decodedChar = encodedPath.substring(index + 1, index + 3).toInt(16).toChar()
-                decodedPath.append(decodedChar)
-                index += 3
-                continue
-            }
-            decodedPath.append(currentChar)
-            index++
-        }
-        return decodedPath.toString()
-    }
-
-    private fun Char.isHexDigit(): Boolean {
-        return (this in '0'..'9') || (this in 'a'..'f') || (this in 'A'..'F')
     }
 }
