@@ -125,7 +125,7 @@ class AndroidPostShareLauncherTest {
             val result = launcher.share("file://${outsideFile.absolutePath}", "Caption text")
 
             assertTrue(!result.success)
-            assertNotNull(result.errorMessage)
+            assertEquals("outside configured share roots", result.errorMessage)
             assertNull(recordingContext.startedIntent)
         } finally {
             outsideFile.delete()
@@ -133,19 +133,22 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns failure when the image path is invalid`() {
+    fun `share returns failure with specific message for invalid image path`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
 
         val result = launcher.share("content://example/not-a-real-image.jpg", "Caption text")
 
         assertTrue(!result.success)
-        assertNotNull(result.errorMessage)
+        assertEquals(
+            "Image URI does not reference a local file: content://example/not-a-real-image.jpg",
+            result.errorMessage,
+        )
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns failure when the image file does not exist`() {
+    fun `share returns failure with specific message when the image file does not exist`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
         val missingFile = File(applicationContext.filesDir, "media/originals/missing.jpg")
@@ -153,12 +156,15 @@ class AndroidPostShareLauncherTest {
         val result = launcher.share("file://${missingFile.absolutePath}", "Caption text")
 
         assertTrue(!result.success)
-        assertNotNull(result.errorMessage)
+        assertTrue(
+            result.errorMessage?.startsWith("Unable to resolve image file: file://") == true,
+            "Expected error to start with 'Unable to resolve image file:' but got: ${result.errorMessage}",
+        )
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns failure when the file uri cannot be resolved`() {
+    fun `share returns failure with specific message when the file uri cannot be resolved`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
         val unresolvedFile = File(applicationContext.filesDir, "media/originals/missing%2.jpg")
@@ -166,12 +172,15 @@ class AndroidPostShareLauncherTest {
         val result = launcher.share("file://${unresolvedFile.absolutePath}", "Caption text")
 
         assertTrue(!result.success)
-        assertNotNull(result.errorMessage)
+        assertTrue(
+            result.errorMessage?.startsWith("Unable to resolve image file: file://") == true,
+            "Expected error to start with 'Unable to resolve image file:' but got: ${result.errorMessage}",
+        )
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns failure when the chooser cannot be launched`() {
+    fun `share returns failure with specific message when the chooser cannot be launched`() {
         val throwingContext = ThrowingContext(applicationContext)
         val launcher = recordingLauncher(throwingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/launch-failure.jpg").apply {
@@ -182,7 +191,7 @@ class AndroidPostShareLauncherTest {
         val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
 
         assertTrue(!result.success)
-        assertNotNull(result.errorMessage)
+        assertEquals("chooser launch failed", result.errorMessage)
         assertNotNull(throwingContext.startedIntent)
     }
 
