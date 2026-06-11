@@ -105,6 +105,7 @@ fun FinalPostComposerScreen(
         onCopyCaption = { viewModel.copyCaption() },
         onCopyAltText = { viewModel.copyAltText() },
         onShare = { refresh { shareOrExport() } },
+        onArchive = { refresh { archive() } },
         onBack = onBack,
     )
 }
@@ -119,6 +120,7 @@ fun FinalPostComposerContent(
     onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
     onShare: () -> Unit,
+    onArchive: () -> Unit,
     onBack: () -> Unit,
 ) {
     Column(
@@ -231,12 +233,30 @@ fun FinalPostComposerContent(
             }
         }
 
+        Text(
+            "The image will open in the Android share chooser. The caption is copied to your clipboard — paste it manually in your target app.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         Button(
             onClick = onShare,
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canShare,
         ) {
-            Text("Open share sheet")
+            Text("Share image via Android chooser")
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(
+                onClick = onArchive,
+                modifier = Modifier.weight(1f),
+                enabled = state.actions.canArchive,
+            ) {
+                Text("Archive draft")
+            }
         }
     }
 }

@@ -42,6 +42,7 @@ data class FinalPostComposerState(
 data class FinalPostComposerActions(
     val canShare: Boolean,
     val canSelectEdited: Boolean,
+    val canArchive: Boolean = false,
 )
 
 class FinalPostComposerViewModel(
@@ -237,7 +238,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Caption copied to clipboard. Open your target app and paste.")
+            state = repository.get(draftId)?.toState(statusMessage = "Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.")
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {
@@ -259,6 +260,21 @@ class FinalPostComposerViewModel(
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         }
+    }
+
+    fun archive() {
+        val draft = repository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (draft.status == DraftStatus.Archived) return
+        val now = clock.nowMillis()
+        val updatedAt = operationUpdatedAt(draft, now)
+        val transitioned = draft.transitionTo(DraftStatus.Archived, updatedAt)
+        repository.save(transitioned)
+        state = repository.get(draftId)?.toState(statusMessage = "Draft archived")
+            ?.withPendingTextOverrides()
+            ?: unloadedState(statusMessage = "Draft not found")
     }
 
     private fun PostDraft.toState(statusMessage: String? = null): FinalPostComposerState {
@@ -289,6 +305,7 @@ class FinalPostComposerViewModel(
             actions = FinalPostComposerActions(
                 canShare = effectiveCaption(content).isValidCaption() && activeAsset?.uri != null,
                 canSelectEdited = editedAsset != null,
+                canArchive = status != DraftStatus.Archived,
             ),
         )
     }
@@ -322,6 +339,7 @@ class FinalPostComposerViewModel(
             actions = FinalPostComposerActions(
                 canShare = false,
                 canSelectEdited = false,
+                canArchive = false,
             ),
         )
 

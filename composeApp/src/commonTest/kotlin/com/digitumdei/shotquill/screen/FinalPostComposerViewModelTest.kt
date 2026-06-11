@@ -876,7 +876,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Caption copied to clipboard. Open your target app and paste.", viewModel.state.statusMessage)
+        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
@@ -959,7 +959,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Caption copied to clipboard. Open your target app and paste.", viewModel.state.statusMessage)
+        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(2, updatedDraft.exportRecords.size)
@@ -1227,6 +1227,89 @@ class FinalPostComposerViewModelTest {
         val persistedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.ReadyToShare, persistedDraft.status)
         assertTrue(persistedDraft.exportRecords.isEmpty())
+    }
+
+    @Test
+    fun `archive transitions draft to Archived and sets status message`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.ReadyToShare,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        assertTrue(viewModel.state.actions.canArchive)
+        viewModel.archive()
+
+        assertEquals("Draft archived", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canArchive)
+        val updatedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.Archived, updatedDraft.status)
+    }
+
+    @Test
+    fun `archive on already Archived draft is a no-op`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = listOf("#test"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.Archived,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val viewModel = createViewModel(repository)
+
+        viewModel.load()
+        assertFalse(viewModel.state.actions.canArchive)
+        viewModel.archive()
+
+        assertEquals(DraftStatus.Archived, repository.get(draftId)!!.status)
+        assertEquals(2, repository.getCount)
+    }
+
+    @Test
+    fun `archive on missing draft sets error state`() {
+        val repository = FakeManualWorkflowRepository(initialDraft = null)
+        val viewModel = createViewModel(repository)
+
+        viewModel.archive()
+
+        assertFalse(viewModel.state.isLoaded)
+        assertEquals("Draft not found", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun `canArchive is true for all non-archived statuses`() {
+        val statusesToTest = DraftStatus.entries.filter { it != DraftStatus.Archived }
+        for (status in statusesToTest) {
+            val draft = sampleDraft().copy(status = status)
+            val repository = FakeManualWorkflowRepository(draft)
+            val viewModel = createViewModel(repository)
+            viewModel.load()
+            assertTrue(viewModel.state.actions.canArchive) { "Expected canArchive for status $status" }
+        }
     }
 
     private class FailingClipboardWriter : ClipboardWriter {
