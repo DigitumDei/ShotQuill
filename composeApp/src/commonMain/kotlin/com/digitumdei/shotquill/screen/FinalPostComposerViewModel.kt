@@ -211,6 +211,7 @@ class FinalPostComposerViewModel(
 
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
+        clipboardWriter.copy("post caption", composedText)
         val shareResult = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
         if (shareResult.success) {
