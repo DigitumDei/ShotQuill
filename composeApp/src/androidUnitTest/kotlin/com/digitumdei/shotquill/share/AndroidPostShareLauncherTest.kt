@@ -192,6 +192,10 @@ class AndroidPostShareLauncherTest {
 
         assertTrue(!result.success)
         assertEquals("chooser launch failed", result.errorMessage)
+        assertEquals(
+            "content://com.digitumdei.shotquill.fileprovider/launch-failure.jpg",
+            result.destinationUri,
+        )
         assertNotNull(throwingContext.startedIntent)
     }
 

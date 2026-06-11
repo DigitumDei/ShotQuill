@@ -18,6 +18,7 @@ class AndroidPostShareLauncher(
     },
 ) : PostShareLauncher {
     override fun share(imageUri: String?, text: String): ShareResult {
+        var resolvedDestinationUri: String? = null
         return try {
             if (imageUri != null) {
                 val imageFile = resolveShareImageFile(imageUri)
@@ -32,6 +33,7 @@ class AndroidPostShareLauncher(
                     )
                 }
                 val contentUri = contentUriForFile(imageFile)
+                resolvedDestinationUri = contentUri.toString()
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_TEXT, text)
@@ -39,7 +41,7 @@ class AndroidPostShareLauncher(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(Intent.createChooser(shareIntent, null))
-                ShareResult(success = true, destinationUri = contentUri.toString())
+                ShareResult(success = true, destinationUri = resolvedDestinationUri)
             } else {
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
@@ -49,7 +51,11 @@ class AndroidPostShareLauncher(
                 ShareResult(success = true, destinationUri = null)
             }
         } catch (e: Exception) {
-            ShareResult(success = false, errorMessage = e.message ?: "Unable to open share sheet")
+            ShareResult(
+                success = false,
+                destinationUri = resolvedDestinationUri,
+                errorMessage = e.message ?: "Unable to open share sheet",
+            )
         }
     }
 
@@ -67,13 +73,13 @@ class AndroidPostShareLauncher(
         }
         if (!uriPath.isNullOrBlank()) {
             val file = File(uriPath)
-            if (file.exists()) return file
+            if (file.exists() && file.isFile) return file
         }
 
         val rawPath = imageUri.removePrefix("file://")
         if (rawPath.isNotBlank()) {
             val file = File(rawPath)
-            if (file.exists()) return file
+            if (file.exists() && file.isFile) return file
         }
 
         return null
