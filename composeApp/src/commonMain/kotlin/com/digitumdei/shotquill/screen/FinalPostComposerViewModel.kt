@@ -174,24 +174,25 @@ class FinalPostComposerViewModel(
             )
             return
         }
-        val draft = repository.get(draftId) ?: run {
+        persistFinalPostContent()
+        val shareDraft = repository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
-        if (!draft.canEnterShareFlow()) {
+        if (!shareDraft.canEnterShareFlow()) {
             state = state.copy(
                 actions = state.actions.copy(canShare = false),
-                statusMessage = "Cannot open share sheet while status is ${draft.status.wireValue}",
+                statusMessage = "Cannot open share sheet while status is ${shareDraft.status.wireValue}",
             )
             return
         }
         val now = clock.nowMillis()
-        val updatedAt = operationUpdatedAt(draft, now)
+        val updatedAt = operationUpdatedAt(shareDraft, now)
         val idSuffix = nextIdSuffix(now)
         val platform = state.targetPlatform ?: defaultTargetPlatform
         val exportRecord = ExportRecord(
             id = ExportRecordId("export-$idSuffix"),
-            draftId = draft.id,
+            draftId = shareDraft.id,
             targetPlatform = platform,
             status = ExportStatus.Pending,
             destinationUri = null,
@@ -199,14 +200,14 @@ class FinalPostComposerViewModel(
             createdAtEpochMillis = now,
             completedAtEpochMillis = null,
         )
-        val transitioned = if (draft.status == DraftStatus.ReadyToShare || draft.status == DraftStatus.Shared) {
-            draft.copy(updatedAt = updatedAt)
+        val transitioned = if (shareDraft.status == DraftStatus.ReadyToShare || shareDraft.status == DraftStatus.Shared) {
+            shareDraft.copy(updatedAt = updatedAt)
         } else {
-            draft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
+            shareDraft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
         }
         val draftWithExport = transitioned.copy(
-            targetPlatforms = draft.targetPlatforms + platform,
-            exportRecords = draft.exportRecords + exportRecord,
+            targetPlatforms = shareDraft.targetPlatforms + platform,
+            exportRecords = shareDraft.exportRecords + exportRecord,
         )
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
@@ -226,7 +227,7 @@ class FinalPostComposerViewModel(
                 destinationUri = shareResult.destinationUri,
                 completedAtEpochMillis = now,
             )
-            val persistedDraft = if (draft.status == DraftStatus.Shared) {
+            val persistedDraft = if (shareDraft.status == DraftStatus.Shared) {
                 draftWithExport
             } else {
                 draftWithExport.transitionTo(DraftStatus.Shared, updatedAt)
@@ -269,9 +270,14 @@ class FinalPostComposerViewModel(
         }
         if (draft.status == DraftStatus.Archived) return
         persistFinalPostContent()
+        val freshDraft = repository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (freshDraft.status == DraftStatus.Archived) return
         val now = clock.nowMillis()
-        val updatedAt = operationUpdatedAt(draft, now)
-        val transitioned = draft.transitionTo(DraftStatus.Archived, updatedAt)
+        val updatedAt = operationUpdatedAt(freshDraft, now)
+        val transitioned = freshDraft.transitionTo(DraftStatus.Archived, updatedAt)
         repository.save(transitioned)
         state = repository.get(draftId)?.toState(statusMessage = "Draft archived")
             ?: unloadedState(statusMessage = "Draft not found")
