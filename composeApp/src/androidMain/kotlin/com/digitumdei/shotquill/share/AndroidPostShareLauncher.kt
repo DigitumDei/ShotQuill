@@ -51,25 +51,28 @@ class AndroidPostShareLauncher(
     }
 
     private fun resolveShareImageFile(imageUri: String): File? {
-        val parsedUri = Uri.parse(imageUri)
-        if (parsedUri.scheme != "file") {
+        if (!imageUri.startsWith("file://")) {
             return null
         }
 
-        val decodedPath = try {
+        val parsedUri = Uri.parse(imageUri)
+
+        val uriPath = try {
             parsedUri.path
         } catch (_: Exception) {
-            try {
-                parsedUri.encodedPath?.let { Uri.decode(it) }
-            } catch (_: Exception) {
-                imageUri.removePrefix("file://")
-            }
+            null
+        }
+        if (!uriPath.isNullOrBlank()) {
+            val file = File(uriPath)
+            if (file.exists()) return file
         }
 
-        if (decodedPath.isNullOrBlank()) {
-            return null
+        val rawPath = imageUri.removePrefix("file://")
+        if (rawPath.isNotBlank()) {
+            val file = File(rawPath)
+            if (file.exists()) return file
         }
 
-        return File(decodedPath)
+        return null
     }
 }
