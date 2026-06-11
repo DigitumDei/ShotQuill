@@ -180,6 +180,24 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
+    fun `share returns failure when the image path is a directory`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = recordingLauncher(recordingContext)
+        val dir = File(applicationContext.filesDir, "media/originals").apply {
+            mkdirs()
+        }
+
+        val result = launcher.share("file://${dir.absolutePath}", "Caption text")
+
+        assertTrue(!result.success)
+        assertTrue(
+            result.errorMessage?.startsWith("Unable to resolve image file: file://") == true,
+            "Expected error to start with 'Unable to resolve image file:' but got: ${result.errorMessage}",
+        )
+        assertNull(recordingContext.startedIntent)
+    }
+
+    @Test
     fun `share returns failure with specific message when the chooser cannot be launched`() {
         val throwingContext = ThrowingContext(applicationContext)
         val launcher = recordingLauncher(throwingContext)
