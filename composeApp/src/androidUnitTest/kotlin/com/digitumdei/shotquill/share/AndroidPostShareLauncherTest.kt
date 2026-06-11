@@ -244,6 +244,38 @@ class AndroidPostShareLauncherTest {
         assertNotNull(recordingContext.startedIntent)
     }
 
+    @Test
+    fun `share passes caption text in the share intent extra`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = recordingLauncher(recordingContext)
+        val imageFile = File(applicationContext.filesDir, "media/originals/caption-test.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(0x11, 0x22, 0x33))
+        }
+
+        val result = launcher.share("file://${imageFile.absolutePath}", "My caption with #hashtags")
+
+        assertTrue(result.success)
+        val chooser = assertNotNull(recordingContext.startedIntent)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertNotNull(shareIntent)
+        assertEquals("My caption with #hashtags", shareIntent.getStringExtra(Intent.EXTRA_TEXT))
+    }
+
+    @Test
+    fun `textOnlyShare passes caption text in the share intent extra`() {
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(recordingContext)
+
+        val result = launcher.share(null, "Just a caption")
+
+        assertTrue(result.success)
+        val chooser = assertNotNull(recordingContext.startedIntent)
+        val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertNotNull(shareIntent)
+        assertEquals("Just a caption", shareIntent.getStringExtra(Intent.EXTRA_TEXT))
+    }
+
     private fun recordingLauncher(context: Context): AndroidPostShareLauncher {
         return AndroidPostShareLauncher(context) { imageFile ->
             Uri.parse("content://com.digitumdei.shotquill.fileprovider/${imageFile.name}")

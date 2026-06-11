@@ -1646,4 +1646,76 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(UpdateSelectionResult.AssetNotOwnedByDraft, repository.updateSelectedMediaAsset(PostDraftId("draft-1"), nonexistentId, newUpdatedAt))
         driver.close()
     }
+
+    @Test
+    fun `saveExportRecordStatusUpdate preserves other fields`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+        val exportRecord = ExportRecord(
+            id = ExportRecordId("export-1"),
+            draftId = PostDraftId("draft-1"),
+            targetPlatform = TargetPlatform.BlueskyPost,
+            status = ExportStatus.Pending,
+            destinationUri = null,
+            errorMessage = null,
+            createdAtEpochMillis = createdAt,
+            completedAtEpochMillis = null,
+        )
+        repository.saveExportRecord(exportRecord)
+
+        val updated = exportRecord.copy(
+            status = ExportStatus.Exported,
+            destinationUri = "content://share/exported",
+            completedAtEpochMillis = updatedAt,
+        )
+        repository.saveExportRecord(updated)
+
+        val stored = repository.get(ExportRecordId("export-1"))
+        assertNotNull(stored)
+        assertEquals(ExportStatus.Exported, stored.status)
+        assertEquals("content://share/exported", stored.destinationUri)
+        assertEquals(createdAt, stored.createdAtEpochMillis)
+        assertEquals(updatedAt, stored.completedAtEpochMillis)
+        assertNull(stored.errorMessage)
+        driver.close()
+    }
+
+    @Test
+    fun `savePostDraftWithMultipleExportRecordsPersistsAll`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val pendingExport = ExportRecord(
+            id = ExportRecordId("export-pending"),
+            draftId = PostDraftId("draft-1"),
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            status = ExportStatus.Pending,
+            destinationUri = null,
+            errorMessage = null,
+            createdAtEpochMillis = createdAt,
+            completedAtEpochMillis = null,
+        )
+        val successExport = ExportRecord(
+            id = ExportRecordId("export-success"),
+            draftId = PostDraftId("draft-1"),
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            status = ExportStatus.Exported,
+            destinationUri = "content://share/success",
+            errorMessage = null,
+            createdAtEpochMillis = createdAt,
+            completedAtEpochMillis = updatedAt,
+        )
+        repository.save(samplePostDraft().copy(exportRecords = listOf(pendingExport, successExport)))
+
+        val stored = repository.get(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        assertEquals(2, stored.exportRecords.size)
+        assertEquals(ExportStatus.Pending, stored.exportRecords[0].status)
+        assertEquals(ExportStatus.Exported, stored.exportRecords[1].status)
+        assertEquals("content://share/success", stored.exportRecords[1].destinationUri)
+
+        val list = repository.listExportRecordsForDraft(PostDraftId("draft-1"))
+        assertEquals(2, list.size)
+        driver.close()
+    }
 }

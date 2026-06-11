@@ -1230,6 +1230,83 @@ class FinalPostComposerViewModelTest {
     }
 
     @Test
+    fun `copyCaption does nothing when caption is null`() {
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoAdded,
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+        )
+
+        viewModel.load()
+        assertNull(viewModel.state.caption)
+
+        viewModel.copyCaption()
+
+        assertNull(clipboard.lastLabel)
+        assertNull(clipboard.lastText)
+        assertNull(viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun `copyAltText does nothing when alt text is null`() {
+        val draft = sampleDraft().copy(
+            status = DraftStatus.PhotoAdded,
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+        )
+
+        viewModel.load()
+        assertNull(viewModel.state.altText)
+
+        viewModel.copyAltText()
+
+        assertNull(clipboard.lastLabel)
+        assertNull(clipboard.lastText)
+        assertNull(viewModel.state.statusMessage)
+    }
+
+    // ===== New: Share action copies caption to clipboard =====
+
+    @Test
+    fun `shareOrExport copies caption and hashtags to clipboard for pasting into target app`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Check out this photo!",
+            shortCaption = null,
+            hashtags = listOf("#sunset", "#travel"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.ReadyToShare,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+            postShareLauncher = FakePostShareLauncher(success = true),
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("post caption", clipboard.lastLabel)
+        assertEquals("Check out this photo!\n\n#sunset #travel", clipboard.lastText)
+        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
+    }
+
+    @Test
     fun `archive transitions draft to Archived and sets status message`() {
         val captionResult = CaptionResult(
             id = CaptionResultId("caption-result-1"),
