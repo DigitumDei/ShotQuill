@@ -1410,7 +1410,14 @@ class FinalPostComposerViewModelTest {
             initialDraft?.promptHistory?.let { storedPromptHistory += it }
         }
 
-        override fun save(postDraft: PostDraft) { drafts[postDraft.id] = postDraft }
+        override fun save(postDraft: PostDraft) {
+            val existing = drafts[postDraft.id]
+            drafts[postDraft.id] = if (postDraft.finalPostContent == null && existing?.finalPostContent != null) {
+                postDraft.copy(finalPostContent = existing.finalPostContent)
+            } else {
+                postDraft
+            }
+        }
         override fun get(id: PostDraftId): PostDraft? {
             getCount++
             return drafts[id]

@@ -613,7 +613,6 @@ class SqlDelightManualWorkflowRepository(
         queries.deletePhotoEditResultsByDraftId(id.value)
         queries.deletePhotoEditRequestsByDraftId(id.value)
         queries.deleteAltTextResultsByDraftId(id.value)
-        queries.deleteFinalPostContentByDraftId(id.value)
         queries.deleteCaptionResultHashtagsByDraftId(id.value)
         queries.deleteCaptionResultsByDraftId(id.value)
         queries.deleteCaptionRequestsByDraftId(id.value)

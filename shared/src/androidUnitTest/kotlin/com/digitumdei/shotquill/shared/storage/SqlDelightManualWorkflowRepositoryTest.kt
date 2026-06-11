@@ -1139,6 +1139,62 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun saveFinalPostContentIsPreservedAcrossSubsequentSavePostDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+
+        repository.saveFinalPostContent(
+            FinalPostContent(
+                draftId = PostDraftId("draft-1"),
+                editedCaption = "Manually edited caption",
+                editedAltText = "Manually edited alt text",
+                updatedAtEpochMillis = 1_700_000_070_000L,
+            ),
+        )
+
+        repository.save(samplePostDraft())
+
+        val stored = repository.getFinalPostContent(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        assertEquals("Manually edited caption", stored.editedCaption)
+        assertEquals("Manually edited alt text", stored.editedAltText)
+
+        val draft = repository.get(PostDraftId("draft-1"))
+        assertNotNull(draft)
+        assertEquals("Manually edited caption", draft.finalPostContent?.editedCaption)
+        assertEquals("Manually edited alt text", draft.finalPostContent?.editedAltText)
+
+        driver.close()
+    }
+
+    @Test
+    fun saveFinalPostContentCanBeReplacedViaSavePostDraft() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+
+        repository.save(samplePostDraft())
+
+        val replaced = FinalPostContent(
+            draftId = PostDraftId("draft-1"),
+            editedCaption = "Replaced caption",
+            editedAltText = "Replaced alt text",
+            updatedAtEpochMillis = 1_700_000_080_000L,
+        )
+        repository.save(
+            samplePostDraft().copy(finalPostContent = replaced),
+        )
+
+        val stored = repository.getFinalPostContent(PostDraftId("draft-1"))
+        assertNotNull(stored)
+        assertEquals("Replaced caption", stored.editedCaption)
+        assertEquals("Replaced alt text", stored.editedAltText)
+
+        driver.close()
+    }
+
+    @Test
     fun savesAndReadsPhotoEditRequestWithAllFieldsRoundTrip() {
         val driver = inMemoryDriver()
         val repository = SqlDelightManualWorkflowRepository(driver)
