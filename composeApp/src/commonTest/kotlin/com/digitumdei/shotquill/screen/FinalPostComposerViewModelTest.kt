@@ -1159,6 +1159,82 @@ class FinalPostComposerViewModelTest {
         assertNull(shareLauncher.lastText)
     }
 
+    @Test
+    fun `shareOrExport copies composed caption to clipboard before share`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "My post caption",
+            shortCaption = null,
+            hashtags = listOf("#photo", "#landscape"),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.ReadyToShare,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = createViewModel(
+            repository = FakeManualWorkflowRepository(draft),
+            clipboardWriter = clipboard,
+            postShareLauncher = FakePostShareLauncher(success = true),
+        )
+
+        viewModel.load()
+        viewModel.shareOrExport()
+
+        assertEquals("post caption", clipboard.lastLabel)
+        assertEquals("My post caption\n\n#photo #landscape", clipboard.lastText)
+    }
+
+    @Test
+    fun `shareOrExport clipboard failure does not persist pending export and shows error`() {
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-1"),
+            requestId = CaptionRequestId("caption-request-1"),
+            draftId = draftId,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            caption = "Caption",
+            shortCaption = null,
+            hashtags = emptyList(),
+            modelName = "fake",
+            createdAtEpochMillis = 1_700_000_010_000L,
+        )
+        val draft = sampleDraft().copy(
+            status = DraftStatus.ReadyToShare,
+            captionResults = listOf(captionResult),
+            selectedMediaAssetId = mediaAssetId,
+        )
+        val repository = FakeManualWorkflowRepository(draft)
+        val shareLauncher = FakePostShareLauncher(success = true)
+        val failingClipboard = FailingClipboardWriter()
+        val viewModel = createViewModel(
+            repository = repository,
+            clipboardWriter = failingClipboard,
+            postShareLauncher = shareLauncher,
+        )
+
+        viewModel.load()
+        val result = runCatching { viewModel.shareOrExport() }
+
+        assertTrue(result.isFailure)
+        assertNull(shareLauncher.lastImageUri)
+        assertNull(shareLauncher.lastText)
+        val persistedDraft = repository.get(draftId)!!
+        assertEquals(DraftStatus.ReadyToShare, persistedDraft.status)
+        assertTrue(persistedDraft.exportRecords.isEmpty())
+    }
+
+    private class FailingClipboardWriter : ClipboardWriter {
+        override fun copy(label: String, text: String) {
+            throw RuntimeException("Clipboard unavailable")
+        }
+    }
+
     private class FakeClipboardWriter : ClipboardWriter {
         var lastLabel: String? = null
         var lastText: String? = null

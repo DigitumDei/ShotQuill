@@ -207,11 +207,11 @@ class FinalPostComposerViewModel(
             targetPlatforms = draft.targetPlatforms + platform,
             exportRecords = draft.exportRecords + exportRecord,
         )
-        repository.save(draftWithExport)
-
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
         clipboardWriter.copy("post caption", composedText)
+
+        repository.save(draftWithExport)
         val shareResult = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
         if (shareResult.success) {
