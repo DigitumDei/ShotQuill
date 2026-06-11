@@ -59,8 +59,10 @@ class AndroidPostShareLauncher(
         val decodedPath = try {
             parsedUri.path
         } catch (_: Exception) {
-            parsedUri.encodedPath?.let {
-                try { Uri.decode(it) } catch (_: Exception) { it }
+            try {
+                parsedUri.encodedPath?.let { Uri.decode(it) }
+            } catch (_: Exception) {
+                imageUri.removePrefix("file://")
             }
         }
 
