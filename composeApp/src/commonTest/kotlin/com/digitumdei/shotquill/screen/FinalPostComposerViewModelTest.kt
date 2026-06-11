@@ -1285,8 +1285,9 @@ class FinalPostComposerViewModelTest {
         assertFalse(viewModel.state.actions.canArchive)
         viewModel.archive()
 
+        val getCountAfterActions = repository.getCount
         assertEquals(DraftStatus.Archived, repository.get(draftId)!!.status)
-        assertEquals(2, repository.getCount)
+        assertEquals(2, getCountAfterActions)
     }
 
     @Test

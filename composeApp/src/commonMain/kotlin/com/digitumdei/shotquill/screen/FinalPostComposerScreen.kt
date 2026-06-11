@@ -234,7 +234,7 @@ fun FinalPostComposerContent(
         }
 
         Text(
-            "The image will open in the Android share chooser. The caption is copied to your clipboard — paste it manually in your target app.",
+            "Tap Share to open the image in the Android share chooser. The caption is automatically copied to your clipboard — paste it manually in your target app.",
             style = MaterialTheme.typography.bodySmall,
         )
 
