@@ -211,11 +211,12 @@ class FinalPostComposerViewModel(
 
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
-        val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
+        val shareResult = postShareLauncher.share(state.selectedPhotoUri, composedText)
 
-        if (chooserLaunched) {
+        if (shareResult.success) {
             val exportedRecord = exportRecord.copy(
                 status = ExportStatus.Exported,
+                destinationUri = shareResult.destinationUri,
                 completedAtEpochMillis = now,
             )
             val persistedDraft = if (draft.status == DraftStatus.Shared) {
@@ -234,9 +235,11 @@ class FinalPostComposerViewModel(
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {
+            val errorMessage = shareResult.errorMessage ?: "Unable to open share sheet"
             val failedExport = exportRecord.copy(
                 status = ExportStatus.Failed,
-                errorMessage = "Unable to open share sheet",
+                destinationUri = shareResult.destinationUri,
+                errorMessage = errorMessage,
                 completedAtEpochMillis = now,
             )
             repository.save(
@@ -246,7 +249,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Unable to open share sheet")
+            state = repository.get(draftId)?.toState(statusMessage = errorMessage)
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         }

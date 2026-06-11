@@ -17,13 +17,20 @@ class AndroidPostShareLauncher(
         )
     },
 ) : PostShareLauncher {
-    override fun share(imageUri: String?, text: String): Boolean {
+    override fun share(imageUri: String?, text: String): ShareResult {
         return try {
-            val chooser = buildChooserIntent(imageUri, text) ?: return false
+            val chooser = buildChooserIntent(imageUri, text) ?: return ShareResult(
+                success = false,
+                errorMessage = "Unable to build share intent",
+            )
             context.startActivity(chooser)
-            true
-        } catch (_: Exception) {
-            false
+            val destinationUri = if (imageUri != null) {
+                val imageFile = resolveShareImageFile(imageUri)
+                imageFile?.let { contentUriForFile(it).toString() }
+            } else null
+            ShareResult(success = true, destinationUri = destinationUri)
+        } catch (e: Exception) {
+            ShareResult(success = false, errorMessage = e.message ?: "Unable to open share sheet")
         }
     }
 

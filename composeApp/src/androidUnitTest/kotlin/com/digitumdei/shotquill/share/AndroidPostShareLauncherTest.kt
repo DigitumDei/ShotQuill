@@ -8,7 +8,6 @@ import android.os.Parcelable
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -21,7 +20,7 @@ class AndroidPostShareLauncherTest {
     private val applicationContext: Context = RuntimeEnvironment.getApplication()
 
     @Test
-    fun `share launches chooser and returns true for a valid shareable image`() {
+    fun `share launches chooser and returns success for a valid shareable image`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = recordingLauncher(recordingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/shareable.jpg").apply {
@@ -31,7 +30,9 @@ class AndroidPostShareLauncherTest {
 
         val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
 
-        assertTrue(result)
+        assertTrue(result.success)
+        assertNotNull(result.destinationUri)
+        assertNull(result.errorMessage)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -54,7 +55,9 @@ class AndroidPostShareLauncherTest {
         val encodedUri = "file://${imageFile.absolutePath.replace(" ", "%20")}"
         val result = launcher.share(encodedUri, "Caption text")
 
-        assertTrue(result)
+        assertTrue(result.success)
+        assertNotNull(result.destinationUri)
+        assertNull(result.errorMessage)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -76,7 +79,9 @@ class AndroidPostShareLauncherTest {
 
         val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
 
-        assertTrue(result)
+        assertTrue(result.success)
+        assertNotNull(result.destinationUri)
+        assertNull(result.errorMessage)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -88,13 +93,15 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share launches chooser and returns true for text only share`() {
+    fun `share launches chooser and returns success for text only share`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
 
         val result = launcher.share(null, "Caption text")
 
-        assertTrue(result)
+        assertTrue(result.success)
+        assertNull(result.destinationUri)
+        assertNull(result.errorMessage)
         val chooser = assertNotNull(recordingContext.startedIntent)
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shareIntent = chooser.parcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -105,7 +112,7 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns false when the share payload cannot be constructed`() {
+    fun `share returns failure when the share payload cannot be constructed`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext) {
             throw IllegalArgumentException("outside configured share roots")
@@ -117,7 +124,8 @@ class AndroidPostShareLauncherTest {
         try {
             val result = launcher.share("file://${outsideFile.absolutePath}", "Caption text")
 
-            assertFalse(result)
+            assertTrue(!result.success)
+            assertNotNull(result.errorMessage)
             assertNull(recordingContext.startedIntent)
         } finally {
             outsideFile.delete()
@@ -125,42 +133,45 @@ class AndroidPostShareLauncherTest {
     }
 
     @Test
-    fun `share returns false when the image path is invalid`() {
+    fun `share returns failure when the image path is invalid`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
 
         val result = launcher.share("content://example/not-a-real-image.jpg", "Caption text")
 
-        assertFalse(result)
+        assertTrue(!result.success)
+        assertNotNull(result.errorMessage)
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns false when the image file does not exist`() {
+    fun `share returns failure when the image file does not exist`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
         val missingFile = File(applicationContext.filesDir, "media/originals/missing.jpg")
 
         val result = launcher.share("file://${missingFile.absolutePath}", "Caption text")
 
-        assertFalse(result)
+        assertTrue(!result.success)
+        assertNotNull(result.errorMessage)
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns false when the file uri cannot be resolved`() {
+    fun `share returns failure when the file uri cannot be resolved`() {
         val recordingContext = RecordingContext(applicationContext)
         val launcher = AndroidPostShareLauncher(recordingContext)
         val unresolvedFile = File(applicationContext.filesDir, "media/originals/missing%2.jpg")
 
         val result = launcher.share("file://${unresolvedFile.absolutePath}", "Caption text")
 
-        assertFalse(result)
+        assertTrue(!result.success)
+        assertNotNull(result.errorMessage)
         assertNull(recordingContext.startedIntent)
     }
 
     @Test
-    fun `share returns false when the chooser cannot be launched`() {
+    fun `share returns failure when the chooser cannot be launched`() {
         val throwingContext = ThrowingContext(applicationContext)
         val launcher = recordingLauncher(throwingContext)
         val imageFile = File(applicationContext.filesDir, "media/originals/launch-failure.jpg").apply {
@@ -170,7 +181,8 @@ class AndroidPostShareLauncherTest {
 
         val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
 
-        assertFalse(result)
+        assertTrue(!result.success)
+        assertNotNull(result.errorMessage)
         assertNotNull(throwingContext.startedIntent)
     }
 

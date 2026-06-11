@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.screen
 
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.share.PostShareLauncher
+import com.digitumdei.shotquill.share.ShareResult
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.BrandProfile
@@ -1161,17 +1162,17 @@ class FinalPostComposerViewModelTest {
     private class FakePostShareLauncher(private val success: Boolean) : PostShareLauncher {
         var lastImageUri: String? = null
         var lastText: String? = null
-        override fun share(imageUri: String?, text: String): Boolean {
+        override fun share(imageUri: String?, text: String): ShareResult {
             lastImageUri = imageUri
             lastText = text
-            return success
+            return ShareResult(success = success)
         }
     }
 
     private fun createViewModel(
         repository: ManualWorkflowRepository,
         clipboardWriter: ClipboardWriter = ClipboardWriter { _, _ -> },
-        postShareLauncher: PostShareLauncher = PostShareLauncher { _, _ -> true },
+        postShareLauncher: PostShareLauncher = PostShareLauncher { _, _ -> ShareResult(success = true) },
         clock: EpochClock = FixedClock(1_700_000_000_000L),
     ): FinalPostComposerViewModel =
         FinalPostComposerViewModel(
