@@ -19,42 +19,48 @@ class AndroidPostShareLauncher(
 ) : PostShareLauncher {
     override fun share(imageUri: String?, text: String): ShareResult {
         return try {
-            val chooser = buildChooserIntent(imageUri, text) ?: return ShareResult(
+            val handoff = buildShareHandoff(imageUri, text) ?: return ShareResult(
                 success = false,
                 errorMessage = "Unable to build share intent",
             )
-            context.startActivity(chooser)
-            val destinationUri = if (imageUri != null) {
-                val imageFile = resolveShareImageFile(imageUri)
-                imageFile?.let { contentUriForFile(it).toString() }
-            } else null
-            ShareResult(success = true, destinationUri = destinationUri)
+            context.startActivity(handoff.intent)
+            ShareResult(success = true, destinationUri = handoff.destinationUri)
         } catch (e: Exception) {
             ShareResult(success = false, errorMessage = e.message ?: "Unable to open share sheet")
         }
     }
 
-    private fun buildChooserIntent(imageUri: String?, text: String): Intent? {
-        val shareIntent =
-            if (imageUri != null) {
-                val imageFile = resolveShareImageFile(imageUri) ?: return null
-                if (!imageFile.exists() || !imageFile.isFile) {
-                    return null
-                }
-                val contentUri = contentUriForFile(imageFile)
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_TEXT, text)
-                    putExtra(Intent.EXTRA_STREAM, contentUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            } else {
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, text)
-                }
+    private data class ShareHandoff(
+        val intent: Intent,
+        val destinationUri: String?,
+    )
+
+    private fun buildShareHandoff(imageUri: String?, text: String): ShareHandoff? {
+        if (imageUri != null) {
+            val imageFile = resolveShareImageFile(imageUri) ?: return null
+            if (!imageFile.exists() || !imageFile.isFile) {
+                return null
             }
-        return Intent.createChooser(shareIntent, null)
+            val contentUri = contentUriForFile(imageFile)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_TEXT, text)
+                putExtra(Intent.EXTRA_STREAM, contentUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            return ShareHandoff(
+                intent = Intent.createChooser(shareIntent, null),
+                destinationUri = contentUri.toString(),
+            )
+        }
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        return ShareHandoff(
+            intent = Intent.createChooser(shareIntent, null),
+            destinationUri = null,
+        )
     }
 
     private fun resolveShareImageFile(imageUri: String): File? {

@@ -186,6 +186,33 @@ class AndroidPostShareLauncherTest {
         assertNotNull(throwingContext.startedIntent)
     }
 
+    @Test
+    fun `share resolves the content URI once before launch and carries it through`() {
+        var callCount = 0
+        val trackingContentUri: (File) -> Uri = { file ->
+            callCount++
+            if (callCount > 1) throw IllegalStateException("contentUriForFile must not be called after launch")
+            Uri.parse("content://com.digitumdei.shotquill.fileprovider/${file.name}")
+        }
+        val recordingContext = RecordingContext(applicationContext)
+        val launcher = AndroidPostShareLauncher(
+            context = recordingContext,
+            contentUriForFile = trackingContentUri,
+        )
+        val imageFile = File(applicationContext.filesDir, "media/originals/once-resolved.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(0x0F, 0x1E, 0x2D))
+        }
+
+        val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
+
+        assertEquals(1, callCount)
+        assertTrue(result.success)
+        assertEquals("content://com.digitumdei.shotquill.fileprovider/once-resolved.jpg", result.destinationUri)
+        assertNull(result.errorMessage)
+        assertNotNull(recordingContext.startedIntent)
+    }
+
     private fun recordingLauncher(context: Context): AndroidPostShareLauncher {
         return AndroidPostShareLauncher(context) { imageFile ->
             Uri.parse("content://com.digitumdei.shotquill.fileprovider/${imageFile.name}")

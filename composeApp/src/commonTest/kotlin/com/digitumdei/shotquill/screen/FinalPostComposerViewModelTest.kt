@@ -863,7 +863,11 @@ class FinalPostComposerViewModelTest {
             selectedMediaAssetId = mediaAssetId,
         )
         val repository = FakeManualWorkflowRepository(draft)
-        val shareLauncher = FakePostShareLauncher(success = true)
+        val resolvedUri = "content://com.digitumdei.shotquill.fileprovider/once-resolved.jpg"
+        val shareLauncher = FakePostShareLauncher(
+            success = true,
+            destinationUri = resolvedUri,
+        )
         val viewModel = createViewModel(
             repository = repository,
             postShareLauncher = shareLauncher,
@@ -878,6 +882,7 @@ class FinalPostComposerViewModelTest {
         assertEquals(1, updatedDraft.exportRecords.size)
         val exportRecord = updatedDraft.exportRecords.first()
         assertEquals(ExportStatus.Exported, exportRecord.status)
+        assertEquals(resolvedUri, exportRecord.destinationUri)
         assertEquals("file://photo.jpg", shareLauncher.lastImageUri)
         assertTrue(shareLauncher.lastText?.contains("Caption") == true)
         assertTrue(shareLauncher.lastText?.contains("#test") == true)
@@ -984,7 +989,11 @@ class FinalPostComposerViewModelTest {
             selectedMediaAssetId = mediaAssetId,
         )
         val repository = FakeManualWorkflowRepository(draft)
-        val shareLauncher = FakePostShareLauncher(success = false)
+        val shareError = "User cancelled the share"
+        val shareLauncher = FakePostShareLauncher(
+            success = false,
+            errorMessage = shareError,
+        )
         val viewModel = createViewModel(
             repository = repository,
             postShareLauncher = shareLauncher,
@@ -993,7 +1002,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Unable to open share sheet", viewModel.state.statusMessage)
+        assertEquals(shareError, viewModel.state.statusMessage)
         assertTrue(viewModel.state.isLoaded)
         assertEquals("Caption", viewModel.state.caption)
         assertEquals(3, repository.getCount)
@@ -1002,7 +1011,7 @@ class FinalPostComposerViewModelTest {
         assertEquals(1, updatedDraft.exportRecords.size)
         val exportRecord = updatedDraft.exportRecords.first()
         assertEquals(ExportStatus.Failed, exportRecord.status)
-        assertEquals("Unable to open share sheet", exportRecord.errorMessage)
+        assertEquals(shareError, exportRecord.errorMessage)
     }
 
     @Test
@@ -1159,13 +1168,17 @@ class FinalPostComposerViewModelTest {
         }
     }
 
-    private class FakePostShareLauncher(private val success: Boolean) : PostShareLauncher {
+    private class FakePostShareLauncher(
+        private val success: Boolean,
+        private val destinationUri: String? = null,
+        private val errorMessage: String? = null,
+    ) : PostShareLauncher {
         var lastImageUri: String? = null
         var lastText: String? = null
         override fun share(imageUri: String?, text: String): ShareResult {
             lastImageUri = imageUri
             lastText = text
-            return ShareResult(success = success)
+            return ShareResult(success = success, destinationUri = destinationUri, errorMessage = errorMessage)
         }
     }
 
