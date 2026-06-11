@@ -209,7 +209,12 @@ class FinalPostComposerViewModel(
         )
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
-        clipboardWriter.copy("post caption", composedText)
+        try {
+            clipboardWriter.copy("post caption", composedText)
+        } catch (_: Exception) {
+            state = state.copy(statusMessage = "Failed to copy caption to clipboard")
+            return
+        }
 
         repository.save(draftWithExport)
         val shareResult = postShareLauncher.share(state.selectedPhotoUri, composedText)
@@ -232,7 +237,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Share sheet opened")
+            state = repository.get(draftId)?.toState(statusMessage = "Caption copied to clipboard. Open your target app and paste.")
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {

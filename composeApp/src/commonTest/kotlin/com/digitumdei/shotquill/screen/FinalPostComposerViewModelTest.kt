@@ -876,7 +876,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Share sheet opened", viewModel.state.statusMessage)
+        assertEquals("Caption copied to clipboard. Open your target app and paste.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
@@ -959,7 +959,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Share sheet opened", viewModel.state.statusMessage)
+        assertEquals("Caption copied to clipboard. Open your target app and paste.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(2, updatedDraft.exportRecords.size)
@@ -1219,9 +1219,9 @@ class FinalPostComposerViewModelTest {
         )
 
         viewModel.load()
-        val result = runCatching { viewModel.shareOrExport() }
+        viewModel.shareOrExport()
 
-        assertTrue(result.isFailure)
+        assertEquals("Failed to copy caption to clipboard", viewModel.state.statusMessage)
         assertNull(shareLauncher.lastImageUri)
         assertNull(shareLauncher.lastText)
         val persistedDraft = repository.get(draftId)!!
