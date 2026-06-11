@@ -1309,7 +1309,7 @@ class FinalPostComposerViewModelTest {
             val repository = FakeManualWorkflowRepository(draft)
             val viewModel = createViewModel(repository)
             viewModel.load()
-            assertTrue(viewModel.state.actions.canArchive) { "Expected canArchive for status $status" }
+            assertTrue(viewModel.state.actions.canArchive, "Expected canArchive for status $status")
         }
     }
 
