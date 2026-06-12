@@ -300,6 +300,32 @@ class PostTextGenerationPipelineTest {
             val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
             assertEquals(AiError.ProviderFailure(statusCode = null), providerError.error)
             assertEquals(null, repository.get(draftId)?.caption)
+            val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+            when (stage) {
+                RecordingAiProvider.FailureStage.Caption -> {
+                    val captionFailures = promptHistory.filter {
+                        it.operationType == AiOperationType.CaptionGeneration && it.isFailure
+                    }
+                    assertEquals(1, captionFailures.size, "Expected 1 caption failure entry for stage=$stage")
+                    assertEquals(
+                        AiError.ProviderFailure(statusCode = null).userMessage,
+                        captionFailures.single().errorMessage,
+                    )
+                }
+                RecordingAiProvider.FailureStage.AltText -> {
+                    val altTextFailures = promptHistory.filter {
+                        it.operationType == AiOperationType.AltTextGeneration && it.isFailure
+                    }
+                    assertEquals(1, altTextFailures.size, "Expected 1 alt-text failure entry for stage=$stage")
+                    assertEquals(
+                        AiError.ProviderFailure(statusCode = null).userMessage,
+                        altTextFailures.single().errorMessage,
+                    )
+                }
+                RecordingAiProvider.FailureStage.Vision -> {
+                    // Vision failure history is tested in VisionDescriptionAnalyzerTest
+                }
+            }
         }
     }
 

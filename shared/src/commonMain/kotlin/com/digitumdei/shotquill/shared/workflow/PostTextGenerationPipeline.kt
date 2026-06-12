@@ -99,9 +99,28 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> {
+                val now = clock.nowMillis()
+                val idSuffix = nextIdSuffix(now)
+                val failureEntry = PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-caption-generation-failure-$idSuffix"),
+                    draftId = draftId,
+                    operationType = AiOperationType.CaptionGeneration,
+                    prompt = captionPrompt,
+                    responseSummary = null,
+                    modelName = null,
+                    createdAtEpochMillis = now,
+                    provider = aiProvider.name,
+                    mediaAssetId = visionDescription.mediaAssetId,
+                    requestSettings = "targetPlatform=${targetPlatform.wireValue}",
+                    resultReference = null,
+                    errorMessage = result.error.userMessage,
+                )
+                repository.savePromptHistoryEntry(failureEntry)
+                return PostTextGenerationResult.Failure(
+                    PostTextGenerationError.Provider(result.error),
+                )
+            }
             is AiProviderResult.Success -> result.value
         }
         val altTextOutput = when (
@@ -113,9 +132,28 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> {
+                val now = clock.nowMillis()
+                val idSuffix = nextIdSuffix(now)
+                val failureEntry = PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-alt-text-generation-failure-$idSuffix"),
+                    draftId = draftId,
+                    operationType = AiOperationType.AltTextGeneration,
+                    prompt = altTextPrompt,
+                    responseSummary = null,
+                    modelName = null,
+                    createdAtEpochMillis = now,
+                    provider = aiProvider.name,
+                    mediaAssetId = visionDescription.mediaAssetId,
+                    requestSettings = "targetPlatform=${targetPlatform.wireValue}",
+                    resultReference = null,
+                    errorMessage = result.error.userMessage,
+                )
+                repository.savePromptHistoryEntry(failureEntry)
+                return PostTextGenerationResult.Failure(
+                    PostTextGenerationError.Provider(result.error),
+                )
+            }
             is AiProviderResult.Success -> result.value
         }
 
