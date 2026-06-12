@@ -93,6 +93,21 @@ class PostTextGenerationPipelineTest {
             ),
             stored.promptHistory.map { it.operationType },
         )
+        val captionEntry = stored.promptHistory[1]
+        assertEquals("fake", captionEntry.provider)
+        assertEquals(mediaAssetId, captionEntry.mediaAssetId)
+        assertEquals(
+            "targetPlatform=instagram_feed_square, tone=${success.captionRequest.tone ?: "default"}",
+            captionEntry.requestSettings,
+        )
+        assertEquals(success.captionResult.id.value, captionEntry.resultReference)
+        assertNull(captionEntry.errorMessage)
+        val altTextEntry = stored.promptHistory[2]
+        assertEquals("fake", altTextEntry.provider)
+        assertEquals(mediaAssetId, altTextEntry.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square", altTextEntry.requestSettings)
+        assertEquals(success.altTextResult.id.value, altTextEntry.resultReference)
+        assertNull(altTextEntry.errorMessage)
     }
 
     @Test

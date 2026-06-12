@@ -157,6 +157,10 @@ class PostTextGenerationPipeline(
             responseSummary = captionResult.responseSummary(),
             modelName = captionResult.modelName,
             createdAtEpochMillis = now,
+            provider = aiProvider.name,
+            mediaAssetId = visionDescription.mediaAssetId,
+            requestSettings = "targetPlatform=$targetPlatform, tone=${captionRequest.tone ?: "default"}",
+            resultReference = captionResult.id.value,
         )
         val altTextHistoryEntry = PromptHistoryEntry(
             id = PromptHistoryEntryId("prompt-alt-text-generation-$idSuffix"),
@@ -166,6 +170,10 @@ class PostTextGenerationPipeline(
             responseSummary = altTextResult.altText,
             modelName = altTextResult.modelName,
             createdAtEpochMillis = now,
+            provider = aiProvider.name,
+            mediaAssetId = visionDescription.mediaAssetId,
+            requestSettings = "targetPlatform=$targetPlatform",
+            resultReference = altTextResult.id.value,
         )
         val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
             PostTextGenerationError.DraftNotFound,
