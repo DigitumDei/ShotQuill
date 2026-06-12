@@ -197,6 +197,7 @@ fun App(
                         ManualPostDraftWorkspaceScreen(
                             draftId = PostDraftId(draftId),
                             postDraftRepository = manualWorkflowRepository,
+                            clipboardWriter = clipboardWriter,
                             defaultTargetPlatform = settings.defaultTargetPlatform,
                             defaultRealismLevel = settings.defaultRealismLevel,
                             defaultQualityTier = settings.defaultQualityTier,

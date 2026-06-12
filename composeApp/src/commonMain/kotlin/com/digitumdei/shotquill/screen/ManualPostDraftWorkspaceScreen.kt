@@ -26,8 +26,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
@@ -46,6 +48,7 @@ import kotlinx.coroutines.withContext
 fun ManualPostDraftWorkspaceScreen(
     draftId: PostDraftId,
     postDraftRepository: PostDraftRepository,
+    clipboardWriter: ClipboardWriter? = null,
     defaultTargetPlatform: TargetPlatform,
     defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
     defaultQualityTier: QualityTier = QualityTier.Standard,
@@ -55,10 +58,11 @@ fun ManualPostDraftWorkspaceScreen(
     onNavigateToNewPost: () -> Unit,
     onNavigateToFinalComposer: () -> Unit = {},
 ) {
-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
+    val viewModel = remember(draftId, postDraftRepository, clipboardWriter, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
+            clipboardWriter = clipboardWriter,
             defaultTargetPlatform = defaultTargetPlatform,
             defaultRealismLevel = defaultRealismLevel,
             defaultQualityTier = defaultQualityTier,
@@ -106,6 +110,7 @@ fun ManualPostDraftWorkspaceScreen(
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
+        onCopyPromptHistoryEntry = { entryId -> refreshInMemory { copyPromptHistoryEntryPrompt(entryId) } },
         onShareOrExport = onNavigateToFinalComposer,
         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
@@ -127,6 +132,7 @@ fun ManualPostDraftWorkspaceContent(
     onSelectOriginalPhoto: () -> Unit,
     onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
+    onCopyPromptHistoryEntry: (PromptHistoryEntryId) -> Unit,
     onShareOrExport: () -> Unit,
     onTogglePromptHistory: () -> Unit,
     onNavigateToNewPost: () -> Unit,
@@ -312,10 +318,20 @@ fun ManualPostDraftWorkspaceContent(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 state.promptHistory.forEach { entry ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = entry.operationType.displayName,
-                            style = MaterialTheme.typography.titleSmall,
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = entry.operationType.displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            OutlinedButton(
+                                onClick = { onCopyPromptHistoryEntry(entry.id) },
+                            ) {
+                                Text("Copy prompt")
+                            }
+                        }
                         Text(
                             text = entry.prompt,
                             style = MaterialTheme.typography.bodySmall,

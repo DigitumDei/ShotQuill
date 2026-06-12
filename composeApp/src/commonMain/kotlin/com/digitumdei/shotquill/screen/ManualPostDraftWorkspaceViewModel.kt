@@ -92,6 +92,7 @@ data class ManualPostDraftWorkspaceActions(
 class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
+    private val clipboardWriter: ClipboardWriter? = null,
     private val analyzeVision: AnalyzeVision? = null,
     private val postTextGenerator: PostTextGenerator? = null,
     private val photoEditExecutor: PhotoEditExecutor? = null,
@@ -400,13 +401,39 @@ class ManualPostDraftWorkspaceViewModel(
 
     fun markCaptionCopied() {
         if (state.actions.canCopyCaption) {
-            state = state.copy(statusMessage = "Caption copied")
+            val text = state.generatedCaption
+            if (clipboardWriter != null && text != null) {
+                clipboardWriter.copy("caption", text)
+                state = state.copy(statusMessage = "Caption copied")
+            } else if (clipboardWriter == null) {
+                state = state.copy(statusMessage = "Clipboard not available")
+            }
         }
     }
 
     fun markAltTextCopied() {
         if (state.actions.canCopyAltText) {
-            state = state.copy(statusMessage = "Alt text copied")
+            val text = state.generatedAltText
+            if (clipboardWriter != null && text != null) {
+                clipboardWriter.copy("alt text", text)
+                state = state.copy(statusMessage = "Alt text copied")
+            } else if (clipboardWriter == null) {
+                state = state.copy(statusMessage = "Clipboard not available")
+            }
+        }
+    }
+
+    fun copyPromptHistoryEntryPrompt(entryId: PromptHistoryEntryId) {
+        if (clipboardWriter == null) {
+            state = state.copy(statusMessage = "Clipboard not available")
+            return
+        }
+        val entry = state.promptHistory.firstOrNull { it.id == entryId }
+        if (entry != null) {
+            clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
+            state = state.copy(statusMessage = "Prompt copied to clipboard")
+        } else {
+            state = state.copy(statusMessage = "Prompt entry not found")
         }
     }
 
