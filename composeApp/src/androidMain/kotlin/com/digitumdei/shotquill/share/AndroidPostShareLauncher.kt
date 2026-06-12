@@ -17,37 +17,47 @@ class AndroidPostShareLauncher(
         )
     },
 ) : PostShareLauncher {
-    override fun share(imageUri: String?, text: String): Boolean {
+    override fun share(imageUri: String?, text: String): ShareResult {
+        var resolvedDestinationUri: String? = null
         return try {
-            val chooser = buildChooserIntent(imageUri, text) ?: return false
-            context.startActivity(chooser)
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun buildChooserIntent(imageUri: String?, text: String): Intent? {
-        val shareIntent =
             if (imageUri != null) {
-                val imageFile = resolveShareImageFile(imageUri) ?: return null
-                if (!imageFile.exists() || !imageFile.isFile) {
-                    return null
+                val imageFile = resolveShareImageFile(imageUri)
+                if (imageFile == null) {
+                    return ShareResult(
+                        success = false,
+                        errorMessage = if (!imageUri.startsWith("file://")) {
+                            "Image URI does not reference a local file: $imageUri"
+                        } else {
+                            "Unable to resolve image file: $imageUri"
+                        },
+                    )
                 }
                 val contentUri = contentUriForFile(imageFile)
-                Intent(Intent.ACTION_SEND).apply {
+                resolvedDestinationUri = contentUri.toString()
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_TEXT, text)
                     putExtra(Intent.EXTRA_STREAM, contentUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                context.startActivity(Intent.createChooser(shareIntent, null))
+                ShareResult(success = true, destinationUri = resolvedDestinationUri)
             } else {
-                Intent(Intent.ACTION_SEND).apply {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, text)
                 }
+                context.startActivity(Intent.createChooser(shareIntent, null))
+                ShareResult(success = true, destinationUri = null)
             }
-        return Intent.createChooser(shareIntent, null)
+        } catch (e: Exception) {
+            ShareResult(
+                success = false,
+                destinationUri = resolvedDestinationUri,
+                errorMessage = e.message?.let { "Unable to open share sheet: $it" }
+                    ?: "Unable to open share sheet",
+            )
+        }
     }
 
     private fun resolveShareImageFile(imageUri: String): File? {
@@ -64,13 +74,13 @@ class AndroidPostShareLauncher(
         }
         if (!uriPath.isNullOrBlank()) {
             val file = File(uriPath)
-            if (file.exists()) return file
+            if (file.exists() && file.isFile) return file
         }
 
         val rawPath = imageUri.removePrefix("file://")
         if (rawPath.isNotBlank()) {
             val file = File(rawPath)
-            if (file.exists()) return file
+            if (file.exists() && file.isFile) return file
         }
 
         return null

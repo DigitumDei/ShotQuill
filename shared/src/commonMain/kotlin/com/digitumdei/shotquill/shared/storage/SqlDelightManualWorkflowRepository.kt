@@ -608,12 +608,13 @@ class SqlDelightManualWorkflowRepository(
     }
 
     private fun deleteOwnedDraftRows(id: PostDraftId) {
+        // final_post_content is intentionally not deleted here; see the
+        // PostDraftRepository.save contract on finalPostContent preservation.
         queries.deleteExportRecordsByDraftId(id.value)
         queries.deletePromptHistoryEntriesByDraftId(id.value)
         queries.deletePhotoEditResultsByDraftId(id.value)
         queries.deletePhotoEditRequestsByDraftId(id.value)
         queries.deleteAltTextResultsByDraftId(id.value)
-        queries.deleteFinalPostContentByDraftId(id.value)
         queries.deleteCaptionResultHashtagsByDraftId(id.value)
         queries.deleteCaptionResultsByDraftId(id.value)
         queries.deleteCaptionRequestsByDraftId(id.value)

@@ -42,6 +42,7 @@ data class FinalPostComposerState(
 data class FinalPostComposerActions(
     val canShare: Boolean,
     val canSelectEdited: Boolean,
+    val canArchive: Boolean = false,
 )
 
 class FinalPostComposerViewModel(
@@ -173,24 +174,25 @@ class FinalPostComposerViewModel(
             )
             return
         }
-        val draft = repository.get(draftId) ?: run {
+        persistFinalPostContent()
+        val shareDraft = repository.get(draftId) ?: run {
             state = unloadedState(statusMessage = "Draft not found")
             return
         }
-        if (!draft.canEnterShareFlow()) {
+        if (!shareDraft.canEnterShareFlow()) {
             state = state.copy(
                 actions = state.actions.copy(canShare = false),
-                statusMessage = "Cannot open share sheet while status is ${draft.status.wireValue}",
+                statusMessage = "Cannot open share sheet while status is ${shareDraft.status.wireValue}",
             )
             return
         }
         val now = clock.nowMillis()
-        val updatedAt = operationUpdatedAt(draft, now)
+        val updatedAt = operationUpdatedAt(shareDraft, now)
         val idSuffix = nextIdSuffix(now)
         val platform = state.targetPlatform ?: defaultTargetPlatform
         val exportRecord = ExportRecord(
             id = ExportRecordId("export-$idSuffix"),
-            draftId = draft.id,
+            draftId = shareDraft.id,
             targetPlatform = platform,
             status = ExportStatus.Pending,
             destinationUri = null,
@@ -198,27 +200,34 @@ class FinalPostComposerViewModel(
             createdAtEpochMillis = now,
             completedAtEpochMillis = null,
         )
-        val transitioned = if (draft.status == DraftStatus.ReadyToShare || draft.status == DraftStatus.Shared) {
-            draft.copy(updatedAt = updatedAt)
+        val transitioned = if (shareDraft.status == DraftStatus.ReadyToShare || shareDraft.status == DraftStatus.Shared) {
+            shareDraft.copy(updatedAt = updatedAt)
         } else {
-            draft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
+            shareDraft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
         }
         val draftWithExport = transitioned.copy(
-            targetPlatforms = draft.targetPlatforms + platform,
-            exportRecords = draft.exportRecords + exportRecord,
+            targetPlatforms = transitioned.targetPlatforms + platform,
+            exportRecords = transitioned.exportRecords + exportRecord,
         )
-        repository.save(draftWithExport)
-
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
-        val chooserLaunched = postShareLauncher.share(state.selectedPhotoUri, composedText)
+        try {
+            clipboardWriter.copy("post caption", composedText)
+        } catch (_: Exception) {
+            state = state.copy(statusMessage = "Failed to copy caption to clipboard")
+            return
+        }
 
-        if (chooserLaunched) {
+        repository.save(draftWithExport)
+        val shareResult = postShareLauncher.share(state.selectedPhotoUri, composedText)
+
+        if (shareResult.success) {
             val exportedRecord = exportRecord.copy(
                 status = ExportStatus.Exported,
+                destinationUri = shareResult.destinationUri,
                 completedAtEpochMillis = now,
             )
-            val persistedDraft = if (draft.status == DraftStatus.Shared) {
+            val persistedDraft = if (shareDraft.status == DraftStatus.Shared) {
                 draftWithExport
             } else {
                 draftWithExport.transitionTo(DraftStatus.Shared, updatedAt)
@@ -230,13 +239,15 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Share sheet opened")
+            state = repository.get(draftId)?.toState(statusMessage = "Image shared — caption copied to clipboard. Paste it in your target app.")
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {
+            val errorMessage = shareResult.errorMessage ?: "Unable to open share sheet"
             val failedExport = exportRecord.copy(
                 status = ExportStatus.Failed,
-                errorMessage = "Unable to open share sheet",
+                destinationUri = shareResult.destinationUri,
+                errorMessage = errorMessage,
                 completedAtEpochMillis = now,
             )
             repository.save(
@@ -246,10 +257,30 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Unable to open share sheet")
+            state = repository.get(draftId)?.toState(statusMessage = errorMessage)
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         }
+    }
+
+    fun archive() {
+        val draft = repository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (draft.status == DraftStatus.Archived) return
+        persistFinalPostContent()
+        val freshDraft = repository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (freshDraft.status == DraftStatus.Archived) return
+        val now = clock.nowMillis()
+        val updatedAt = operationUpdatedAt(freshDraft, now)
+        val transitioned = freshDraft.transitionTo(DraftStatus.Archived, updatedAt)
+        repository.save(transitioned)
+        state = repository.get(draftId)?.toState(statusMessage = "Draft archived")
+            ?: unloadedState(statusMessage = "Draft not found")
     }
 
     private fun PostDraft.toState(statusMessage: String? = null): FinalPostComposerState {
@@ -280,6 +311,7 @@ class FinalPostComposerViewModel(
             actions = FinalPostComposerActions(
                 canShare = effectiveCaption(content).isValidCaption() && activeAsset?.uri != null,
                 canSelectEdited = editedAsset != null,
+                canArchive = status != DraftStatus.Archived,
             ),
         )
     }
@@ -313,6 +345,7 @@ class FinalPostComposerViewModel(
             actions = FinalPostComposerActions(
                 canShare = false,
                 canSelectEdited = false,
+                canArchive = false,
             ),
         )
 

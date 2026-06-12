@@ -39,6 +39,16 @@ interface BrandProfileRepository {
 }
 
 interface PostDraftRepository {
+    /**
+     * Persists the draft and replaces its owned child rows.
+     *
+     * Final post content is the exception to full replacement: when
+     * [PostDraft.finalPostContent] is null the previously persisted content is
+     * preserved rather than deleted. Share and archive flows persist final post
+     * content separately and then save drafts that were loaded without it, so
+     * deleting on null would silently discard the user's edited caption and alt
+     * text. A non-null [PostDraft.finalPostContent] overwrites the stored row.
+     */
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean

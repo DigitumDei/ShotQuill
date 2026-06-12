@@ -488,9 +488,6 @@ ON CONFLICT(draft_id) DO UPDATE SET
   edited_alt_text = excluded.edited_alt_text,
   updated_at_epoch_millis = excluded.updated_at_epoch_millis;
 
-deleteFinalPostContentByDraftId:
-DELETE FROM final_post_content WHERE draft_id = ?;
-
 selectFinalPostContentByDraftId:
 SELECT * FROM final_post_content WHERE draft_id = ?;
 
