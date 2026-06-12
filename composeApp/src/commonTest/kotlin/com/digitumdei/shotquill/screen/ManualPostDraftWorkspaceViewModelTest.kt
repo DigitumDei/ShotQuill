@@ -2080,6 +2080,80 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun exposesAllPromptHistoryMetadataFieldsIncludingFailedEntry() {
+        val now = 1_700_000_100_000L
+        val successEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("success-1"),
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Write a caption for this image",
+            responseSummary = "A beautiful sunset",
+            modelName = "gpt-4o",
+            createdAtEpochMillis = now,
+            provider = "OpenAI",
+            mediaAssetId = mediaAssetId,
+            requestSettings = "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
+            resultReference = "caption-result-1",
+        )
+        val failedEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("failed-1"),
+            draftId = draftId,
+            operationType = AiOperationType.VisionDescription,
+            prompt = "Describe this image for accessibility",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = now + 5000,
+            provider = "Anthropic",
+            mediaAssetId = mediaAssetId,
+            requestSettings = "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
+            resultReference = null,
+            errorMessage = "The AI provider is rate limited. Try again later.",
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(successEntry, failedEntry),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(now),
+            clipboardWriter = FakeClipboardWriter(),
+        )
+        viewModel.load()
+
+        assertEquals(2, viewModel.state.promptHistory.size)
+        assertTrue(viewModel.state.actions.canViewPromptHistory)
+
+        val loadedSuccess = viewModel.state.promptHistory.firstOrNull { it.id == successEntry.id }
+        assertNotNull(loadedSuccess)
+        assertEquals("OpenAI", loadedSuccess.provider)
+        assertEquals(now, loadedSuccess.createdAtEpochMillis)
+        assertEquals(
+            "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
+            loadedSuccess.requestSettings,
+        )
+        assertEquals("caption-result-1", loadedSuccess.resultReference)
+        assertNull(loadedSuccess.errorMessage)
+        assertFalse(loadedSuccess.isFailure)
+
+        val loadedFailed = viewModel.state.promptHistory.firstOrNull { it.id == failedEntry.id }
+        assertNotNull(loadedFailed)
+        assertEquals("Anthropic", loadedFailed.provider)
+        assertEquals(now + 5000, loadedFailed.createdAtEpochMillis)
+        assertEquals(
+            "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
+            loadedFailed.requestSettings,
+        )
+        assertNull(loadedFailed.resultReference)
+        assertEquals(
+            "The AI provider is rate limited. Try again later.",
+            loadedFailed.errorMessage,
+        )
+        assertTrue(loadedFailed.isFailure)
+    }
+
+    @Test
     fun updatesPhotoEditFormIntent() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
