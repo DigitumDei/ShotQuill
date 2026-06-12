@@ -563,6 +563,7 @@ class ManualPostDraftWorkspaceViewModel(
                     emptyList()
                 } else {
                     ids.flatMap { promptHistoryRepository.listPromptHistoryForMediaAsset(it) }
+                        .filter { it.operationType == AiOperationType.PhotoEdit }
                         .distinctBy { it.id }
                         .sortedWith(
                             compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }

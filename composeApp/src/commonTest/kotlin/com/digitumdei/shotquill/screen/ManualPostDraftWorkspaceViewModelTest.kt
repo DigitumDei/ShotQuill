@@ -2009,6 +2009,75 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun filtersPhotoEditPromptHistoryByOperationType() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithEditedMedia())
+        val now = 1_700_000_100_000L
+        val visionId = PromptHistoryEntryId("vision-1")
+        val captionId = PromptHistoryEntryId("caption-1")
+        val altId = PromptHistoryEntryId("alt-1")
+        val editId = PromptHistoryEntryId("edit-1")
+
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = visionId,
+                draftId = draftId,
+                operationType = AiOperationType.VisionDescription,
+                prompt = "Describe this image",
+                responseSummary = "A cup of coffee",
+                modelName = "vision-model",
+                createdAtEpochMillis = now,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = captionId,
+                draftId = draftId,
+                operationType = AiOperationType.CaptionGeneration,
+                prompt = "Write a caption",
+                responseSummary = "Morning coffee",
+                modelName = "caption-model",
+                createdAtEpochMillis = now + 1000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = altId,
+                draftId = draftId,
+                operationType = AiOperationType.AltTextGeneration,
+                prompt = "Describe for accessibility",
+                responseSummary = "Coffee cup on table",
+                modelName = "alt-model",
+                createdAtEpochMillis = now + 2000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = editId,
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = "Brighten the image",
+                responseSummary = "Brightness adjusted",
+                modelName = "edit-model",
+                createdAtEpochMillis = now + 3000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            promptHistoryRepository = repository,
+        )
+        viewModel.load()
+
+        assertEquals(1, viewModel.state.photoEditPromptHistory.size)
+        assertEquals(editId, viewModel.state.photoEditPromptHistory.single().id)
+    }
+
+    @Test
     fun updatesPhotoEditFormIntent() {
         val repository = FakePostDraftRepository(sampleDraft())
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
