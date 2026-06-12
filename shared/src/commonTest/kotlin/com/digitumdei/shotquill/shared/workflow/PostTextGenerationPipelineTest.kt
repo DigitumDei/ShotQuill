@@ -172,7 +172,7 @@ class PostTextGenerationPipelineTest {
         assertEquals(2, stored.altTextResults.size)
         assertEquals(4, stored.promptHistory.size)
         assertEquals(
-            listOf("caption-result-1700000100000-0", "caption-result-1700000200000-1"),
+            listOf("caption-result-1700000100000-0", "caption-result-1700000200000-2"),
             stored.captionResults.map { it.id.value },
         )
     }
