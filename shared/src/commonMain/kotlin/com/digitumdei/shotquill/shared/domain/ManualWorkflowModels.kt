@@ -173,7 +173,14 @@ data class PromptHistoryEntry(
     val responseSummary: String?,
     val modelName: String?,
     val createdAtEpochMillis: Long,
-)
+    val provider: String? = null,
+    val mediaAssetId: MediaAssetId? = null,
+    val requestSettings: String? = null,
+    val resultReference: String? = null,
+    val errorMessage: String? = null,
+) {
+    val isFailure: Boolean get() = errorMessage != null
+}
 
 data class ExportRecord(
     val id: ExportRecordId,

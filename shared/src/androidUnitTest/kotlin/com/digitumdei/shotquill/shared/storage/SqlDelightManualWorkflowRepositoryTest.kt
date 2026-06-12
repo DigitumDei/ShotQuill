@@ -854,6 +854,11 @@ class SqlDelightManualWorkflowRepositoryTest {
             responseSummary = "Generated with sk-live_abcdefghi123456.",
             modelName = "caption-model",
             createdAt = createdAt,
+            provider = null,
+            mediaAssetId = null,
+            requestSettings = null,
+            resultReference = null,
+            errorMessage = null,
         )
         val mappedExport = ManualWorkflowStorageMapper.exportRecord(
             recordId = "export-1",
@@ -946,7 +951,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         )
         repository.savePromptHistoryEntry(
             PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-1"),
+                id = PromptHistoryEntryId("prompt-2"),
                 draftId = PostDraftId("draft-1"),
                 operationType = AiOperationType.PhotoEdit,
                 prompt = "Warm the photo.",
@@ -978,7 +983,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertEquals(QualityTier.Standard, stored.photoEditRequests.single().qualityTier)
         assertEquals("Warmer edit.", stored.photoEditResults.single().summary)
         assertEquals("file://photo-edited-v2.jpg", stored.photoEditResults.single().editedMediaAsset.uri)
-        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.single().operationType)
+        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.last().operationType)
         assertEquals(ExportStatus.Failed, stored.exportRecords.single().status)
         driver.close()
     }
@@ -991,7 +996,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         repository.save(samplePostDraft())
         repository.savePromptHistoryEntry(
             PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-1"),
+                id = PromptHistoryEntryId("prompt-redact-1"),
                 draftId = PostDraftId("draft-1"),
                 operationType = AiOperationType.CaptionGeneration,
                 prompt = "Use sk-live_abcdefghi123456 in prompt.",
@@ -1002,7 +1007,7 @@ class SqlDelightManualWorkflowRepositoryTest {
         )
         repository.saveExportRecord(
             ExportRecord(
-                id = ExportRecordId("export-1"),
+                id = ExportRecordId("export-redact-1"),
                 draftId = PostDraftId("draft-1"),
                 targetPlatform = TargetPlatform.BlueskyPost,
                 status = ExportStatus.Failed,
@@ -1013,8 +1018,8 @@ class SqlDelightManualWorkflowRepositoryTest {
             ),
         )
 
-        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-1"))
-        val storedExport = repository.get(ExportRecordId("export-1"))
+        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-redact-1"))
+        val storedExport = repository.get(ExportRecordId("export-redact-1"))
         assertEquals("Use ${SecretRedactor.Redacted} in prompt.", storedPrompt?.prompt)
         assertEquals("Model returned ${SecretRedactor.Redacted}.", storedPrompt?.responseSummary)
         assertEquals("Failed with ${SecretRedactor.Redacted}.", storedExport?.errorMessage)
@@ -1043,8 +1048,8 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
-    fun hasMigrationScaffoldForVersionThree() {
-        assertEquals(3, ShotQuillDatabase.Schema.version.toInt())
+    fun hasMigrationScaffoldForVersionFour() {
+        assertEquals(4, ShotQuillDatabase.Schema.version.toInt())
     }
 
     @Test
@@ -1716,6 +1721,249 @@ class SqlDelightManualWorkflowRepositoryTest {
 
         val list = repository.listExportRecordsForDraft(PostDraftId("draft-1"))
         assertEquals(2, list.size)
+        driver.close()
+    }
+
+    @Test
+    fun `promptHistoryEntry round-trip persists all new fields exactly`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val entry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-rt-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+            prompt = "Describe this image.",
+            responseSummary = "Photo described.",
+            modelName = "vision-model",
+            createdAtEpochMillis = createdAt + 1,
+            provider = "openai",
+            mediaAssetId = MediaAssetId("media-1"),
+            requestSettings = "temperature=0.7, max_tokens=512",
+            resultReference = "vision-result-42",
+            errorMessage = null,
+        )
+        repository.savePromptHistoryEntry(entry)
+
+        val byId = repository.get(PromptHistoryEntryId("prompt-rt-1"))
+        assertNotNull(byId)
+        assertEquals(entry.id, byId.id)
+        assertEquals(entry.draftId, byId.draftId)
+        assertEquals(entry.operationType, byId.operationType)
+        assertEquals(entry.prompt, byId.prompt)
+        assertEquals(entry.responseSummary, byId.responseSummary)
+        assertEquals(entry.modelName, byId.modelName)
+        assertEquals(entry.createdAtEpochMillis, byId.createdAtEpochMillis)
+        assertEquals(entry.provider, byId.provider)
+        assertEquals(entry.mediaAssetId, byId.mediaAssetId)
+        assertEquals(entry.requestSettings, byId.requestSettings)
+        assertEquals(entry.resultReference, byId.resultReference)
+        assertNull(byId.errorMessage)
+        assertFalse(byId.isFailure)
+
+        val byDraft = repository.listPromptHistoryForDraft(PostDraftId("draft-1"))
+        assertTrue(byDraft.any { it.id == PromptHistoryEntryId("prompt-rt-1") })
+        val fromList = byDraft.first { it.id == PromptHistoryEntryId("prompt-rt-1") }
+        assertEquals(entry.provider, fromList.provider)
+        assertEquals(entry.mediaAssetId, fromList.mediaAssetId)
+        assertEquals(entry.requestSettings, fromList.requestSettings)
+        assertEquals(entry.resultReference, fromList.resultReference)
+        assertNull(fromList.errorMessage)
+
+        driver.close()
+    }
+
+    @Test
+    fun `promptHistoryEntry exact prompt retrieval with special characters`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val specialPrompt = "Line one\nLine two\nTabbed\there\n\"Quoted\" and 'single'\n100% done😀 emoji"
+        val entry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-special-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = specialPrompt,
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = createdAt + 2,
+        )
+        repository.savePromptHistoryEntry(entry)
+
+        val stored = repository.get(PromptHistoryEntryId("prompt-special-1"))
+        assertNotNull(stored)
+        assertEquals(specialPrompt, stored.prompt)
+
+        driver.close()
+    }
+
+    @Test
+    fun `listPromptHistoryForMediaAsset returns only matching entries in created_at order`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val entryMediaA1 = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-ma-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.AltTextGeneration,
+            prompt = "Alt text for asset A.",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = createdAt + 10,
+            mediaAssetId = MediaAssetId("media-1"),
+        )
+        val entryMediaA2 = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-ma-2"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.VisionDescription,
+            prompt = "Describe asset A.",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = createdAt + 20,
+            mediaAssetId = MediaAssetId("media-1"),
+        )
+        val entryMediaB = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-mb-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.AltTextGeneration,
+            prompt = "Alt text for edited asset.",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = createdAt + 30,
+            mediaAssetId = MediaAssetId("media-edited-1"),
+        )
+        val entryNoAsset = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-no-asset-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Generate caption.",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = createdAt + 40,
+            mediaAssetId = null,
+        )
+
+        repository.savePromptHistoryEntry(entryMediaA1)
+        repository.savePromptHistoryEntry(entryMediaA2)
+        repository.savePromptHistoryEntry(entryMediaB)
+        repository.savePromptHistoryEntry(entryNoAsset)
+
+        val forMediaA = repository.listPromptHistoryForMediaAsset(MediaAssetId("media-1"))
+        assertEquals(2, forMediaA.size)
+        assertEquals(PromptHistoryEntryId("prompt-ma-1"), forMediaA[0].id)
+        assertEquals(PromptHistoryEntryId("prompt-ma-2"), forMediaA[1].id)
+
+        val forMediaB = repository.listPromptHistoryForMediaAsset(MediaAssetId("media-edited-1"))
+        assertEquals(1, forMediaB.size)
+        assertEquals(PromptHistoryEntryId("prompt-mb-1"), forMediaB[0].id)
+
+        val forUnknown = repository.listPromptHistoryForMediaAsset(MediaAssetId("unknown-media"))
+        assertEquals(emptyList(), forUnknown)
+
+        driver.close()
+    }
+
+    @Test
+    fun `promptHistoryEntry immutability — duplicate id write via savePromptHistoryEntry is silently ignored`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val original = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-immutable-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Original prompt.",
+            responseSummary = "Original response.",
+            modelName = "model-v1",
+            createdAtEpochMillis = createdAt + 50,
+            errorMessage = null,
+        )
+        repository.savePromptHistoryEntry(original)
+
+        val duplicate = original.copy(
+            prompt = "Mutated prompt.",
+            responseSummary = "Mutated response.",
+            errorMessage = "Should not appear.",
+        )
+        repository.savePromptHistoryEntry(duplicate)
+
+        val stored = repository.get(PromptHistoryEntryId("prompt-immutable-1"))
+        assertNotNull(stored)
+        assertEquals("Original prompt.", stored.prompt)
+        assertEquals("Original response.", stored.responseSummary)
+        assertNull(stored.errorMessage)
+        assertFalse(stored.isFailure)
+
+        driver.close()
+    }
+
+    @Test
+    fun `promptHistoryEntry secrets are redacted in prompt, requestSettings, and errorMessage`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val secretKey = "sk-test-secret-key-12345678901234567890"
+        val entry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-secrets-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Use key $secretKey to call the API.",
+            responseSummary = null,
+            modelName = "caption-model",
+            createdAtEpochMillis = createdAt + 60,
+            requestSettings = "api_key=$secretKey",
+            errorMessage = "Failed: $secretKey not authorized.",
+        )
+        repository.savePromptHistoryEntry(entry)
+
+        val stored = repository.get(PromptHistoryEntryId("prompt-secrets-1"))
+        assertNotNull(stored)
+        assertFalse(stored.prompt.contains(secretKey), "prompt must not contain raw key")
+        assertFalse(
+            stored.requestSettings?.contains(secretKey) == true,
+            "requestSettings must not contain raw key",
+        )
+        assertFalse(
+            stored.errorMessage?.contains(secretKey) == true,
+            "errorMessage must not contain raw key",
+        )
+        assertTrue(stored.prompt.contains(SecretRedactor.Redacted))
+        assertTrue(stored.errorMessage?.contains(SecretRedactor.Redacted) == true)
+
+        driver.close()
+    }
+
+    @Test
+    fun `failed promptHistoryEntry is visible in listPromptHistoryForDraft and isFailure is true`() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        repository.save(samplePostDraft())
+
+        val failedEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-failed-1"),
+            draftId = PostDraftId("draft-1"),
+            operationType = AiOperationType.PhotoEdit,
+            prompt = "Edit the photo.",
+            responseSummary = null,
+            modelName = "edit-model",
+            createdAtEpochMillis = createdAt + 70,
+            resultReference = null,
+            errorMessage = "API timeout after 30s.",
+        )
+        repository.savePromptHistoryEntry(failedEntry)
+
+        val history = repository.listPromptHistoryForDraft(PostDraftId("draft-1"))
+        val failed = history.firstOrNull { it.id == PromptHistoryEntryId("prompt-failed-1") }
+        assertNotNull(failed)
+        assertTrue(failed.isFailure)
+        assertEquals("API timeout after 30s.", failed.errorMessage)
+        assertNull(failed.resultReference)
+
         driver.close()
     }
 }

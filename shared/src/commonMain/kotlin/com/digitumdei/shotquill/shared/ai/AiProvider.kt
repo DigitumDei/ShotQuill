@@ -6,6 +6,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 
 interface AiProvider {
+    val name: String get() = "unknown"
     fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput>
     fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput>
     fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput>

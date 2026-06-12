@@ -12,6 +12,7 @@ class OpenAiProvider(
     private val logger: AiRequestLogger = NoopAiRequestLogger,
     private val imagePreprocessor: AiImageUploadPreprocessor = PlatformImageUploadPreprocessor,
 ) : AiProvider {
+    override val name: String get() = "openai"
     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
         withApiKey { apiKey ->
             val image = imagePreprocessor.preprocess(request.image, ImageUploadPreprocessingConfig())

@@ -3286,6 +3286,9 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             storedPromptHistory.filter { it.draftId == id }
 
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            storedPromptHistory.filter { it.mediaAssetId == id }
+
         override fun save(mediaAsset: MediaAsset) {}
         override fun get(id: MediaAssetId): MediaAsset? = null
         override fun save(brandProfile: BrandProfile) {}

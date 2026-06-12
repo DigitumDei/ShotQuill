@@ -1,0 +1,5 @@
+ALTER TABLE prompt_history_entries ADD COLUMN provider TEXT;
+ALTER TABLE prompt_history_entries ADD COLUMN media_asset_id TEXT;
+ALTER TABLE prompt_history_entries ADD COLUMN request_settings TEXT;
+ALTER TABLE prompt_history_entries ADD COLUMN result_reference TEXT;
+ALTER TABLE prompt_history_entries ADD COLUMN error_message TEXT;

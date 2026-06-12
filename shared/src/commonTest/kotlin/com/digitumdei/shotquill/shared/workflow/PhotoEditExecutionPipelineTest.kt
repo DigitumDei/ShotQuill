@@ -1803,6 +1803,8 @@ class PhotoEditExecutionPipelineTest {
             .firstOrNull { it.id == id }
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             drafts[id]?.promptHistory.orEmpty()
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
             drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },
         )
