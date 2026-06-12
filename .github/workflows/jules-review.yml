@@ -18,8 +18,11 @@ jobs:
           fetch-depth: 0 # Ensures Jules can see the commit history/context
 
       - name: Run Jules Reviewer
-        uses: google-labs-code/jules-action@v1
+        uses: google-labs-code/jules-invoke@v1.0.0
         with:
-          api-key: ${{ secrets.JULES_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          task: "review-pr"
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: ${{ github.head_ref }}
+          include_commit_log: true
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Focus on correctness, regressions, missing tests, and maintainability.
