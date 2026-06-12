@@ -167,6 +167,63 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
+    fun `photo-edit provider failure persists full PromptHistoryEntry metadata`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+        val entry = persisted.promptHistoryEntry
+        assertEquals(AiOperationType.PhotoEdit, entry.operationType)
+        assertEquals("unknown", entry.provider)
+        assertEquals(mediaAssetId, entry.mediaAssetId)
+        assertEquals(
+            "intent=improve_lighting, realismLevel=photoreal, qualityTier=high, targetPlatform=instagram_feed_square, hasRefinement=false",
+            entry.requestSettings,
+        )
+        assertEquals(persisted.photoEditRequest.id.value, entry.resultReference,
+            "resultReference must equal the photo-edit request id for failure entries")
+        assertEquals("The AI provider is rate limited. Try again later.", entry.errorMessage)
+        assertEquals(expectedPrompt, entry.prompt, "Failure entry prompt must match the assembled prompt")
+        assertNull(entry.responseSummary, "responseSummary must be null for failure entry")
+        assertNull(entry.modelName, "modelName must be null for failure entry")
+        assertTrue(entry.isFailure)
+
+        val stored = assertNotNull(repository.get(draftId))
+        val storedEntry = stored.promptHistory.single()
+        assertEquals(entry, storedEntry, "Persisted entry must match stored entry")
+    }
+
+    @Test
     fun `retry appends another history entry after a failed edit`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraftWithVisionDescription()

@@ -330,6 +330,64 @@ class PostTextGenerationPipelineTest {
     }
 
     @Test
+    fun captionProviderFailurePersistsFullPromptHistoryEntry() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.Caption),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertIs<PostTextGenerationError.Provider>(failure.error)
+        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+        assertEquals(2, promptHistory.size, "Vision success + caption failure = 2 entries")
+        val captionFailure = promptHistory[1]
+        assertEquals(AiOperationType.CaptionGeneration, captionFailure.operationType)
+        assertEquals("unknown", captionFailure.provider)
+        assertEquals(mediaAssetId, captionFailure.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square, tone=default", captionFailure.requestSettings)
+        assertNull(captionFailure.resultReference, "resultReference must be null for caption failure entry")
+        assertEquals("The AI provider returned an unexpected error.", captionFailure.errorMessage)
+        assertNull(captionFailure.responseSummary, "responseSummary must be null for caption failure entry")
+        assertNull(captionFailure.modelName, "modelName must be null for caption failure entry")
+        assertTrue(captionFailure.prompt.contains("Write a social caption for instagram_feed_square"),
+            "Caption failure prompt must contain the assembled caption prompt")
+        assertTrue(captionFailure.isFailure)
+    }
+
+    @Test
+    fun altTextProviderFailurePersistsFullPromptHistoryEntry() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.AltText),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertIs<PostTextGenerationError.Provider>(failure.error)
+        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+        assertEquals(2, promptHistory.size, "Vision success + alt-text failure = 2 entries")
+        val altTextFailure = promptHistory[1]
+        assertEquals(AiOperationType.AltTextGeneration, altTextFailure.operationType)
+        assertEquals("unknown", altTextFailure.provider)
+        assertEquals(mediaAssetId, altTextFailure.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square", altTextFailure.requestSettings)
+        assertNull(altTextFailure.resultReference, "resultReference must be null for alt-text failure entry")
+        assertEquals("The AI provider returned an unexpected error.", altTextFailure.errorMessage)
+        assertNull(altTextFailure.responseSummary, "responseSummary must be null for alt-text failure entry")
+        assertNull(altTextFailure.modelName, "modelName must be null for alt-text failure entry")
+        assertTrue(altTextFailure.prompt.contains("Write accessible alt text"),
+            "Alt-text failure prompt must contain the assembled alt-text prompt")
+        assertTrue(altTextFailure.isFailure)
+    }
+
+    @Test
     fun reuseVisionDescriptionFalseRunsVisionEvenWhenCachedDescriptionExists() {
         val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
         val provider = RecordingAiProvider()
