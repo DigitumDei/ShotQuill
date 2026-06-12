@@ -96,8 +96,8 @@ data class ManualPostDraftWorkspaceActions(
 class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
-    private val promptHistoryRepository: PromptHistoryRepository? = null,
     private val clipboardWriter: ClipboardWriter? = null,
+    private val promptHistoryRepository: PromptHistoryRepository? = null,
     private val analyzeVision: AnalyzeVision? = null,
     private val postTextGenerator: PostTextGenerator? = null,
     private val photoEditExecutor: PhotoEditExecutor? = null,
@@ -555,13 +555,21 @@ class ManualPostDraftWorkspaceViewModel(
                 compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
                     .thenBy { it.id.value },
             ),
-            photoEditPromptHistory = activePhoto?.let { mediaAsset ->
-                promptHistoryRepository?.listPromptHistoryForMediaAsset(mediaAsset.id)
-                    ?.sortedWith(
-                        compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
-                            .thenBy { it.id.value },
-                    ) ?: emptyList()
-            } ?: emptyList(),
+            photoEditPromptHistory = run {
+                val activeId = activePhoto?.id
+                val sourceId = photoEditRequests.maxByOrNull { it.createdAtEpochMillis }?.sourceMediaAssetId
+                val ids = listOfNotNull(activeId, sourceId).distinct()
+                if (ids.isEmpty() || promptHistoryRepository == null) {
+                    emptyList()
+                } else {
+                    ids.flatMap { promptHistoryRepository.listPromptHistoryForMediaAsset(it) }
+                        .distinctBy { it.id }
+                        .sortedWith(
+                            compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
+                                .thenBy { it.id.value },
+                        )
+                }
+            },
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
