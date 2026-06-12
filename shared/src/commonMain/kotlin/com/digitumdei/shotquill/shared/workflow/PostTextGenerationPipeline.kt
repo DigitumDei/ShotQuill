@@ -125,6 +125,44 @@ class PostTextGenerationPipeline(
             }
             is AiProviderResult.Success -> result.value
         }
+        val captionCreatedAt = clock.nowMillis()
+        val captionIdSuffix = nextIdSuffix(captionCreatedAt)
+        val captionRequest = CaptionRequest(
+            id = CaptionRequestId("caption-request-$captionIdSuffix"),
+            draftId = draftId,
+            targetPlatform = targetPlatform,
+            prompt = captionPrompt,
+            tone = activeBrandProfile?.voice,
+            brandProfileId = activeBrandProfile?.id,
+            createdAtEpochMillis = captionCreatedAt,
+        )
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-$captionIdSuffix"),
+            requestId = captionRequest.id,
+            draftId = draftId,
+            targetPlatform = targetPlatform,
+            caption = captionOutput.caption.trim(),
+            shortCaption = captionOutput.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
+            hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
+            modelName = captionOutput.modelName,
+            createdAtEpochMillis = captionCreatedAt,
+        )
+        val captionHistoryEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-caption-generation-$captionIdSuffix"),
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = captionPrompt,
+            responseSummary = captionResult.responseSummary(),
+            modelName = captionResult.modelName,
+            createdAtEpochMillis = captionCreatedAt,
+            provider = aiProvider.name,
+            mediaAssetId = visionDescription.mediaAssetId,
+            requestSettings = RequestSettingsFormatter.captionGeneration(
+                targetPlatform = targetPlatform, tone = captionRequest.tone,
+            ),
+            resultReference = captionResult.id.value,
+        )
+        repository.savePromptHistoryEntry(captionHistoryEntry)
         val altTextOutput = when (
             val result = aiProvider.generateAltText(
                 AltTextGenerationRequest(
@@ -161,26 +199,6 @@ class PostTextGenerationPipeline(
 
         val now = clock.nowMillis()
         val idSuffix = nextIdSuffix(now)
-        val captionRequest = CaptionRequest(
-            id = CaptionRequestId("caption-request-$idSuffix"),
-            draftId = draftId,
-            targetPlatform = targetPlatform,
-            prompt = captionPrompt,
-            tone = activeBrandProfile?.voice,
-            brandProfileId = activeBrandProfile?.id,
-            createdAtEpochMillis = now,
-        )
-        val captionResult = CaptionResult(
-            id = CaptionResultId("caption-result-$idSuffix"),
-            requestId = captionRequest.id,
-            draftId = draftId,
-            targetPlatform = targetPlatform,
-            caption = captionOutput.caption.trim(),
-            shortCaption = captionOutput.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
-            hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
-            modelName = captionOutput.modelName,
-            createdAtEpochMillis = now,
-        )
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-result-$idSuffix"),
             draftId = draftId,
@@ -188,21 +206,6 @@ class PostTextGenerationPipeline(
             altText = altTextOutput.altText.trim(),
             modelName = altTextOutput.modelName,
             createdAtEpochMillis = now,
-        )
-        val captionHistoryEntry = PromptHistoryEntry(
-            id = PromptHistoryEntryId("prompt-caption-generation-$idSuffix"),
-            draftId = draftId,
-            operationType = AiOperationType.CaptionGeneration,
-            prompt = captionPrompt,
-            responseSummary = captionResult.responseSummary(),
-            modelName = captionResult.modelName,
-            createdAtEpochMillis = now,
-            provider = aiProvider.name,
-            mediaAssetId = visionDescription.mediaAssetId,
-            requestSettings = RequestSettingsFormatter.captionGeneration(
-                targetPlatform = targetPlatform, tone = captionRequest.tone,
-            ),
-            resultReference = captionResult.id.value,
         )
         val altTextHistoryEntry = PromptHistoryEntry(
             id = PromptHistoryEntryId("prompt-alt-text-generation-$idSuffix"),
@@ -236,7 +239,7 @@ class PostTextGenerationPipeline(
             captionRequest = captionRequest,
             captionResult = captionResult,
             altTextResult = altTextResult,
-            promptHistoryEntries = listOf(captionHistoryEntry, altTextHistoryEntry),
+            promptHistoryEntries = listOf(altTextHistoryEntry),
             updatedAt = operationUpdatedAt(currentBeforeSave, now),
         ) ?: return repository.get(draftId)?.let {
             PostTextGenerationResult.Failure(PostTextGenerationError.InvalidDraftStatus(it.status))

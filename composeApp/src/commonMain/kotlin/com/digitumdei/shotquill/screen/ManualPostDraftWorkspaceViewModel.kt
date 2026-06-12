@@ -442,6 +442,7 @@ class ManualPostDraftWorkspaceViewModel(
             return
         }
         val entry = state.promptHistory.firstOrNull { it.id == entryId }
+            ?: state.photoEditPromptHistory.firstOrNull { it.id == entryId }
         if (entry != null) {
             state = try {
                 clipboardWriter.copy(entry.operationType.displayName, entry.prompt)

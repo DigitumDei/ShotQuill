@@ -53,6 +53,7 @@ import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -375,8 +376,22 @@ class PostTextGenerationPipelineTest {
         val failure = assertIs<PostTextGenerationResult.Failure>(result)
         assertIs<PostTextGenerationError.Provider>(failure.error)
         val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
-        assertEquals(2, promptHistory.size, "Vision success + alt-text failure = 2 entries")
-        val altTextFailure = promptHistory[1]
+        assertEquals(3, promptHistory.size, "Vision success + caption success + alt-text failure = 3 entries")
+        val captionSuccess = promptHistory[1]
+        assertEquals(AiOperationType.CaptionGeneration, captionSuccess.operationType)
+        assertEquals("unknown", captionSuccess.provider)
+        assertEquals(mediaAssetId, captionSuccess.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square, tone=default", captionSuccess.requestSettings)
+        assertEquals("Recorded caption.\nShort: Recorded short caption.\nHashtags: #recorded", captionSuccess.responseSummary)
+        assertEquals("recording-model", captionSuccess.modelName)
+        assertEquals("caption-result-1700000100000-0", captionSuccess.resultReference)
+        assertNull(captionSuccess.errorMessage, "caption success entry must not be marked as a failure")
+        val expectedCaptionPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
+            .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
+        assertEquals(expectedCaptionPrompt, captionSuccess.prompt,
+            "Caption success prompt must be persisted when alt-text generation fails")
+        assertFalse(captionSuccess.isFailure)
+        val altTextFailure = promptHistory[2]
         assertEquals(AiOperationType.AltTextGeneration, altTextFailure.operationType)
         assertEquals("unknown", altTextFailure.provider)
         assertEquals(mediaAssetId, altTextFailure.mediaAssetId)

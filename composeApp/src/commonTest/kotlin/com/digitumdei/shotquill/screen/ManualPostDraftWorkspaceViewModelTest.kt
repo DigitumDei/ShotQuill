@@ -1604,6 +1604,39 @@ class ManualPostDraftWorkspaceViewModelTest {
     }
 
     @Test
+    fun copyPromptHistoryEntryPromptCopiesPhotoEditPromptToClipboard() {
+        val entryId = PromptHistoryEntryId("prompt-photo-edit-1")
+        val promptText = "Brighten the image"
+        val repository = FakeManualWorkflowRepository(sampleDraftWithEditedMedia())
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = entryId,
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = promptText,
+                responseSummary = "Brightness adjusted",
+                modelName = "edit-model",
+                createdAtEpochMillis = 1_700_000_010_000L,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clipboardWriter = clipboard,
+            promptHistoryRepository = repository,
+        )
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Photo Edit", clipboard.lastLabel)
+        assertEquals(promptText, clipboard.lastText)
+        assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
     fun copyPromptHistoryEntryPromptShowsNotFoundWhenEntryMissing() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val clipboard = FakeClipboardWriter()
