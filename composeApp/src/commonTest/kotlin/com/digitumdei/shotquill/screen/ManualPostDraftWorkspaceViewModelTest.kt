@@ -1651,10 +1651,12 @@ class ManualPostDraftWorkspaceViewModelTest {
         val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
         viewModel.load()
 
+        val historyBefore = viewModel.state.promptHistory
         viewModel.copyPromptHistoryEntryPrompt(entryId)
 
         assertEquals("Failed to copy prompt to clipboard", viewModel.state.statusMessage)
         assertTrue(viewModel.state.actions.canCopyPrompt)
+        assertEquals(historyBefore, viewModel.state.promptHistory, "Stored prompt history must not be mutated on clipboard exception")
     }
 
     @Test
