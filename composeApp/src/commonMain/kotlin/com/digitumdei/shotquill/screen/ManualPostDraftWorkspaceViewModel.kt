@@ -24,6 +24,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.PromptHistoryRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
@@ -71,9 +72,11 @@ data class ManualPostDraftWorkspaceState(
     val targetPlatform: TargetPlatform?,
     val draftStatus: DraftStatus?,
     val promptHistory: List<PromptHistoryEntry>,
+    val photoEditPromptHistory: List<PromptHistoryEntry>,
     val actions: ManualPostDraftWorkspaceActions,
     val statusMessage: String?,
     val isPromptHistoryVisible: Boolean,
+    val isPhotoEditHistoryVisible: Boolean,
     val photoEditForm: PhotoEditFormState,
 )
 
@@ -93,6 +96,7 @@ data class ManualPostDraftWorkspaceActions(
 class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
+    private val promptHistoryRepository: PromptHistoryRepository? = null,
     private val clipboardWriter: ClipboardWriter? = null,
     private val analyzeVision: AnalyzeVision? = null,
     private val postTextGenerator: PostTextGenerator? = null,
@@ -450,6 +454,10 @@ class ManualPostDraftWorkspaceViewModel(
         }
     }
 
+    fun togglePhotoEditHistory() {
+        state = state.copy(isPhotoEditHistoryVisible = !state.isPhotoEditHistoryVisible)
+    }
+
     fun togglePromptHistory() {
         state = state.copy(isPromptHistoryVisible = !state.isPromptHistoryVisible)
     }
@@ -547,6 +555,13 @@ class ManualPostDraftWorkspaceViewModel(
                 compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
                     .thenBy { it.id.value },
             ),
+            photoEditPromptHistory = activePhoto?.let { mediaAsset ->
+                promptHistoryRepository?.listPromptHistoryForMediaAsset(mediaAsset.id)
+                    ?.sortedWith(
+                        compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
+                            .thenBy { it.id.value },
+                    ) ?: emptyList()
+            } ?: emptyList(),
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
@@ -561,6 +576,7 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
+            isPhotoEditHistoryVisible = state.isPhotoEditHistoryVisible,
             photoEditForm = PhotoEditFormState(
                 selectedIntent = latestRequest?.intent ?: EditIntent.ImproveLighting,
                 userRefinementText = latestRequest?.userRefinement ?: "",
@@ -590,6 +606,7 @@ class ManualPostDraftWorkspaceViewModel(
             targetPlatform = null,
             draftStatus = null,
             promptHistory = emptyList(),
+            photoEditPromptHistory = emptyList(),
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = false,
                 canGeneratePostText = false,
@@ -604,6 +621,7 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,
+            isPhotoEditHistoryVisible = false,
             photoEditForm = PhotoEditFormState(
                 selectedIntent = EditIntent.ImproveLighting,
                 userRefinementText = "",

@@ -35,6 +35,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.platformPreset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.PromptHistoryRepository
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
@@ -49,6 +50,7 @@ import kotlinx.datetime.Instant
 fun ManualPostDraftWorkspaceScreen(
     draftId: PostDraftId,
     postDraftRepository: PostDraftRepository,
+    promptHistoryRepository: PromptHistoryRepository? = null,
     clipboardWriter: ClipboardWriter? = null,
     defaultTargetPlatform: TargetPlatform,
     defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
@@ -59,10 +61,11 @@ fun ManualPostDraftWorkspaceScreen(
     onNavigateToNewPost: () -> Unit,
     onNavigateToFinalComposer: () -> Unit = {},
 ) {
-    val viewModel = remember(draftId, postDraftRepository, clipboardWriter, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
+    val viewModel = remember(draftId, postDraftRepository, promptHistoryRepository, clipboardWriter, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
         ManualPostDraftWorkspaceViewModel(
             draftId = draftId,
             postDraftRepository = postDraftRepository,
+            promptHistoryRepository = promptHistoryRepository,
             clipboardWriter = clipboardWriter,
             defaultTargetPlatform = defaultTargetPlatform,
             defaultRealismLevel = defaultRealismLevel,
@@ -114,6 +117,7 @@ fun ManualPostDraftWorkspaceScreen(
         onCopyPromptHistoryEntry = { entryId -> refreshInMemory { copyPromptHistoryEntryPrompt(entryId) } },
         onShareOrExport = onNavigateToFinalComposer,
         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
+        onTogglePhotoEditHistory = { refreshInMemory { togglePhotoEditHistory() } },
         onNavigateToNewPost = onNavigateToNewPost,
         onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
         onUpdatePhotoEditRefinement = { viewModel.updatePhotoEditRefinement(it) },
@@ -136,6 +140,7 @@ fun ManualPostDraftWorkspaceContent(
     onCopyPromptHistoryEntry: (PromptHistoryEntryId) -> Unit,
     onShareOrExport: () -> Unit,
     onTogglePromptHistory: () -> Unit,
+    onTogglePhotoEditHistory: () -> Unit,
     onNavigateToNewPost: () -> Unit,
     onUpdatePhotoEditIntent: (EditIntent) -> Unit,
     onUpdatePhotoEditRefinement: (String) -> Unit,
@@ -282,6 +287,94 @@ fun ManualPostDraftWorkspaceContent(
                 text = "Latest result (${form.latestModelName ?: "unknown"}): $summary",
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+
+        if (state.photoEditPromptHistory.isNotEmpty()) {
+            OutlinedButton(
+                onClick = onTogglePhotoEditHistory,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (state.isPhotoEditHistoryVisible) "Hide photo edit history" else "View photo edit history")
+            }
+        }
+
+        if (state.isPhotoEditHistoryVisible) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.photoEditPromptHistory.forEach { entry ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = buildString {
+                                    append(entry.operationType.displayName)
+                                    if (entry.isFailure) append(" (Failed)")
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            )
+                            OutlinedButton(
+                                onClick = { onCopyPromptHistoryEntry(entry.id) },
+                                enabled = state.actions.canCopyPrompt,
+                            ) {
+                                Text("Copy prompt")
+                            }
+                        }
+                        Text(
+                            text = Instant.fromEpochMilliseconds(entry.createdAtEpochMillis).toString(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        entry.provider?.let {
+                            Text(
+                                text = "Provider: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.requestSettings?.let {
+                            Text(
+                                text = "Settings: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.modelName?.let {
+                            Text(
+                                text = "Model: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.resultReference?.let {
+                            Text(
+                                text = "Ref: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.responseSummary?.let {
+                            Text(
+                                text = "Response: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.errorMessage?.let {
+                            Text(
+                                text = "Error: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Text(
+                            text = entry.prompt,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
