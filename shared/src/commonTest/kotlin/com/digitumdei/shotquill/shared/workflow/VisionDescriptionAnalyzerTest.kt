@@ -202,7 +202,7 @@ class VisionDescriptionAnalyzerTest {
     }
 
     @Test
-    fun providerFailureReturnsProviderErrorWithoutPersistence() {
+    fun providerFailurePersistsPromptHistoryEntryError() {
         val repository = FakeManualWorkflowRepository(sampleDraft())
         val failingProvider = object : AiProvider {
             override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
@@ -226,8 +226,21 @@ class VisionDescriptionAnalyzerTest {
         val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
         val error = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
         assertIs<AiError.QuotaExceeded>(error.error)
-        assertEquals(0, repository.get(draftId)?.promptHistory?.size, "No prompt history must be persisted on vision provider failure")
         assertEquals(null, repository.get(draftId)?.visionDescriptions?.firstOrNull(), "No vision description must be persisted on vision provider failure")
+
+        val promptHistory = repository.get(draftId)?.promptHistory
+        assertEquals(1, promptHistory?.size, "A prompt history entry must be persisted on vision provider failure")
+        val entry = promptHistory?.single()
+        assertEquals(AiOperationType.VisionDescription, entry?.operationType)
+        assertEquals("unknown", entry?.provider)
+        assertEquals(mediaAssetId, entry?.mediaAssetId)
+        assertEquals("fileName=photo.jpg, mimeType=image/jpeg", entry?.requestSettings)
+        assertEquals(null, entry?.resultReference, "resultReference must be null for a failure entry")
+        assertEquals("The OpenAI account quota has been reached.", entry?.errorMessage)
+        assertEquals(null, entry?.responseSummary, "responseSummary must be null for a failure entry")
+        assertEquals(null, entry?.modelName, "modelName must be null for a failure entry")
+        assertTrue(entry?.prompt?.contains("Visible text or logos") == true)
+        assertTrue(entry?.isFailure == true)
     }
 
     @Test

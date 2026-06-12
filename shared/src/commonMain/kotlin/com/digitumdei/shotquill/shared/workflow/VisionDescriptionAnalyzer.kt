@@ -68,9 +68,28 @@ class VisionDescriptionAnalyzer(
             prompt = prompt,
         )
         return when (val providerResult = aiProvider.describeVision(visionRequest)) {
-            is AiProviderResult.Failure -> VisionDescriptionAnalysisResult.Failure(
-                VisionDescriptionAnalysisError.Provider(providerResult.error),
-            )
+            is AiProviderResult.Failure -> {
+                val now = clock.nowMillis()
+                val idSuffix = nextIdSuffix(now)
+                val failureEntry = PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-vision-description-failure-$idSuffix"),
+                    draftId = draft.id,
+                    operationType = AiOperationType.VisionDescription,
+                    prompt = prompt,
+                    responseSummary = null,
+                    modelName = null,
+                    createdAtEpochMillis = now,
+                    provider = aiProvider.name,
+                    mediaAssetId = mediaAsset.id,
+                    requestSettings = "fileName=${visionRequest.image.fileName}, mimeType=${visionRequest.image.mimeType}",
+                    resultReference = null,
+                    errorMessage = providerResult.error.userMessage,
+                )
+                repository.savePromptHistoryEntry(failureEntry)
+                VisionDescriptionAnalysisResult.Failure(
+                    VisionDescriptionAnalysisError.Provider(providerResult.error),
+                )
+            }
             is AiProviderResult.Success -> {
                 val now = clock.nowMillis()
                 val idSuffix = nextIdSuffix(now)
