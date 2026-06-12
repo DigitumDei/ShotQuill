@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -1511,7 +1512,8 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun updatesStatusMessagesForCopyActions() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
         viewModel.load()
 
         viewModel.markCaptionCopied()
@@ -1519,6 +1521,133 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.markAltTextCopied()
         assertEquals("Alt text copied", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun captionCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.markCaptionCopied()
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun altTextCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.markAltTextCopied()
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun captionCopySetsFailureStatusWhenClipboardThrows() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.markCaptionCopied()
+
+        assertEquals("Failed to copy caption to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun altTextCopySetsFailureStatusWhenClipboardThrows() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.markAltTextCopied()
+
+        assertEquals("Failed to copy alt text to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptCopiesPromptToClipboard() {
+        val entryId = PromptHistoryEntryId("prompt-caption-1")
+        val promptText = "Generate a caption"
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(
+                    PromptHistoryEntry(
+                        id = entryId,
+                        draftId = draftId,
+                        operationType = AiOperationType.CaptionGeneration,
+                        prompt = promptText,
+                        responseSummary = "caption",
+                        modelName = "fake",
+                        createdAtEpochMillis = 1_700_000_010_000L,
+                    ),
+                ),
+            ),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Caption Generation", clipboard.lastLabel)
+        assertEquals(promptText, clipboard.lastText)
+        assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsNotFoundWhenEntryMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("nonexistent"))
+
+        assertNull(clipboard.lastLabel)
+        assertEquals("Prompt entry not found", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("any"))
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsFailureStatusWhenClipboardThrows() {
+        val entryId = PromptHistoryEntryId("prompt-caption-1")
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(
+                    PromptHistoryEntry(
+                        id = entryId,
+                        draftId = draftId,
+                        operationType = AiOperationType.CaptionGeneration,
+                        prompt = "Generate a caption",
+                        responseSummary = "caption",
+                        modelName = "fake",
+                        createdAtEpochMillis = 1_700_000_010_000L,
+                    ),
+                ),
+            ),
+        )
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Failed to copy prompt to clipboard", viewModel.state.statusMessage)
     }
 
     @Test
@@ -3229,6 +3358,21 @@ class ManualPostDraftWorkspaceViewModelTest {
             )
             repository.save(updated)
             return VisionDescriptionAnalysisResult.Success(visionDescription, cacheHit = false)
+        }
+    }
+
+    private class FakeClipboardWriter : ClipboardWriter {
+        var lastLabel: String? = null
+        var lastText: String? = null
+        override fun copy(label: String, text: String) {
+            lastLabel = label
+            lastText = text
+        }
+    }
+
+    private class FailingClipboardWriter : ClipboardWriter {
+        override fun copy(label: String, text: String) {
+            throw RuntimeException("Clipboard unavailable")
         }
     }
 

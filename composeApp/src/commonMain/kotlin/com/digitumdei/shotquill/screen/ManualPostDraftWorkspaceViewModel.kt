@@ -403,8 +403,12 @@ class ManualPostDraftWorkspaceViewModel(
         if (state.actions.canCopyCaption) {
             val text = state.generatedCaption
             if (clipboardWriter != null && text != null) {
-                clipboardWriter.copy("caption", text)
-                state = state.copy(statusMessage = "Caption copied")
+                state = try {
+                    clipboardWriter.copy("caption", text)
+                    state.copy(statusMessage = "Caption copied")
+                } catch (_: Exception) {
+                    state.copy(statusMessage = "Failed to copy caption to clipboard")
+                }
             } else if (clipboardWriter == null) {
                 state = state.copy(statusMessage = "Clipboard not available")
             }
@@ -415,8 +419,12 @@ class ManualPostDraftWorkspaceViewModel(
         if (state.actions.canCopyAltText) {
             val text = state.generatedAltText
             if (clipboardWriter != null && text != null) {
-                clipboardWriter.copy("alt text", text)
-                state = state.copy(statusMessage = "Alt text copied")
+                state = try {
+                    clipboardWriter.copy("alt text", text)
+                    state.copy(statusMessage = "Alt text copied")
+                } catch (_: Exception) {
+                    state.copy(statusMessage = "Failed to copy alt text to clipboard")
+                }
             } else if (clipboardWriter == null) {
                 state = state.copy(statusMessage = "Clipboard not available")
             }
@@ -430,8 +438,12 @@ class ManualPostDraftWorkspaceViewModel(
         }
         val entry = state.promptHistory.firstOrNull { it.id == entryId }
         if (entry != null) {
-            clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
-            state = state.copy(statusMessage = "Prompt copied to clipboard")
+            state = try {
+                clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
+                state.copy(statusMessage = "Prompt copied to clipboard")
+            } catch (_: Exception) {
+                state.copy(statusMessage = "Failed to copy prompt to clipboard")
+            }
         } else {
             state = state.copy(statusMessage = "Prompt entry not found")
         }
