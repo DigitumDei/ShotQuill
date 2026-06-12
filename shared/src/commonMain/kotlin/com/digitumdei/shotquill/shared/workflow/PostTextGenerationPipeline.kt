@@ -159,7 +159,7 @@ class PostTextGenerationPipeline(
             createdAtEpochMillis = now,
             provider = aiProvider.name,
             mediaAssetId = visionDescription.mediaAssetId,
-            requestSettings = "targetPlatform=$targetPlatform, tone=${captionRequest.tone ?: "default"}",
+            requestSettings = "targetPlatform=${targetPlatform.wireValue}, tone=${captionRequest.tone ?: "default"}",
             resultReference = captionResult.id.value,
         )
         val altTextHistoryEntry = PromptHistoryEntry(
@@ -172,7 +172,7 @@ class PostTextGenerationPipeline(
             createdAtEpochMillis = now,
             provider = aiProvider.name,
             mediaAssetId = visionDescription.mediaAssetId,
-            requestSettings = "targetPlatform=$targetPlatform",
+            requestSettings = "targetPlatform=${targetPlatform.wireValue}",
             resultReference = altTextResult.id.value,
         )
         val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
