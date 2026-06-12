@@ -19,6 +19,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionDraft
+import com.digitumdei.shotquill.shared.domain.CaptionPromptAssembler
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
@@ -353,8 +354,10 @@ class PostTextGenerationPipelineTest {
         assertEquals("The AI provider returned an unexpected error.", captionFailure.errorMessage)
         assertNull(captionFailure.responseSummary, "responseSummary must be null for caption failure entry")
         assertNull(captionFailure.modelName, "modelName must be null for caption failure entry")
-        assertTrue(captionFailure.prompt.contains("Write a social caption for instagram_feed_square"),
-            "Caption failure prompt must contain the assembled caption prompt")
+        val expectedCaptionPrompt = CaptionPromptAssembler(null)
+            .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
+        assertEquals(expectedCaptionPrompt, captionFailure.prompt,
+            "Caption failure prompt must match the exact assembled caption prompt")
         assertTrue(captionFailure.isFailure)
     }
 
@@ -382,8 +385,10 @@ class PostTextGenerationPipelineTest {
         assertEquals("The AI provider returned an unexpected error.", altTextFailure.errorMessage)
         assertNull(altTextFailure.responseSummary, "responseSummary must be null for alt-text failure entry")
         assertNull(altTextFailure.modelName, "modelName must be null for alt-text failure entry")
-        assertTrue(altTextFailure.prompt.contains("Write accessible alt text"),
-            "Alt-text failure prompt must contain the assembled alt-text prompt")
+        val expectedAltTextPrompt = CaptionPromptAssembler(null)
+            .assembleAltTextPrompt("Recorded vision.")
+        assertEquals(expectedAltTextPrompt, altTextFailure.prompt,
+            "Alt-text failure prompt must match the exact assembled alt-text prompt")
         assertTrue(altTextFailure.isFailure)
     }
 

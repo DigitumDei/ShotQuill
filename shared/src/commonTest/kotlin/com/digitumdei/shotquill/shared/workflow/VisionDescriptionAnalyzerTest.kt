@@ -44,6 +44,8 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
+import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
@@ -239,8 +241,10 @@ class VisionDescriptionAnalyzerTest {
         assertEquals("The OpenAI account quota has been reached.", entry?.errorMessage)
         assertEquals(null, entry?.responseSummary, "responseSummary must be null for a failure entry")
         assertEquals(null, entry?.modelName, "modelName must be null for a failure entry")
-        assertTrue(entry?.prompt?.contains("Visible text or logos") == true)
         assertTrue(entry?.isFailure == true)
+        val draft = sampleDraft()
+        val expectedPrompt = VisionDescriptionPromptFactory.buildPrompt(draft.primaryMediaAsset())
+        assertEquals(expectedPrompt, entry?.prompt, "Failure entry prompt must match the exact assembled prompt")
     }
 
     @Test
