@@ -150,13 +150,15 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(draftId, persisted.photoEditRequest.draftId)
         assertNotNull(persisted.assembledPrompt)
         assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
-        assertNotNull(persisted.promptHistoryEntry.responseSummary)
+        assertNotNull(persisted.promptHistoryEntry.errorMessage)
+        assertNull(persisted.promptHistoryEntry.responseSummary)
 
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(1, stored.photoEditRequests.size)
         assertEquals(0, stored.photoEditResults.size)
         assertEquals(1, stored.promptHistory.size)
-        assertNotNull(stored.promptHistory.first().responseSummary)
+        assertNotNull(stored.promptHistory.first().errorMessage)
+        assertNull(stored.promptHistory.first().responseSummary)
         assertEquals(DraftStatus.PhotoAdded, stored.status)
         val persistedUpdatedAt = persisted.updatedDraft.updatedAt
         assertTrue(persistedUpdatedAt > Instant.fromEpochMilliseconds(baseEpoch), "FailurePersisted.updatedDraft.updatedAt must advance on failure")
@@ -230,7 +232,8 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.promptHistory.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance after retry")
         val historyFailure = stored.promptHistory.first()
-        assertNotNull(historyFailure.responseSummary)
+        assertNotNull(historyFailure.errorMessage)
+        assertNull(historyFailure.responseSummary)
         assertEquals(expectedPrompt, historyFailure.prompt, "stored failure promptHistoryEntry.prompt must match the assembled prompt")
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
@@ -943,8 +946,10 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.promptHistory.size)
         assertEquals(expectedPrompt, stored.promptHistory.first().prompt,
             "Stored prompt history entry prompt must match assembled prompt on failure")
-        assertNotNull(stored.promptHistory.first().responseSummary,
-            "Failure prompt history entry must have a response summary")
+        assertNotNull(stored.promptHistory.first().errorMessage,
+            "Failure prompt history entry must have an error message")
+        assertNull(stored.promptHistory.first().responseSummary,
+            "Failure prompt history entry must have null responseSummary")
         assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.first().operationType)
 
         val baseInstant = Instant.fromEpochMilliseconds(baseEpoch)
