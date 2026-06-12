@@ -112,7 +112,9 @@ class PostTextGenerationPipeline(
                     createdAtEpochMillis = now,
                     provider = aiProvider.name,
                     mediaAssetId = visionDescription.mediaAssetId,
-                    requestSettings = "targetPlatform=${targetPlatform.wireValue}",
+                    requestSettings = RequestSettingsFormatter.captionGeneration(
+                        targetPlatform = targetPlatform, tone = null,
+                    ),
                     resultReference = null,
                     errorMessage = result.error.userMessage,
                 )
@@ -145,7 +147,7 @@ class PostTextGenerationPipeline(
                     createdAtEpochMillis = now,
                     provider = aiProvider.name,
                     mediaAssetId = visionDescription.mediaAssetId,
-                    requestSettings = "targetPlatform=${targetPlatform.wireValue}",
+                    requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
                     resultReference = null,
                     errorMessage = result.error.userMessage,
                 )
@@ -197,7 +199,9 @@ class PostTextGenerationPipeline(
             createdAtEpochMillis = now,
             provider = aiProvider.name,
             mediaAssetId = visionDescription.mediaAssetId,
-            requestSettings = "targetPlatform=${targetPlatform.wireValue}, tone=${captionRequest.tone ?: "default"}",
+            requestSettings = RequestSettingsFormatter.captionGeneration(
+                targetPlatform = targetPlatform, tone = captionRequest.tone,
+            ),
             resultReference = captionResult.id.value,
         )
         val altTextHistoryEntry = PromptHistoryEntry(
@@ -210,7 +214,7 @@ class PostTextGenerationPipeline(
             createdAtEpochMillis = now,
             provider = aiProvider.name,
             mediaAssetId = visionDescription.mediaAssetId,
-            requestSettings = "targetPlatform=${targetPlatform.wireValue}",
+            requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
             resultReference = altTextResult.id.value,
         )
         val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(

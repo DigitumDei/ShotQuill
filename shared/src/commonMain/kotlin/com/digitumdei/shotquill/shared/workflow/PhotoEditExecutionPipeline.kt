@@ -107,7 +107,13 @@ class PhotoEditExecutionPipeline(
                 createdAtEpochMillis = now,
                 provider = aiProvider.name,
                 mediaAssetId = editRequest.sourceMediaAssetId,
-                requestSettings = "intent=${editRequest.intent.wireValue}, realismLevel=${editRequest.realismLevel.wireValue}, qualityTier=${editRequest.qualityTier.wireValue}, targetPlatform=${editRequest.targetPlatform.wireValue}, hasRefinement=${editRequest.userRefinement != null}",
+                requestSettings = RequestSettingsFormatter.photoEdit(
+                    intent = editRequest.intent,
+                    realismLevel = editRequest.realismLevel,
+                    qualityTier = editRequest.qualityTier,
+                    targetPlatform = editRequest.targetPlatform,
+                    hasRefinement = editRequest.userRefinement != null,
+                ),
                 resultReference = editRequest.id.value,
                 errorMessage = failureSummary(cause),
             )
@@ -288,7 +294,13 @@ class PhotoEditExecutionPipeline(
             createdAtEpochMillis = now,
             provider = aiProvider.name,
             mediaAssetId = sourceMediaAsset.id,
-            requestSettings = "intent=${intent.wireValue}, realismLevel=${realismLevel.wireValue}, qualityTier=${qualityTier.wireValue}, targetPlatform=${targetPlatform.wireValue}, hasRefinement=${cleanedUserRefinement != null}",
+            requestSettings = RequestSettingsFormatter.photoEdit(
+                intent = intent,
+                realismLevel = realismLevel,
+                qualityTier = qualityTier,
+                targetPlatform = targetPlatform,
+                hasRefinement = cleanedUserRefinement != null,
+            ),
             resultReference = editResult.id.value,
         )
 

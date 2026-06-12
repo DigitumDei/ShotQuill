@@ -81,7 +81,10 @@ class VisionDescriptionAnalyzer(
                     createdAtEpochMillis = now,
                     provider = aiProvider.name,
                     mediaAssetId = mediaAsset.id,
-                    requestSettings = "fileName=${visionRequest.image.fileName}, mimeType=${visionRequest.image.mimeType}",
+                    requestSettings = RequestSettingsFormatter.visionDescription(
+                        fileName = visionRequest.image.fileName,
+                        mimeType = visionRequest.image.mimeType,
+                    ),
                     resultReference = null,
                     errorMessage = providerResult.error.userMessage,
                 )
@@ -111,7 +114,10 @@ class VisionDescriptionAnalyzer(
                     createdAtEpochMillis = now,
                     provider = aiProvider.name,
                     mediaAssetId = mediaAsset.id,
-                    requestSettings = "fileName=${visionRequest.image.fileName}, mimeType=${visionRequest.image.mimeType}",
+                    requestSettings = RequestSettingsFormatter.visionDescription(
+                        fileName = visionRequest.image.fileName,
+                        mimeType = visionRequest.image.mimeType,
+                    ),
                     resultReference = description.id.value,
                 )
                 repository.saveVisionDescription(description)
