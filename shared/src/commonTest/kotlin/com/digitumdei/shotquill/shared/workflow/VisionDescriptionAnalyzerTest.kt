@@ -84,7 +84,7 @@ class VisionDescriptionAnalyzerTest {
         assertTrue(promptHistory?.prompt?.contains("Visible text or logos") == true)
         assertEquals("fake", promptHistory?.provider)
         assertEquals(mediaAssetId, promptHistory?.mediaAssetId)
-        assertEquals("fileName=photo.jpg, mimeType=image/jpeg", promptHistory?.requestSettings)
+        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", promptHistory?.requestSettings)
         assertEquals(success.visionDescription.id.value, promptHistory?.resultReference)
     }
 
@@ -236,7 +236,7 @@ class VisionDescriptionAnalyzerTest {
         assertEquals(AiOperationType.VisionDescription, entry?.operationType)
         assertEquals("unknown", entry?.provider)
         assertEquals(mediaAssetId, entry?.mediaAssetId)
-        assertEquals("fileName=photo.jpg, mimeType=image/jpeg", entry?.requestSettings)
+        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", entry?.requestSettings)
         assertEquals(null, entry?.resultReference, "resultReference must be null for a failure entry")
         assertEquals("The OpenAI account quota has been reached.", entry?.errorMessage)
         assertEquals(null, entry?.responseSummary, "responseSummary must be null for a failure entry")

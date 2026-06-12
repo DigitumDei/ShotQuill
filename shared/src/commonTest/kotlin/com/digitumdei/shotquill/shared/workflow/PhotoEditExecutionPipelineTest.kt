@@ -1188,7 +1188,7 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
-    fun `vision-analysis provider failure before image edit returns Failure without persistence`() {
+    fun `vision-analysis provider failure before image edit returns Failure without edit persistence`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraft()
         val repository = FakeManualWorkflowRepository(draft)
@@ -1228,7 +1228,15 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(AiError.RateLimited(), (failure.error as PhotoEditExecutionError.Provider).error)
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(0, stored.photoEditRequests.size, "No edit request must be persisted on vision-analysis failure")
-        assertEquals(0, stored.promptHistory.size, "No prompt history must be persisted on vision-analysis failure")
+        assertEquals(1, stored.promptHistory.size, "Vision-analysis failure must be persisted in prompt history")
+        val visionFailure = stored.promptHistory.single()
+        assertEquals(AiOperationType.VisionDescription, visionFailure.operationType)
+        assertEquals("unknown", visionFailure.provider)
+        assertEquals(mediaAssetId, visionFailure.mediaAssetId)
+        assertEquals("fileName=test-image.jpg, mimeType=image/jpeg", visionFailure.requestSettings)
+        assertEquals(null, visionFailure.resultReference, "resultReference must be null for a vision failure entry")
+        assertEquals(AiError.RateLimited().userMessage, visionFailure.errorMessage)
+        assertTrue(visionFailure.isFailure)
         assertEquals(0, stored.photoEditResults.size, "No edit result must be persisted on vision-analysis failure")
     }
 
