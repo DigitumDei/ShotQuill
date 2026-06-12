@@ -234,7 +234,7 @@ fun FinalPostComposerContent(
         }
 
         Text(
-            "Tap Share to open the image in the Android share chooser. The caption is automatically copied to your clipboard — paste it manually in your target app.",
+            "Tap Share to open the image in the system share sheet. The caption is automatically copied to your clipboard — paste it manually in your target app.",
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -243,7 +243,7 @@ fun FinalPostComposerContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = state.actions.canShare,
         ) {
-            Text("Share image via Android chooser")
+            Text("Share image")
         }
 
         Row(

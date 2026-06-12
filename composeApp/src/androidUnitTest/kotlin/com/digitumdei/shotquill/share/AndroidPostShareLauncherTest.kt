@@ -125,7 +125,7 @@ class AndroidPostShareLauncherTest {
             val result = launcher.share("file://${outsideFile.absolutePath}", "Caption text")
 
             assertTrue(!result.success)
-            assertEquals("outside configured share roots", result.errorMessage)
+            assertEquals("Unable to open share sheet: outside configured share roots", result.errorMessage)
             assertNull(recordingContext.startedIntent)
         } finally {
             outsideFile.delete()
@@ -209,7 +209,7 @@ class AndroidPostShareLauncherTest {
         val result = launcher.share("file://${imageFile.absolutePath}", "Caption text")
 
         assertTrue(!result.success)
-        assertEquals("chooser launch failed", result.errorMessage)
+        assertEquals("Unable to open share sheet: chooser launch failed", result.errorMessage)
         assertEquals(
             "content://com.digitumdei.shotquill.fileprovider/launch-failure.jpg",
             result.destinationUri,

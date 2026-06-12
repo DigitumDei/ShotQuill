@@ -206,8 +206,8 @@ class FinalPostComposerViewModel(
             shareDraft.transitionTo(DraftStatus.ReadyToShare, updatedAt)
         }
         val draftWithExport = transitioned.copy(
-            targetPlatforms = shareDraft.targetPlatforms + platform,
-            exportRecords = shareDraft.exportRecords + exportRecord,
+            targetPlatforms = transitioned.targetPlatforms + platform,
+            exportRecords = transitioned.exportRecords + exportRecord,
         )
         val hashtagText = state.hashtags.joinToString(" ") { it.normalizedHashtag() }
         val composedText = if (hashtagText.isNotEmpty()) "$caption\n\n$hashtagText" else caption
@@ -239,7 +239,7 @@ class FinalPostComposerViewModel(
                     },
                 ),
             )
-            state = repository.get(draftId)?.toState(statusMessage = "Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.")
+            state = repository.get(draftId)?.toState(statusMessage = "Image shared — caption copied to clipboard. Paste it in your target app.")
                 ?.withPendingTextOverrides()
                 ?: unloadedState(statusMessage = "Draft not found")
         } else {

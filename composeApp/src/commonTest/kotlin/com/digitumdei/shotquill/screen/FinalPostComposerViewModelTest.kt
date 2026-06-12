@@ -876,7 +876,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
+        assertEquals("Image shared — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(1, updatedDraft.exportRecords.size)
@@ -959,7 +959,7 @@ class FinalPostComposerViewModelTest {
         viewModel.load()
         viewModel.shareOrExport()
 
-        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
+        assertEquals("Image shared — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
         val updatedDraft = repository.get(draftId)!!
         assertEquals(DraftStatus.Shared, updatedDraft.status)
         assertEquals(2, updatedDraft.exportRecords.size)
@@ -1303,7 +1303,7 @@ class FinalPostComposerViewModelTest {
 
         assertEquals("post caption", clipboard.lastLabel)
         assertEquals("Check out this photo!\n\n#sunset #travel", clipboard.lastText)
-        assertEquals("Image shared via Android chooser — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
+        assertEquals("Image shared — caption copied to clipboard. Paste it in your target app.", viewModel.state.statusMessage)
     }
 
     @Test

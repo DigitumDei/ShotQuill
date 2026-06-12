@@ -54,7 +54,8 @@ class AndroidPostShareLauncher(
             ShareResult(
                 success = false,
                 destinationUri = resolvedDestinationUri,
-                errorMessage = e.message ?: "Unable to open share sheet",
+                errorMessage = e.message?.let { "Unable to open share sheet: $it" }
+                    ?: "Unable to open share sheet",
             )
         }
     }
