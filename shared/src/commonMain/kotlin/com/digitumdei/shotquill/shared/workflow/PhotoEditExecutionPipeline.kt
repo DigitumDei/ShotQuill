@@ -281,6 +281,10 @@ class PhotoEditExecutionPipeline(
             responseSummary = editOutput.summary,
             modelName = editOutput.modelName,
             createdAtEpochMillis = now,
+            provider = aiProvider.name,
+            mediaAssetId = sourceMediaAsset.id,
+            requestSettings = "intent=${intent.wireValue}, realismLevel=${realismLevel.wireValue}, qualityTier=${qualityTier.wireValue}, targetPlatform=${targetPlatform.wireValue}, hasRefinement=${cleanedUserRefinement != null}",
+            resultReference = editResult.id.value,
         )
 
         val currentBeforeSave = repository.get(draftId) ?: run {
