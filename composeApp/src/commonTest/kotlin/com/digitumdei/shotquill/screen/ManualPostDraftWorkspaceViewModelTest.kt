@@ -102,6 +102,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
         assertFalse(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertFalse(viewModel.state.actions.canShareOrExport)
     }
 
@@ -121,6 +122,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(TargetPlatform.InstagramFeedSquare, viewModel.state.targetPlatform)
         assertTrue(viewModel.state.actions.canCopyCaption)
         assertTrue(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertTrue(viewModel.state.actions.canShareOrExport)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
@@ -490,6 +492,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
         assertFalse(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertFalse(viewModel.state.actions.canShareOrExport)
     }
 
@@ -511,11 +514,11 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Photo prepared for instagram_feed_square.", viewModel.state.generatedAltText)
         assertEquals(2, viewModel.state.promptHistory.size)
         assertEquals(
-            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
+            "Generate accessible alt text for file://photo.jpg.",
             viewModel.state.promptHistory[0].prompt,
         )
         assertEquals(
-            "Generate accessible alt text for file://photo.jpg.",
+            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
             viewModel.state.promptHistory[1].prompt,
         )
         assertTrue(viewModel.state.actions.canShareOrExport)
@@ -1597,6 +1600,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Caption Generation", clipboard.lastLabel)
         assertEquals(promptText, clipboard.lastText)
         assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
     }
 
     @Test
@@ -1610,6 +1614,7 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         assertNull(clipboard.lastLabel)
         assertEquals("Prompt entry not found", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
     }
 
     @Test
@@ -1621,6 +1626,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("any"))
 
         assertEquals("Clipboard not available", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
     }
 
     @Test
@@ -1648,6 +1654,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         viewModel.copyPromptHistoryEntryPrompt(entryId)
 
         assertEquals("Failed to copy prompt to clipboard", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
     }
 
     @Test

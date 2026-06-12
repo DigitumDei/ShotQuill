@@ -323,11 +323,16 @@ fun ManualPostDraftWorkspaceContent(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                text = entry.operationType.displayName,
+                                text = buildString {
+                                    append(entry.operationType.displayName)
+                                    if (entry.isFailure) append(" (Failed)")
+                                },
                                 style = MaterialTheme.typography.titleSmall,
+                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             )
                             OutlinedButton(
                                 onClick = { onCopyPromptHistoryEntry(entry.id) },
+                                enabled = state.actions.canCopyPrompt,
                             ) {
                                 Text("Copy prompt")
                             }
@@ -339,12 +344,13 @@ fun ManualPostDraftWorkspaceContent(
                         val details = buildList {
                             entry.modelName?.let { add("Model: $it") }
                             entry.responseSummary?.let { add("Response: $it") }
+                            entry.errorMessage?.let { add("Error: $it") }
                         }
                         if (details.isNotEmpty()) {
                             Text(
                                 text = details.joinToString(" — "),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
