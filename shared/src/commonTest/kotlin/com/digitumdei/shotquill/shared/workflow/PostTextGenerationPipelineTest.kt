@@ -354,7 +354,7 @@ class PostTextGenerationPipelineTest {
         assertEquals("The AI provider returned an unexpected error.", captionFailure.errorMessage)
         assertNull(captionFailure.responseSummary, "responseSummary must be null for caption failure entry")
         assertNull(captionFailure.modelName, "modelName must be null for caption failure entry")
-        val expectedCaptionPrompt = CaptionPromptAssembler(null)
+        val expectedCaptionPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
             .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
         assertEquals(expectedCaptionPrompt, captionFailure.prompt,
             "Caption failure prompt must match the exact assembled caption prompt")
@@ -385,7 +385,7 @@ class PostTextGenerationPipelineTest {
         assertEquals("The AI provider returned an unexpected error.", altTextFailure.errorMessage)
         assertNull(altTextFailure.responseSummary, "responseSummary must be null for alt-text failure entry")
         assertNull(altTextFailure.modelName, "modelName must be null for alt-text failure entry")
-        val expectedAltTextPrompt = CaptionPromptAssembler(null)
+        val expectedAltTextPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
             .assembleAltTextPrompt("Recorded vision.")
         assertEquals(expectedAltTextPrompt, altTextFailure.prompt,
             "Alt-text failure prompt must match the exact assembled alt-text prompt")
