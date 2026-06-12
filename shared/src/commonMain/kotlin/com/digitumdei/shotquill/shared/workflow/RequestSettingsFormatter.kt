@@ -12,7 +12,7 @@ object RequestSettingsFormatter {
 
     fun captionGeneration(targetPlatform: TargetPlatform, tone: String?): String {
         val base = "targetPlatform=${targetPlatform.wireValue}"
-        return if (tone != null) "$base, tone=$tone" else base
+        return "$base, tone=${tone ?: "default"}"
     }
 
     fun altTextGeneration(targetPlatform: TargetPlatform): String =

@@ -113,7 +113,7 @@ class PostTextGenerationPipeline(
                     provider = aiProvider.name,
                     mediaAssetId = visionDescription.mediaAssetId,
                     requestSettings = RequestSettingsFormatter.captionGeneration(
-                        targetPlatform = targetPlatform, tone = null,
+                        targetPlatform = targetPlatform, tone = activeBrandProfile?.voice,
                     ),
                     resultReference = null,
                     errorMessage = result.error.userMessage,
