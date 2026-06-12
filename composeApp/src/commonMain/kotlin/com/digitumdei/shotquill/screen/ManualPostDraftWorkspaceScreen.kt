@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
 
 @Composable
 fun ManualPostDraftWorkspaceScreen(
@@ -338,21 +339,56 @@ fun ManualPostDraftWorkspaceContent(
                             }
                         }
                         Text(
+                            text = Instant.fromEpochMilliseconds(entry.createdAtEpochMillis).toString(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        entry.provider?.let {
+                            Text(
+                                text = "Provider: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.requestSettings?.let {
+                            Text(
+                                text = "Settings: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.modelName?.let {
+                            Text(
+                                text = "Model: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.resultReference?.let {
+                            Text(
+                                text = "Ref: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.responseSummary?.let {
+                            Text(
+                                text = "Response: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        entry.errorMessage?.let {
+                            Text(
+                                text = "Error: $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Text(
                             text = entry.prompt,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        val details = buildList {
-                            entry.modelName?.let { add("Model: $it") }
-                            entry.responseSummary?.let { add("Response: $it") }
-                            entry.errorMessage?.let { add("Error: $it") }
-                        }
-                        if (details.isNotEmpty()) {
-                            Text(
-                                text = details.joinToString(" — "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
             }
