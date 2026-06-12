@@ -1516,7 +1516,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun updatesStatusMessagesForCopyActions() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val clipboard = FakeClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         viewModel.markCaptionCopied()
@@ -1552,7 +1552,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun captionCopySetsFailureStatusWhenClipboardThrows() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val clipboard = FailingClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         viewModel.markCaptionCopied()
@@ -1564,7 +1564,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun altTextCopySetsFailureStatusWhenClipboardThrows() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val clipboard = FailingClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         viewModel.markAltTextCopied()
@@ -1592,7 +1592,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             ),
         )
         val clipboard = FakeClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         viewModel.copyPromptHistoryEntryPrompt(entryId)
@@ -1607,7 +1607,7 @@ class ManualPostDraftWorkspaceViewModelTest {
     fun copyPromptHistoryEntryPromptShowsNotFoundWhenEntryMissing() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
         val clipboard = FakeClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("nonexistent"))
@@ -1648,7 +1648,7 @@ class ManualPostDraftWorkspaceViewModelTest {
             ),
         )
         val clipboard = FailingClipboardWriter()
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId = draftId, postDraftRepository = repository, clipboardWriter = clipboard)
         viewModel.load()
 
         val historyBefore = viewModel.state.promptHistory

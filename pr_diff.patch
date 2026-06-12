@@ -1,0 +1,2195 @@
+diff --git a/.github/workflows/jules-review.yml b/.github/workflows/jules-review.yml
+new file mode 100644
+index 0000000..d615b5a
+--- /dev/null
++++ b/.github/workflows/jules-review.yml
+@@ -0,0 +1,28 @@
++name: Jules Code Review
++
++on:
++  pull_request:
++    types: [opened, synchronize]
++
++jobs:
++  jules-review:
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      pull-requests: write
++
++    steps:
++      - name: Checkout Repository
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0 # Ensures Jules can see the commit history/context
++
++      - name: Run Jules Reviewer
++        uses: google-labs-code/jules-invoke@v1.0.0
++        with:
++          jules_api_key: ${{ secrets.JULES_API_KEY }}
++          starting_branch: ${{ github.head_ref }}
++          include_commit_log: true
++          prompt: |
++            Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
++            Focus on correctness, regressions, missing tests, and maintainability.
+diff --git a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/App.kt b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/App.kt
+index 164ea64..767d43a 100644
+--- a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/App.kt
++++ b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/App.kt
+@@ -197,6 +197,8 @@ fun App(
+                         ManualPostDraftWorkspaceScreen(
+                             draftId = PostDraftId(draftId),
+                             postDraftRepository = manualWorkflowRepository,
++                            promptHistoryRepository = manualWorkflowRepository,
++                            clipboardWriter = clipboardWriter,
+                             defaultTargetPlatform = settings.defaultTargetPlatform,
+                             defaultRealismLevel = settings.defaultRealismLevel,
+                             defaultQualityTier = settings.defaultQualityTier,
+diff --git a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
+index a60c576..e8cb474 100644
+--- a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
++++ b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
+@@ -26,13 +26,16 @@ import androidx.compose.runtime.rememberCoroutineScope
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.unit.dp
++import com.digitumdei.shotquill.clipboard.ClipboardWriter
+ import com.digitumdei.shotquill.shared.domain.EditIntent
+ import com.digitumdei.shotquill.shared.domain.PostDraftId
++import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+ import com.digitumdei.shotquill.shared.domain.QualityTier
+ import com.digitumdei.shotquill.shared.domain.RealismLevel
+ import com.digitumdei.shotquill.shared.domain.TargetPlatform
+ import com.digitumdei.shotquill.shared.domain.platformPreset
+ import com.digitumdei.shotquill.shared.storage.PostDraftRepository
++import com.digitumdei.shotquill.shared.storage.PromptHistoryRepository
+ import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
+ import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutor
+ import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
+@@ -41,11 +44,14 @@ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
++import kotlinx.datetime.Instant
+
+ @Composable
+ fun ManualPostDraftWorkspaceScreen(
+     draftId: PostDraftId,
+     postDraftRepository: PostDraftRepository,
++    promptHistoryRepository: PromptHistoryRepository? = null,
++    clipboardWriter: ClipboardWriter? = null,
+     defaultTargetPlatform: TargetPlatform,
+     defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
+     defaultQualityTier: QualityTier = QualityTier.Standard,
+@@ -55,10 +61,12 @@ fun ManualPostDraftWorkspaceScreen(
+     onNavigateToNewPost: () -> Unit,
+     onNavigateToFinalComposer: () -> Unit = {},
+ ) {
+-    val viewModel = remember(draftId, postDraftRepository, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
++    val viewModel = remember(draftId, postDraftRepository, promptHistoryRepository, clipboardWriter, defaultTargetPlatform, defaultRealismLevel, defaultQualityTier, postTextGenerator, photoEditExecutor, analyzeVision) {
+         ManualPostDraftWorkspaceViewModel(
+             draftId = draftId,
+             postDraftRepository = postDraftRepository,
++            promptHistoryRepository = promptHistoryRepository,
++            clipboardWriter = clipboardWriter,
+             defaultTargetPlatform = defaultTargetPlatform,
+             defaultRealismLevel = defaultRealismLevel,
+             defaultQualityTier = defaultQualityTier,
+@@ -106,8 +114,10 @@ fun ManualPostDraftWorkspaceScreen(
+         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
+         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
+         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
++        onCopyPromptHistoryEntry = { entryId -> refreshInMemory { copyPromptHistoryEntryPrompt(entryId) } },
+         onShareOrExport = onNavigateToFinalComposer,
+         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
++        onTogglePhotoEditHistory = { refreshInMemory { togglePhotoEditHistory() } },
+         onNavigateToNewPost = onNavigateToNewPost,
+         onUpdatePhotoEditIntent = { viewModel.updatePhotoEditIntent(it) },
+         onUpdatePhotoEditRefinement = { viewModel.updatePhotoEditRefinement(it) },
+@@ -127,8 +137,10 @@ fun ManualPostDraftWorkspaceContent(
+     onSelectOriginalPhoto: () -> Unit,
+     onCopyCaption: () -> Unit,
+     onCopyAltText: () -> Unit,
++    onCopyPromptHistoryEntry: (PromptHistoryEntryId) -> Unit,
+     onShareOrExport: () -> Unit,
+     onTogglePromptHistory: () -> Unit,
++    onTogglePhotoEditHistory: () -> Unit,
+     onNavigateToNewPost: () -> Unit,
+     onUpdatePhotoEditIntent: (EditIntent) -> Unit,
+     onUpdatePhotoEditRefinement: (String) -> Unit,
+@@ -277,6 +289,94 @@ fun ManualPostDraftWorkspaceContent(
+             )
+         }
+
++        if (state.photoEditPromptHistory.isNotEmpty()) {
++            OutlinedButton(
++                onClick = onTogglePhotoEditHistory,
++                modifier = Modifier.fillMaxWidth(),
++            ) {
++                Text(if (state.isPhotoEditHistoryVisible) "Hide photo edit history" else "View photo edit history")
++            }
++        }
++
++        if (state.isPhotoEditHistoryVisible) {
++            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                state.photoEditPromptHistory.forEach { entry ->
++                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
++                        Row(
++                            modifier = Modifier.fillMaxWidth(),
++                            horizontalArrangement = Arrangement.SpaceBetween,
++                        ) {
++                            Text(
++                                text = buildString {
++                                    append(entry.operationType.displayName)
++                                    if (entry.isFailure) append(" (Failed)")
++                                },
++                                style = MaterialTheme.typography.titleSmall,
++                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
++                            )
++                            OutlinedButton(
++                                onClick = { onCopyPromptHistoryEntry(entry.id) },
++                                enabled = state.actions.canCopyPrompt,
++                            ) {
++                                Text("Copy prompt")
++                            }
++                        }
++                        Text(
++                            text = Instant.fromEpochMilliseconds(entry.createdAtEpochMillis).toString(),
++                            style = MaterialTheme.typography.bodySmall,
++                            color = MaterialTheme.colorScheme.onSurfaceVariant,
++                        )
++                        entry.provider?.let {
++                            Text(
++                                text = "Provider: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.requestSettings?.let {
++                            Text(
++                                text = "Settings: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.modelName?.let {
++                            Text(
++                                text = "Model: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.resultReference?.let {
++                            Text(
++                                text = "Ref: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.responseSummary?.let {
++                            Text(
++                                text = "Response: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.errorMessage?.let {
++                            Text(
++                                text = "Error: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.error,
++                            )
++                        }
++                        Text(
++                            text = entry.prompt,
++                            style = MaterialTheme.typography.bodySmall,
++                        )
++                    }
++                }
++            }
++        }
++
+         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+             OutlinedButton(
+                 onClick = onCopyCaption,
+@@ -312,25 +412,76 @@ fun ManualPostDraftWorkspaceContent(
+             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                 state.promptHistory.forEach { entry ->
+                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
++                        Row(
++                            modifier = Modifier.fillMaxWidth(),
++                            horizontalArrangement = Arrangement.SpaceBetween,
++                        ) {
++                            Text(
++                                text = buildString {
++                                    append(entry.operationType.displayName)
++                                    if (entry.isFailure) append(" (Failed)")
++                                },
++                                style = MaterialTheme.typography.titleSmall,
++                                color = if (entry.isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
++                            )
++                            OutlinedButton(
++                                onClick = { onCopyPromptHistoryEntry(entry.id) },
++                                enabled = state.actions.canCopyPrompt,
++                            ) {
++                                Text("Copy prompt")
++                            }
++                        }
+                         Text(
+-                            text = entry.operationType.displayName,
+-                            style = MaterialTheme.typography.titleSmall,
+-                        )
+-                        Text(
+-                            text = entry.prompt,
++                            text = Instant.fromEpochMilliseconds(entry.createdAtEpochMillis).toString(),
+                             style = MaterialTheme.typography.bodySmall,
++                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         )
+-                        val details = buildList {
+-                            entry.modelName?.let { add("Model: $it") }
+-                            entry.responseSummary?.let { add("Response: $it") }
++                        entry.provider?.let {
++                            Text(
++                                text = "Provider: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.requestSettings?.let {
++                            Text(
++                                text = "Settings: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
+                         }
+-                        if (details.isNotEmpty()) {
++                        entry.modelName?.let {
+                             Text(
+-                                text = details.joinToString(" — "),
++                                text = "Model: $it",
+                                 style = MaterialTheme.typography.bodySmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                             )
+                         }
++                        entry.resultReference?.let {
++                            Text(
++                                text = "Ref: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.responseSummary?.let {
++                            Text(
++                                text = "Response: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            )
++                        }
++                        entry.errorMessage?.let {
++                            Text(
++                                text = "Error: $it",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.error,
++                            )
++                        }
++                        Text(
++                            text = entry.prompt,
++                            style = MaterialTheme.typography.bodySmall,
++                        )
+                     }
+                 }
+             }
+diff --git a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
+index 0c41d41..65f6295 100644
+--- a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
++++ b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
+@@ -1,5 +1,6 @@
+ package com.digitumdei.shotquill.screen
+
++import com.digitumdei.shotquill.clipboard.ClipboardWriter
+ import com.digitumdei.shotquill.shared.domain.AiOperationType
+ import com.digitumdei.shotquill.shared.domain.AltTextResult
+ import com.digitumdei.shotquill.shared.domain.AltTextResultId
+@@ -23,6 +24,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
+ import com.digitumdei.shotquill.shared.domain.TargetPlatform
+ import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
+ import com.digitumdei.shotquill.shared.storage.PostDraftRepository
++import com.digitumdei.shotquill.shared.storage.PromptHistoryRepository
+ import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
+ import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
+ import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
+@@ -70,9 +72,11 @@ data class ManualPostDraftWorkspaceState(
+     val targetPlatform: TargetPlatform?,
+     val draftStatus: DraftStatus?,
+     val promptHistory: List<PromptHistoryEntry>,
++    val photoEditPromptHistory: List<PromptHistoryEntry>,
+     val actions: ManualPostDraftWorkspaceActions,
+     val statusMessage: String?,
+     val isPromptHistoryVisible: Boolean,
++    val isPhotoEditHistoryVisible: Boolean,
+     val photoEditForm: PhotoEditFormState,
+ )
+
+@@ -82,6 +86,7 @@ data class ManualPostDraftWorkspaceActions(
+     val canEditPhotoWithAi: Boolean,
+     val canCopyCaption: Boolean,
+     val canCopyAltText: Boolean,
++    val canCopyPrompt: Boolean,
+     val canShareOrExport: Boolean,
+     val canViewPromptHistory: Boolean,
+     val canSelectEditedPhoto: Boolean,
+@@ -91,6 +96,8 @@ data class ManualPostDraftWorkspaceActions(
+ class ManualPostDraftWorkspaceViewModel(
+     private val draftId: PostDraftId,
+     private val postDraftRepository: PostDraftRepository,
++    private val clipboardWriter: ClipboardWriter? = null,
++    private val promptHistoryRepository: PromptHistoryRepository? = null,
+     private val analyzeVision: AnalyzeVision? = null,
+     private val postTextGenerator: PostTextGenerator? = null,
+     private val photoEditExecutor: PhotoEditExecutor? = null,
+@@ -399,16 +406,58 @@ class ManualPostDraftWorkspaceViewModel(
+
+     fun markCaptionCopied() {
+         if (state.actions.canCopyCaption) {
+-            state = state.copy(statusMessage = "Caption copied")
++            val text = state.generatedCaption
++            if (clipboardWriter != null && text != null) {
++                state = try {
++                    clipboardWriter.copy("caption", text)
++                    state.copy(statusMessage = "Caption copied")
++                } catch (_: Exception) {
++                    state.copy(statusMessage = "Failed to copy caption to clipboard")
++                }
++            } else if (clipboardWriter == null) {
++                state = state.copy(statusMessage = "Clipboard not available")
++            }
+         }
+     }
+
+     fun markAltTextCopied() {
+         if (state.actions.canCopyAltText) {
+-            state = state.copy(statusMessage = "Alt text copied")
++            val text = state.generatedAltText
++            if (clipboardWriter != null && text != null) {
++                state = try {
++                    clipboardWriter.copy("alt text", text)
++                    state.copy(statusMessage = "Alt text copied")
++                } catch (_: Exception) {
++                    state.copy(statusMessage = "Failed to copy alt text to clipboard")
++                }
++            } else if (clipboardWriter == null) {
++                state = state.copy(statusMessage = "Clipboard not available")
++            }
+         }
+     }
+
++    fun copyPromptHistoryEntryPrompt(entryId: PromptHistoryEntryId) {
++        if (clipboardWriter == null) {
++            state = state.copy(statusMessage = "Clipboard not available")
++            return
++        }
++        val entry = state.promptHistory.firstOrNull { it.id == entryId }
++        if (entry != null) {
++            state = try {
++                clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
++                state.copy(statusMessage = "Prompt copied to clipboard")
++            } catch (_: Exception) {
++                state.copy(statusMessage = "Failed to copy prompt to clipboard")
++            }
++        } else {
++            state = state.copy(statusMessage = "Prompt entry not found")
++        }
++    }
++
++    fun togglePhotoEditHistory() {
++        state = state.copy(isPhotoEditHistoryVisible = !state.isPhotoEditHistoryVisible)
++    }
++
+     fun togglePromptHistory() {
+         state = state.copy(isPromptHistoryVisible = !state.isPromptHistoryVisible)
+     }
+@@ -502,13 +551,33 @@ class ManualPostDraftWorkspaceViewModel(
+             generatedAltText = altText,
+             targetPlatform = platform,
+             draftStatus = status,
+-            promptHistory = promptHistory.sortedByDescending { it.createdAtEpochMillis },
++            promptHistory = promptHistory.sortedWith(
++                compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
++                    .thenBy { it.id.value },
++            ),
++            photoEditPromptHistory = run {
++                val activeId = activePhoto?.id
++                val sourceId = photoEditRequests.maxByOrNull { it.createdAtEpochMillis }?.sourceMediaAssetId
++                val ids = listOfNotNull(activeId, sourceId).distinct()
++                if (ids.isEmpty() || promptHistoryRepository == null) {
++                    emptyList()
++                } else {
++                    ids.flatMap { promptHistoryRepository.listPromptHistoryForMediaAsset(it) }
++                        .filter { it.operationType == AiOperationType.PhotoEdit }
++                        .distinctBy { it.id }
++                        .sortedWith(
++                            compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
++                                .thenBy { it.id.value },
++                        )
++                }
++            },
+             actions = ManualPostDraftWorkspaceActions(
+                 canAnalyzeVision = canMutateDraft,
+                 canGeneratePostText = canMutateDraft,
+                 canEditPhotoWithAi = canMutateDraft && photoEditExecutor != null,
+                 canCopyCaption = !captionText.isNullOrBlank(),
+                 canCopyAltText = !altText.isNullOrBlank(),
++                canCopyPrompt = clipboardWriter != null,
+                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),
+                 canViewPromptHistory = promptHistory.isNotEmpty(),
+                 canSelectEditedPhoto = canMutateDraft && editedPhoto != null && editedPhoto.id != activePhoto?.id,
+@@ -516,6 +585,7 @@ class ManualPostDraftWorkspaceViewModel(
+             ),
+             statusMessage = statusMessage,
+             isPromptHistoryVisible = isPromptHistoryVisible,
++            isPhotoEditHistoryVisible = state.isPhotoEditHistoryVisible,
+             photoEditForm = PhotoEditFormState(
+                 selectedIntent = latestRequest?.intent ?: EditIntent.ImproveLighting,
+                 userRefinementText = latestRequest?.userRefinement ?: "",
+@@ -545,12 +615,14 @@ class ManualPostDraftWorkspaceViewModel(
+             targetPlatform = null,
+             draftStatus = null,
+             promptHistory = emptyList(),
++            photoEditPromptHistory = emptyList(),
+             actions = ManualPostDraftWorkspaceActions(
+                 canAnalyzeVision = false,
+                 canGeneratePostText = false,
+                 canEditPhotoWithAi = false,
+                 canCopyCaption = false,
+                 canCopyAltText = false,
++                canCopyPrompt = false,
+                 canShareOrExport = false,
+                 canViewPromptHistory = false,
+                 canSelectEditedPhoto = false,
+@@ -558,6 +630,7 @@ class ManualPostDraftWorkspaceViewModel(
+             ),
+             statusMessage = statusMessage,
+             isPromptHistoryVisible = false,
++            isPhotoEditHistoryVisible = false,
+             photoEditForm = PhotoEditFormState(
+                 selectedIntent = EditIntent.ImproveLighting,
+                 userRefinementText = "",
+diff --git a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/FinalPostComposerViewModelTest.kt b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/FinalPostComposerViewModelTest.kt
+index 1db08ba..ee61a7b 100644
+--- a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/FinalPostComposerViewModelTest.kt
++++ b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/FinalPostComposerViewModelTest.kt
+@@ -1538,6 +1538,9 @@ class FinalPostComposerViewModelTest {
+         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+             storedPromptHistory.filter { it.draftId == id }
+
++        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++            storedPromptHistory.filter { it.mediaAssetId == id }
++
+         override fun save(mediaAsset: MediaAsset) {}
+         override fun get(id: MediaAssetId): MediaAsset? = null
+         override fun save(brandProfile: BrandProfile) {}
+diff --git a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
+index ee4eae7..86812cf 100644
+--- a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
++++ b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
+@@ -1,5 +1,6 @@
+ package com.digitumdei.shotquill.screen
+
++import com.digitumdei.shotquill.clipboard.ClipboardWriter
+ import com.digitumdei.shotquill.shared.domain.AiOperationType
+ import com.digitumdei.shotquill.shared.domain.AltTextResult
+ import com.digitumdei.shotquill.shared.domain.AltTextResultId
+@@ -101,6 +102,7 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+         assertFalse(viewModel.state.actions.canCopyCaption)
+         assertFalse(viewModel.state.actions.canCopyAltText)
++        assertFalse(viewModel.state.actions.canCopyPrompt)
+         assertFalse(viewModel.state.actions.canShareOrExport)
+     }
+
+@@ -120,6 +122,7 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertEquals(TargetPlatform.InstagramFeedSquare, viewModel.state.targetPlatform)
+         assertTrue(viewModel.state.actions.canCopyCaption)
+         assertTrue(viewModel.state.actions.canCopyAltText)
++        assertFalse(viewModel.state.actions.canCopyPrompt)
+         assertTrue(viewModel.state.actions.canShareOrExport)
+         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
+     }
+@@ -489,6 +492,7 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
+         assertFalse(viewModel.state.actions.canCopyCaption)
+         assertFalse(viewModel.state.actions.canCopyAltText)
++        assertFalse(viewModel.state.actions.canCopyPrompt)
+         assertFalse(viewModel.state.actions.canShareOrExport)
+     }
+
+@@ -510,11 +514,11 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertEquals("Photo prepared for instagram_feed_square.", viewModel.state.generatedAltText)
+         assertEquals(2, viewModel.state.promptHistory.size)
+         assertEquals(
+-            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
++            "Generate accessible alt text for file://photo.jpg.",
+             viewModel.state.promptHistory[0].prompt,
+         )
+         assertEquals(
+-            "Generate accessible alt text for file://photo.jpg.",
++            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
+             viewModel.state.promptHistory[1].prompt,
+         )
+         assertTrue(viewModel.state.actions.canShareOrExport)
+@@ -1511,7 +1515,8 @@ class ManualPostDraftWorkspaceViewModelTest {
+     @Test
+     fun updatesStatusMessagesForCopyActions() {
+         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
++        val clipboard = FakeClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+         viewModel.load()
+
+         viewModel.markCaptionCopied()
+@@ -1521,6 +1526,139 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertEquals("Alt text copied", viewModel.state.statusMessage)
+     }
+
++    @Test
++    fun captionCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
++        viewModel.load()
++
++        viewModel.markCaptionCopied()
++
++        assertEquals("Clipboard not available", viewModel.state.statusMessage)
++    }
++
++    @Test
++    fun altTextCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
++        viewModel.load()
++
++        viewModel.markAltTextCopied()
++
++        assertEquals("Clipboard not available", viewModel.state.statusMessage)
++    }
++
++    @Test
++    fun captionCopySetsFailureStatusWhenClipboardThrows() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val clipboard = FailingClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
++        viewModel.load()
++
++        viewModel.markCaptionCopied()
++
++        assertEquals("Failed to copy caption to clipboard", viewModel.state.statusMessage)
++    }
++
++    @Test
++    fun altTextCopySetsFailureStatusWhenClipboardThrows() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val clipboard = FailingClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
++        viewModel.load()
++
++        viewModel.markAltTextCopied()
++
++        assertEquals("Failed to copy alt text to clipboard", viewModel.state.statusMessage)
++    }
++
++    @Test
++    fun copyPromptHistoryEntryPromptCopiesPromptToClipboard() {
++        val entryId = PromptHistoryEntryId("prompt-caption-1")
++        val promptText = "Generate a caption"
++        val repository = FakePostDraftRepository(
++            sampleDraftWithGeneratedText().copy(
++                promptHistory = listOf(
++                    PromptHistoryEntry(
++                        id = entryId,
++                        draftId = draftId,
++                        operationType = AiOperationType.CaptionGeneration,
++                        prompt = promptText,
++                        responseSummary = "caption",
++                        modelName = "fake",
++                        createdAtEpochMillis = 1_700_000_010_000L,
++                    ),
++                ),
++            ),
++        )
++        val clipboard = FakeClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
++        viewModel.load()
++
++        viewModel.copyPromptHistoryEntryPrompt(entryId)
++
++        assertEquals("Caption Generation", clipboard.lastLabel)
++        assertEquals(promptText, clipboard.lastText)
++        assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
++        assertTrue(viewModel.state.actions.canCopyPrompt)
++    }
++
++    @Test
++    fun copyPromptHistoryEntryPromptShowsNotFoundWhenEntryMissing() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val clipboard = FakeClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
++        viewModel.load()
++
++        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("nonexistent"))
++
++        assertNull(clipboard.lastLabel)
++        assertEquals("Prompt entry not found", viewModel.state.statusMessage)
++        assertTrue(viewModel.state.actions.canCopyPrompt)
++    }
++
++    @Test
++    fun copyPromptHistoryEntryPromptShowsClipboardNotAvailableWhenClipboardMissing() {
++        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
++        viewModel.load()
++
++        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("any"))
++
++        assertEquals("Clipboard not available", viewModel.state.statusMessage)
++        assertFalse(viewModel.state.actions.canCopyPrompt)
++    }
++
++    @Test
++    fun copyPromptHistoryEntryPromptShowsFailureStatusWhenClipboardThrows() {
++        val entryId = PromptHistoryEntryId("prompt-caption-1")
++        val repository = FakePostDraftRepository(
++            sampleDraftWithGeneratedText().copy(
++                promptHistory = listOf(
++                    PromptHistoryEntry(
++                        id = entryId,
++                        draftId = draftId,
++                        operationType = AiOperationType.CaptionGeneration,
++                        prompt = "Generate a caption",
++                        responseSummary = "caption",
++                        modelName = "fake",
++                        createdAtEpochMillis = 1_700_000_010_000L,
++                    ),
++                ),
++            ),
++        )
++        val clipboard = FailingClipboardWriter()
++        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
++        viewModel.load()
++
++        val historyBefore = viewModel.state.promptHistory
++        viewModel.copyPromptHistoryEntryPrompt(entryId)
++
++        assertEquals("Failed to copy prompt to clipboard", viewModel.state.statusMessage)
++        assertTrue(viewModel.state.actions.canCopyPrompt)
++        assertEquals(historyBefore, viewModel.state.promptHistory, "Stored prompt history must not be mutated on clipboard exception")
++    }
++
+     @Test
+     fun togglesPromptHistoryVisibility() {
+         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+@@ -1872,6 +2010,149 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertEquals(PhotoEditFormOperationState.Idle, form.operationState)
+     }
+
++    @Test
++    fun filtersPhotoEditPromptHistoryByOperationType() {
++        val repository = FakeManualWorkflowRepository(sampleDraftWithEditedMedia())
++        val now = 1_700_000_100_000L
++        val visionId = PromptHistoryEntryId("vision-1")
++        val captionId = PromptHistoryEntryId("caption-1")
++        val altId = PromptHistoryEntryId("alt-1")
++        val editId = PromptHistoryEntryId("edit-1")
++
++        repository.savePromptHistoryEntry(
++            PromptHistoryEntry(
++                id = visionId,
++                draftId = draftId,
++                operationType = AiOperationType.VisionDescription,
++                prompt = "Describe this image",
++                responseSummary = "A cup of coffee",
++                modelName = "vision-model",
++                createdAtEpochMillis = now,
++                mediaAssetId = mediaAssetId,
++            ),
++        )
++        repository.savePromptHistoryEntry(
++            PromptHistoryEntry(
++                id = captionId,
++                draftId = draftId,
++                operationType = AiOperationType.CaptionGeneration,
++                prompt = "Write a caption",
++                responseSummary = "Morning coffee",
++                modelName = "caption-model",
++                createdAtEpochMillis = now + 1000,
++                mediaAssetId = mediaAssetId,
++            ),
++        )
++        repository.savePromptHistoryEntry(
++            PromptHistoryEntry(
++                id = altId,
++                draftId = draftId,
++                operationType = AiOperationType.AltTextGeneration,
++                prompt = "Describe for accessibility",
++                responseSummary = "Coffee cup on table",
++                modelName = "alt-model",
++                createdAtEpochMillis = now + 2000,
++                mediaAssetId = mediaAssetId,
++            ),
++        )
++        repository.savePromptHistoryEntry(
++            PromptHistoryEntry(
++                id = editId,
++                draftId = draftId,
++                operationType = AiOperationType.PhotoEdit,
++                prompt = "Brighten the image",
++                responseSummary = "Brightness adjusted",
++                modelName = "edit-model",
++                createdAtEpochMillis = now + 3000,
++                mediaAssetId = mediaAssetId,
++            ),
++        )
++
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            promptHistoryRepository = repository,
++        )
++        viewModel.load()
++
++        assertEquals(1, viewModel.state.photoEditPromptHistory.size)
++        assertEquals(editId, viewModel.state.photoEditPromptHistory.single().id)
++    }
++
++    @Test
++    fun exposesAllPromptHistoryMetadataFieldsIncludingFailedEntry() {
++        val now = 1_700_000_100_000L
++        val successEntry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("success-1"),
++            draftId = draftId,
++            operationType = AiOperationType.CaptionGeneration,
++            prompt = "Write a caption for this image",
++            responseSummary = "A beautiful sunset",
++            modelName = "gpt-4o",
++            createdAtEpochMillis = now,
++            provider = "OpenAI",
++            mediaAssetId = mediaAssetId,
++            requestSettings = "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
++            resultReference = "caption-result-1",
++        )
++        val failedEntry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("failed-1"),
++            draftId = draftId,
++            operationType = AiOperationType.VisionDescription,
++            prompt = "Describe this image for accessibility",
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = now + 5000,
++            provider = "Anthropic",
++            mediaAssetId = mediaAssetId,
++            requestSettings = "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
++            resultReference = null,
++            errorMessage = "The AI provider is rate limited. Try again later.",
++        )
++        val repository = FakePostDraftRepository(
++            sampleDraftWithGeneratedText().copy(
++                promptHistory = listOf(successEntry, failedEntry),
++            ),
++        )
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            clock = FixedClock(now),
++            clipboardWriter = FakeClipboardWriter(),
++        )
++        viewModel.load()
++
++        assertEquals(2, viewModel.state.promptHistory.size)
++        assertTrue(viewModel.state.actions.canViewPromptHistory)
++
++        val loadedSuccess = viewModel.state.promptHistory.firstOrNull { it.id == successEntry.id }
++        assertNotNull(loadedSuccess)
++        assertEquals("OpenAI", loadedSuccess.provider)
++        assertEquals(now, loadedSuccess.createdAtEpochMillis)
++        assertEquals(
++            "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
++            loadedSuccess.requestSettings,
++        )
++        assertEquals("caption-result-1", loadedSuccess.resultReference)
++        assertNull(loadedSuccess.errorMessage)
++        assertFalse(loadedSuccess.isFailure)
++
++        val loadedFailed = viewModel.state.promptHistory.firstOrNull { it.id == failedEntry.id }
++        assertNotNull(loadedFailed)
++        assertEquals("Anthropic", loadedFailed.provider)
++        assertEquals(now + 5000, loadedFailed.createdAtEpochMillis)
++        assertEquals(
++            "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
++            loadedFailed.requestSettings,
++        )
++        assertNull(loadedFailed.resultReference)
++        assertEquals(
++            "The AI provider is rate limited. Try again later.",
++            loadedFailed.errorMessage,
++        )
++        assertTrue(loadedFailed.isFailure)
++    }
++
+     @Test
+     fun updatesPhotoEditFormIntent() {
+         val repository = FakePostDraftRepository(sampleDraft())
+@@ -3232,6 +3513,21 @@ class ManualPostDraftWorkspaceViewModelTest {
+         }
+     }
+
++    private class FakeClipboardWriter : ClipboardWriter {
++        var lastLabel: String? = null
++        var lastText: String? = null
++        override fun copy(label: String, text: String) {
++            lastLabel = label
++            lastText = text
++        }
++    }
++
++    private class FailingClipboardWriter : ClipboardWriter {
++        override fun copy(label: String, text: String) {
++            throw RuntimeException("Clipboard unavailable")
++        }
++    }
++
+     private class FakeManualWorkflowRepository(
+         initialDraft: PostDraft? = null,
+     ) : ManualWorkflowRepository {
+@@ -3286,6 +3582,9 @@ class ManualPostDraftWorkspaceViewModelTest {
+         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+             storedPromptHistory.filter { it.draftId == id }
+
++        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++            storedPromptHistory.filter { it.mediaAssetId == id }
++
+         override fun save(mediaAsset: MediaAsset) {}
+         override fun get(id: MediaAssetId): MediaAsset? = null
+         override fun save(brandProfile: BrandProfile) {}
+diff --git a/shared/build.gradle.kts b/shared/build.gradle.kts
+index 769230b..ff93b1b 100644
+--- a/shared/build.gradle.kts
++++ b/shared/build.gradle.kts
+@@ -43,7 +43,7 @@ sqldelight {
+             packageName.set("com.digitumdei.shotquill.shared.db")
+             dialect("app.cash.sqldelight:sqlite-3-24-dialect:${libs.versions.sqldelight.get()}")
+             schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+-            verifyMigrations.set(false)
++            verifyMigrations.set(true)
+         }
+     }
+ }
+diff --git a/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/AndroidDatabaseDriverUpgradeTest.kt b/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/AndroidDatabaseDriverUpgradeTest.kt
+index 93939f6..3172b4a 100644
+--- a/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/AndroidDatabaseDriverUpgradeTest.kt
++++ b/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/AndroidDatabaseDriverUpgradeTest.kt
+@@ -3,7 +3,9 @@ package com.digitumdei.shotquill.shared.storage
+ import android.content.Context
+ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+ import com.digitumdei.shotquill.shared.db.ShotQuillDatabase
++import com.digitumdei.shotquill.shared.domain.MediaAssetId
+ import com.digitumdei.shotquill.shared.domain.PostDraftId
++import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertNotNull
+@@ -59,7 +61,55 @@ class AndroidDatabaseDriverUpgradeTest {
+
+     @Test
+     fun schemaVersionMatchesMigrationScaffold() {
+-        assertEquals(3, ShotQuillDatabase.Schema.version.toInt())
++        assertEquals(4, ShotQuillDatabase.Schema.version.toInt())
++    }
++
++    @Test
++    fun androidDriverUpgradeFromV3ToV4ReadsNewColumnsAsNull() {
++        val context = RuntimeEnvironment.application as Context
++        val dbName = "android-upgrade-v3.db"
++        val dbPath = context.getDatabasePath(dbName)
++
++        dbPath.delete()
++        dbPath.parentFile?.mkdirs()
++
++        val v3Driver = JdbcSqliteDriver("jdbc:sqlite:${dbPath.absolutePath}")
++        createV3Schema(v3Driver)
++
++        v3Driver.execute(null, "INSERT INTO media_assets(id, type, uri, mime_type, width_px, height_px, created_at_epoch_millis) VALUES('media-1', 'photo', 'file://photo.jpg', 'image/jpeg', 1080, 1080, 1700000000000)", 0)
++        v3Driver.execute(null, "INSERT INTO post_drafts(id, format, status, caption_text, brand_profile_id, selected_media_asset_id, created_at_epoch_millis, updated_at_epoch_millis) VALUES('draft-1', 'SingleImage', 'photo_added', NULL, NULL, NULL, 1700000000000, 1700000060000)", 0)
++        v3Driver.execute(null, "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES('draft-1', 'media-1', 0)", 0)
++        v3Driver.execute(null, "INSERT INTO prompt_history_entries(id, draft_id, operation_type, prompt, response_summary, model_name, created_at_epoch_millis) VALUES('prompt-v3-1', 'draft-1', 'caption_generation', 'Old prompt text.', 'Old response.', 'caption-model', 1700000000000)", 0)
++
++        v3Driver.execute(null, "PRAGMA user_version = 3", 0)
++        v3Driver.close()
++
++        val factory = AndroidDatabaseDriverFactory(context)
++        val driver = factory.create(dbName)
++
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        val draft = repository.get(PostDraftId("draft-1"))
++        assertNotNull(draft, "Draft must be readable after v3->v4 upgrade")
++
++        val entry = repository.get(PromptHistoryEntryId("prompt-v3-1"))
++        assertNotNull(entry, "Prompt history entry must survive v3->v4 migration")
++        assertEquals("Old prompt text.", entry.prompt)
++        assertEquals("Old response.", entry.responseSummary)
++        assertEquals("caption-model", entry.modelName)
++        assertNull(entry.provider, "provider must be null after migration")
++        assertNull(entry.mediaAssetId, "mediaAssetId must be null after migration")
++        assertNull(entry.requestSettings, "requestSettings must be null after migration")
++        assertNull(entry.resultReference, "resultReference must be null after migration")
++        assertNull(entry.errorMessage, "errorMessage must be null after migration")
++
++        val history = repository.listPromptHistoryForDraft(PostDraftId("draft-1"))
++        assertTrue(history.any { it.id == PromptHistoryEntryId("prompt-v3-1") })
++
++        val forMedia = repository.listPromptHistoryForMediaAsset(MediaAssetId("media-1"))
++        assertTrue(forMedia.isEmpty(), "no entries have media_asset_id set after migration")
++
++        driver.close()
++        dbPath.delete()
+     }
+
+     private fun createV1Schema(driver: JdbcSqliteDriver) {
+@@ -82,4 +132,26 @@ class AndroidDatabaseDriverUpgradeTest {
+         driver.execute(null, "CREATE TABLE prompt_history_entries (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, operation_type TEXT NOT NULL, prompt TEXT NOT NULL, response_summary TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
+         driver.execute(null, "CREATE TABLE export_records (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, status TEXT NOT NULL, destination_uri TEXT, error_message TEXT, created_at_epoch_millis INTEGER NOT NULL, completed_at_epoch_millis INTEGER)", 0)
+     }
++
++    private fun createV3Schema(driver: JdbcSqliteDriver) {
++        driver.execute(null, "CREATE TABLE media_assets (id TEXT NOT NULL PRIMARY KEY, type TEXT NOT NULL, uri TEXT NOT NULL, mime_type TEXT, width_px INTEGER, height_px INTEGER, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE brand_profiles (id TEXT NOT NULL PRIMARY KEY, display_name TEXT NOT NULL, voice TEXT NOT NULL, audience TEXT, visual_style_notes TEXT, product_naming_notes TEXT, created_at_epoch_millis INTEGER NOT NULL, updated_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE brand_profile_default_hashtags (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (profile_id, hashtag_order))", 0)
++        driver.execute(null, "CREATE TABLE brand_profile_links (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, link TEXT NOT NULL, link_order INTEGER NOT NULL, PRIMARY KEY (profile_id, link_order))", 0)
++        driver.execute(null, "CREATE TABLE brand_image_assets (profile_id TEXT NOT NULL REFERENCES brand_profiles(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT, asset_order INTEGER NOT NULL, PRIMARY KEY (profile_id, media_asset_id))", 0)
++        driver.execute(null, "CREATE TABLE post_drafts (id TEXT NOT NULL PRIMARY KEY, format TEXT NOT NULL, status TEXT NOT NULL, caption_text TEXT, brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL, selected_media_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL, created_at_epoch_millis INTEGER NOT NULL, updated_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE post_draft_target_platforms (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, platform TEXT NOT NULL, PRIMARY KEY (draft_id, platform))", 0)
++        driver.execute(null, "CREATE TABLE post_draft_media_items (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, media_order INTEGER NOT NULL, PRIMARY KEY (draft_id, media_asset_id), UNIQUE (draft_id, media_order))", 0)
++        driver.execute(null, "CREATE TABLE post_draft_caption_hashtags (draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (draft_id, hashtag_order))", 0)
++        driver.execute(null, "CREATE TABLE vision_descriptions (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, description TEXT NOT NULL, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE caption_requests (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, prompt TEXT NOT NULL, tone TEXT, brand_profile_id TEXT REFERENCES brand_profiles(id) ON DELETE SET NULL, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE caption_results (id TEXT NOT NULL PRIMARY KEY, request_id TEXT NOT NULL REFERENCES caption_requests(id) ON DELETE CASCADE, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, caption TEXT NOT NULL, short_caption TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE caption_result_hashtags (result_id TEXT NOT NULL REFERENCES caption_results(id) ON DELETE CASCADE, hashtag TEXT NOT NULL, hashtag_order INTEGER NOT NULL, PRIMARY KEY (result_id, hashtag_order))", 0)
++        driver.execute(null, "CREATE TABLE alt_text_results (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, alt_text TEXT NOT NULL, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE photo_edit_requests (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, source_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, intent TEXT NOT NULL, realism_level TEXT NOT NULL, quality_tier TEXT NOT NULL, prompt TEXT NOT NULL, user_refinement TEXT, subject_description TEXT, target_platform TEXT NOT NULL, mask_region TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE photo_edit_results (id TEXT NOT NULL PRIMARY KEY, request_id TEXT NOT NULL REFERENCES photo_edit_requests(id) ON DELETE CASCADE, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, edited_media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, summary TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE prompt_history_entries (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, operation_type TEXT NOT NULL, prompt TEXT NOT NULL, response_summary TEXT, model_name TEXT, created_at_epoch_millis INTEGER NOT NULL)", 0)
++        driver.execute(null, "CREATE TABLE export_records (id TEXT NOT NULL PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE, target_platform TEXT NOT NULL, status TEXT NOT NULL, destination_uri TEXT, error_message TEXT, created_at_epoch_millis INTEGER NOT NULL, completed_at_epoch_millis INTEGER)", 0)
++        driver.execute(null, "CREATE TABLE final_post_content (draft_id TEXT NOT NULL PRIMARY KEY REFERENCES post_drafts(id) ON DELETE CASCADE, edited_caption TEXT, edited_alt_text TEXT, updated_at_epoch_millis INTEGER NOT NULL)", 0)
++    }
+ }
+diff --git a/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepositoryTest.kt b/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepositoryTest.kt
+index ddbfd74..e54e26b 100644
+--- a/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepositoryTest.kt
++++ b/shared/src/androidUnitTest/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepositoryTest.kt
+@@ -854,6 +854,11 @@ class SqlDelightManualWorkflowRepositoryTest {
+             responseSummary = "Generated with sk-live_abcdefghi123456.",
+             modelName = "caption-model",
+             createdAt = createdAt,
++            provider = null,
++            mediaAssetId = null,
++            requestSettings = null,
++            resultReference = null,
++            errorMessage = null,
+         )
+         val mappedExport = ManualWorkflowStorageMapper.exportRecord(
+             recordId = "export-1",
+@@ -946,7 +951,7 @@ class SqlDelightManualWorkflowRepositoryTest {
+         )
+         repository.savePromptHistoryEntry(
+             PromptHistoryEntry(
+-                id = PromptHistoryEntryId("prompt-1"),
++                id = PromptHistoryEntryId("prompt-2"),
+                 draftId = PostDraftId("draft-1"),
+                 operationType = AiOperationType.PhotoEdit,
+                 prompt = "Warm the photo.",
+@@ -978,7 +983,7 @@ class SqlDelightManualWorkflowRepositoryTest {
+         assertEquals(QualityTier.Standard, stored.photoEditRequests.single().qualityTier)
+         assertEquals("Warmer edit.", stored.photoEditResults.single().summary)
+         assertEquals("file://photo-edited-v2.jpg", stored.photoEditResults.single().editedMediaAsset.uri)
+-        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.single().operationType)
++        assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.last().operationType)
+         assertEquals(ExportStatus.Failed, stored.exportRecords.single().status)
+         driver.close()
+     }
+@@ -991,7 +996,7 @@ class SqlDelightManualWorkflowRepositoryTest {
+         repository.save(samplePostDraft())
+         repository.savePromptHistoryEntry(
+             PromptHistoryEntry(
+-                id = PromptHistoryEntryId("prompt-1"),
++                id = PromptHistoryEntryId("prompt-redact-1"),
+                 draftId = PostDraftId("draft-1"),
+                 operationType = AiOperationType.CaptionGeneration,
+                 prompt = "Use sk-live_abcdefghi123456 in prompt.",
+@@ -1002,7 +1007,7 @@ class SqlDelightManualWorkflowRepositoryTest {
+         )
+         repository.saveExportRecord(
+             ExportRecord(
+-                id = ExportRecordId("export-1"),
++                id = ExportRecordId("export-redact-1"),
+                 draftId = PostDraftId("draft-1"),
+                 targetPlatform = TargetPlatform.BlueskyPost,
+                 status = ExportStatus.Failed,
+@@ -1013,8 +1018,8 @@ class SqlDelightManualWorkflowRepositoryTest {
+             ),
+         )
+
+-        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-1"))
+-        val storedExport = repository.get(ExportRecordId("export-1"))
++        val storedPrompt = repository.get(PromptHistoryEntryId("prompt-redact-1"))
++        val storedExport = repository.get(ExportRecordId("export-redact-1"))
+         assertEquals("Use ${SecretRedactor.Redacted} in prompt.", storedPrompt?.prompt)
+         assertEquals("Model returned ${SecretRedactor.Redacted}.", storedPrompt?.responseSummary)
+         assertEquals("Failed with ${SecretRedactor.Redacted}.", storedExport?.errorMessage)
+@@ -1043,8 +1048,8 @@ class SqlDelightManualWorkflowRepositoryTest {
+     }
+
+     @Test
+-    fun hasMigrationScaffoldForVersionThree() {
+-        assertEquals(3, ShotQuillDatabase.Schema.version.toInt())
++    fun hasMigrationScaffoldForVersionFour() {
++        assertEquals(4, ShotQuillDatabase.Schema.version.toInt())
+     }
+
+     @Test
+@@ -1718,4 +1723,247 @@ class SqlDelightManualWorkflowRepositoryTest {
+         assertEquals(2, list.size)
+         driver.close()
+     }
++
++    @Test
++    fun `promptHistoryEntry round-trip persists all new fields exactly`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val entry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-rt-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.PhotoEdit,
++            prompt = "Describe this image.",
++            responseSummary = "Photo described.",
++            modelName = "vision-model",
++            createdAtEpochMillis = createdAt + 1,
++            provider = "openai",
++            mediaAssetId = MediaAssetId("media-1"),
++            requestSettings = "temperature=0.7, max_tokens=512",
++            resultReference = "vision-result-42",
++            errorMessage = null,
++        )
++        repository.savePromptHistoryEntry(entry)
++
++        val byId = repository.get(PromptHistoryEntryId("prompt-rt-1"))
++        assertNotNull(byId)
++        assertEquals(entry.id, byId.id)
++        assertEquals(entry.draftId, byId.draftId)
++        assertEquals(entry.operationType, byId.operationType)
++        assertEquals(entry.prompt, byId.prompt)
++        assertEquals(entry.responseSummary, byId.responseSummary)
++        assertEquals(entry.modelName, byId.modelName)
++        assertEquals(entry.createdAtEpochMillis, byId.createdAtEpochMillis)
++        assertEquals(entry.provider, byId.provider)
++        assertEquals(entry.mediaAssetId, byId.mediaAssetId)
++        assertEquals(entry.requestSettings, byId.requestSettings)
++        assertEquals(entry.resultReference, byId.resultReference)
++        assertNull(byId.errorMessage)
++        assertFalse(byId.isFailure)
++
++        val byDraft = repository.listPromptHistoryForDraft(PostDraftId("draft-1"))
++        assertTrue(byDraft.any { it.id == PromptHistoryEntryId("prompt-rt-1") })
++        val fromList = byDraft.first { it.id == PromptHistoryEntryId("prompt-rt-1") }
++        assertEquals(entry.provider, fromList.provider)
++        assertEquals(entry.mediaAssetId, fromList.mediaAssetId)
++        assertEquals(entry.requestSettings, fromList.requestSettings)
++        assertEquals(entry.resultReference, fromList.resultReference)
++        assertNull(fromList.errorMessage)
++
++        driver.close()
++    }
++
++    @Test
++    fun `promptHistoryEntry exact prompt retrieval with special characters`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val specialPrompt = "Line one\nLine two\nTabbed\there\n\"Quoted\" and 'single'\n100% done😀 emoji"
++        val entry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-special-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.CaptionGeneration,
++            prompt = specialPrompt,
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = createdAt + 2,
++        )
++        repository.savePromptHistoryEntry(entry)
++
++        val stored = repository.get(PromptHistoryEntryId("prompt-special-1"))
++        assertNotNull(stored)
++        assertEquals(specialPrompt, stored.prompt)
++
++        driver.close()
++    }
++
++    @Test
++    fun `listPromptHistoryForMediaAsset returns only matching entries in created_at order`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val entryMediaA1 = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-ma-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.AltTextGeneration,
++            prompt = "Alt text for asset A.",
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = createdAt + 10,
++            mediaAssetId = MediaAssetId("media-1"),
++        )
++        val entryMediaA2 = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-ma-2"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.VisionDescription,
++            prompt = "Describe asset A.",
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = createdAt + 20,
++            mediaAssetId = MediaAssetId("media-1"),
++        )
++        val entryMediaB = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-mb-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.AltTextGeneration,
++            prompt = "Alt text for edited asset.",
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = createdAt + 30,
++            mediaAssetId = MediaAssetId("media-edited-1"),
++        )
++        val entryNoAsset = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-no-asset-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.CaptionGeneration,
++            prompt = "Generate caption.",
++            responseSummary = null,
++            modelName = null,
++            createdAtEpochMillis = createdAt + 40,
++            mediaAssetId = null,
++        )
++
++        repository.savePromptHistoryEntry(entryMediaA1)
++        repository.savePromptHistoryEntry(entryMediaA2)
++        repository.savePromptHistoryEntry(entryMediaB)
++        repository.savePromptHistoryEntry(entryNoAsset)
++
++        val forMediaA = repository.listPromptHistoryForMediaAsset(MediaAssetId("media-1"))
++        assertEquals(2, forMediaA.size)
++        assertEquals(PromptHistoryEntryId("prompt-ma-1"), forMediaA[0].id)
++        assertEquals(PromptHistoryEntryId("prompt-ma-2"), forMediaA[1].id)
++
++        val forMediaB = repository.listPromptHistoryForMediaAsset(MediaAssetId("media-edited-1"))
++        assertEquals(1, forMediaB.size)
++        assertEquals(PromptHistoryEntryId("prompt-mb-1"), forMediaB[0].id)
++
++        val forUnknown = repository.listPromptHistoryForMediaAsset(MediaAssetId("unknown-media"))
++        assertEquals(emptyList(), forUnknown)
++
++        driver.close()
++    }
++
++    @Test
++    fun `promptHistoryEntry immutability — duplicate id write via savePromptHistoryEntry is silently ignored`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val original = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-immutable-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.CaptionGeneration,
++            prompt = "Original prompt.",
++            responseSummary = "Original response.",
++            modelName = "model-v1",
++            createdAtEpochMillis = createdAt + 50,
++            errorMessage = null,
++        )
++        repository.savePromptHistoryEntry(original)
++
++        val duplicate = original.copy(
++            prompt = "Mutated prompt.",
++            responseSummary = "Mutated response.",
++            errorMessage = "Should not appear.",
++        )
++        repository.savePromptHistoryEntry(duplicate)
++
++        val stored = repository.get(PromptHistoryEntryId("prompt-immutable-1"))
++        assertNotNull(stored)
++        assertEquals("Original prompt.", stored.prompt)
++        assertEquals("Original response.", stored.responseSummary)
++        assertNull(stored.errorMessage)
++        assertFalse(stored.isFailure)
++
++        driver.close()
++    }
++
++    @Test
++    fun `promptHistoryEntry secrets are redacted in prompt, requestSettings, and errorMessage`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val secretKey = "sk-test-secret-key-12345678901234567890"
++        val entry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-secrets-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.CaptionGeneration,
++            prompt = "Use key $secretKey to call the API.",
++            responseSummary = null,
++            modelName = "caption-model",
++            createdAtEpochMillis = createdAt + 60,
++            requestSettings = "api_key=$secretKey",
++            errorMessage = "Failed: $secretKey not authorized.",
++        )
++        repository.savePromptHistoryEntry(entry)
++
++        val stored = repository.get(PromptHistoryEntryId("prompt-secrets-1"))
++        assertNotNull(stored)
++        assertFalse(stored.prompt.contains(secretKey), "prompt must not contain raw key")
++        assertFalse(
++            stored.requestSettings?.contains(secretKey) == true,
++            "requestSettings must not contain raw key",
++        )
++        assertFalse(
++            stored.errorMessage?.contains(secretKey) == true,
++            "errorMessage must not contain raw key",
++        )
++        assertTrue(stored.prompt.contains(SecretRedactor.Redacted))
++        assertTrue(stored.errorMessage?.contains(SecretRedactor.Redacted) == true)
++
++        driver.close()
++    }
++
++    @Test
++    fun `failed promptHistoryEntry is visible in listPromptHistoryForDraft and isFailure is true`() {
++        val driver = inMemoryDriver()
++        val repository = SqlDelightManualWorkflowRepository(driver)
++        repository.save(samplePostDraft())
++
++        val failedEntry = PromptHistoryEntry(
++            id = PromptHistoryEntryId("prompt-failed-1"),
++            draftId = PostDraftId("draft-1"),
++            operationType = AiOperationType.PhotoEdit,
++            prompt = "Edit the photo.",
++            responseSummary = null,
++            modelName = "edit-model",
++            createdAtEpochMillis = createdAt + 70,
++            resultReference = null,
++            errorMessage = "API timeout after 30s.",
++        )
++        repository.savePromptHistoryEntry(failedEntry)
++
++        val history = repository.listPromptHistoryForDraft(PostDraftId("draft-1"))
++        val failed = history.firstOrNull { it.id == PromptHistoryEntryId("prompt-failed-1") }
++        assertNotNull(failed)
++        assertTrue(failed.isFailure)
++        assertEquals("API timeout after 30s.", failed.errorMessage)
++        assertNull(failed.resultReference)
++
++        driver.close()
++    }
+ }
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiProvider.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiProvider.kt
+index 6b3aff9..107d1d9 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiProvider.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiProvider.kt
+@@ -6,6 +6,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
+ import com.digitumdei.shotquill.shared.domain.TargetPlatform
+
+ interface AiProvider {
++    val name: String get() = "unknown"
+     fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput>
+     fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput>
+     fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput>
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/FakeAiProvider.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/FakeAiProvider.kt
+index 864460c..57b541c 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/FakeAiProvider.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/FakeAiProvider.kt
+@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.ai
+ class FakeAiProvider(
+     private val modelName: String = "fake-ai-provider",
+ ) : AiProvider {
++    override val name: String get() = "fake"
+     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+         AiProviderResult.Success(
+             VisionDescriptionOutput(
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProvider.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProvider.kt
+index d40a291..662202d 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProvider.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProvider.kt
+@@ -12,6 +12,7 @@ class OpenAiProvider(
+     private val logger: AiRequestLogger = NoopAiRequestLogger,
+     private val imagePreprocessor: AiImageUploadPreprocessor = PlatformImageUploadPreprocessor,
+ ) : AiProvider {
++    override val name: String get() = "openai"
+     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+         withApiKey { apiKey ->
+             val image = imagePreprocessor.preprocess(request.image, ImageUploadPreprocessingConfig())
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/domain/ManualWorkflowModels.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/domain/ManualWorkflowModels.kt
+index 40ff8ca..686e40d 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/domain/ManualWorkflowModels.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/domain/ManualWorkflowModels.kt
+@@ -173,7 +173,14 @@ data class PromptHistoryEntry(
+     val responseSummary: String?,
+     val modelName: String?,
+     val createdAtEpochMillis: Long,
+-)
++    val provider: String? = null,
++    val mediaAssetId: MediaAssetId? = null,
++    val requestSettings: String? = null,
++    val resultReference: String? = null,
++    val errorMessage: String? = null,
++) {
++    val isFailure: Boolean get() = errorMessage != null
++}
+
+ data class ExportRecord(
+     val id: ExportRecordId,
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/ManualWorkflowRepositories.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/ManualWorkflowRepositories.kt
+index 6ba28a8..ef83b4a 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/ManualWorkflowRepositories.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/ManualWorkflowRepositories.kt
+@@ -48,6 +48,11 @@ interface PostDraftRepository {
+      * content separately and then save drafts that were loaded without it, so
+      * deleting on null would silently discard the user's edited caption and alt
+      * text. A non-null [PostDraft.finalPostContent] overwrites the stored row.
++     *
++     * Prompt history is also exempt from replacement: entries are immutable and
++     * append-only, so [PostDraft.promptHistory] entries are inserted if new and
++     * otherwise left untouched. Entries already persisted for the draft are
++     * never deleted or rewritten by this method.
+      */
+     fun save(postDraft: PostDraft)
+     fun get(id: PostDraftId): PostDraft?
+@@ -91,6 +96,7 @@ interface PromptHistoryRepository {
+     fun save(promptHistoryEntry: PromptHistoryEntry)
+     fun get(id: PromptHistoryEntryId): PromptHistoryEntry?
+     fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry>
++    fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry>
+ }
+
+ interface ExportRepository {
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepository.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepository.kt
+index acd82d5..8423ff7 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepository.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/storage/SqlDelightManualWorkflowRepository.kt
+@@ -420,7 +420,7 @@ class SqlDelightManualWorkflowRepository(
+     }
+
+     override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
+-        queries.upsertPromptHistoryEntry(
++        queries.insertPromptHistoryEntry(
+             id = promptHistoryEntry.id.value,
+             draft_id = promptHistoryEntry.draftId.value,
+             operation_type = promptHistoryEntry.operationType.wireValue,
+@@ -428,6 +428,11 @@ class SqlDelightManualWorkflowRepository(
+             response_summary = promptHistoryEntry.responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
+             model_name = promptHistoryEntry.modelName,
+             created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
++            provider = promptHistoryEntry.provider,
++            media_asset_id = promptHistoryEntry.mediaAssetId?.value,
++            request_settings = promptHistoryEntry.requestSettings?.let(SecretRedactor::redactOpenAiApiKeys),
++            result_reference = promptHistoryEntry.resultReference,
++            error_message = promptHistoryEntry.errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
+         )
+     }
+
+@@ -436,6 +441,9 @@ class SqlDelightManualWorkflowRepository(
+
+     override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> = selectPromptHistoryEntries(id)
+
++    override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++        queries.selectPromptHistoryEntriesByMediaAssetId(id.value, ManualWorkflowStorageMapper::promptHistoryEntry).executeAsList()
++
+     override fun save(exportRecord: ExportRecord) {
+         saveExportRecord(exportRecord)
+     }
+@@ -610,8 +618,10 @@ class SqlDelightManualWorkflowRepository(
+     private fun deleteOwnedDraftRows(id: PostDraftId) {
+         // final_post_content is intentionally not deleted here; see the
+         // PostDraftRepository.save contract on finalPostContent preservation.
++        // prompt_history_entries are also exempt: history is append-only and
++        // immutable after creation, so saves from stale draft snapshots must
++        // not drop or rewrite entries recorded by AI pipelines.
+         queries.deleteExportRecordsByDraftId(id.value)
+-        queries.deletePromptHistoryEntriesByDraftId(id.value)
+         queries.deletePhotoEditResultsByDraftId(id.value)
+         queries.deletePhotoEditRequestsByDraftId(id.value)
+         queries.deleteAltTextResultsByDraftId(id.value)
+@@ -802,8 +812,26 @@ class SqlDelightManualWorkflowRepository(
+                 responseSummary,
+                 modelName,
+                 createdAt,
++                provider,
++                mediaAssetId,
++                requestSettings,
++                resultReference,
++                errorMessage,
+             ->
+-            ManualWorkflowStorageMapper.promptHistoryEntry(entryId, draftId, operationType, prompt, responseSummary, modelName, createdAt)
++            ManualWorkflowStorageMapper.promptHistoryEntry(
++                entryId,
++                draftId,
++                operationType,
++                prompt,
++                responseSummary,
++                modelName,
++                createdAt,
++                provider,
++                mediaAssetId,
++                requestSettings,
++                resultReference,
++                errorMessage,
++            )
+         }.executeAsList()
+
+     private fun selectExportRecords(id: PostDraftId): List<ExportRecord> =
+@@ -1045,6 +1073,11 @@ internal object ManualWorkflowStorageMapper {
+         responseSummary: String?,
+         modelName: String?,
+         createdAt: Long,
++        provider: String?,
++        mediaAssetId: String?,
++        requestSettings: String?,
++        resultReference: String?,
++        errorMessage: String?,
+     ): PromptHistoryEntry = PromptHistoryEntry(
+         id = PromptHistoryEntryId(entryId),
+         draftId = PostDraftId(draftId),
+@@ -1053,6 +1086,11 @@ internal object ManualWorkflowStorageMapper {
+         responseSummary = responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
+         modelName = modelName,
+         createdAtEpochMillis = createdAt,
++        provider = provider,
++        mediaAssetId = mediaAssetId?.let(::MediaAssetId),
++        requestSettings = requestSettings?.let(SecretRedactor::redactOpenAiApiKeys),
++        resultReference = resultReference,
++        errorMessage = errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
+     )
+
+     fun exportRecord(
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipeline.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipeline.kt
+index 4946fd6..8c58dd4 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipeline.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipeline.kt
+@@ -102,9 +102,20 @@ class PhotoEditExecutionPipeline(
+                 draftId = draftId,
+                 operationType = AiOperationType.PhotoEdit,
+                 prompt = assembledPrompt,
+-                responseSummary = failureSummary(cause),
++                responseSummary = null,
+                 modelName = null,
+                 createdAtEpochMillis = now,
++                provider = aiProvider.name,
++                mediaAssetId = editRequest.sourceMediaAssetId,
++                requestSettings = RequestSettingsFormatter.photoEdit(
++                    intent = editRequest.intent,
++                    realismLevel = editRequest.realismLevel,
++                    qualityTier = editRequest.qualityTier,
++                    targetPlatform = editRequest.targetPlatform,
++                    hasRefinement = editRequest.userRefinement != null,
++                ),
++                resultReference = editRequest.id.value,
++                errorMessage = failureSummary(cause),
+             )
+             val updatedAt = operationUpdatedAt(currentDraft, now)
+             val persistedDraft = repository.savePhotoEditFailure(
+@@ -281,6 +292,16 @@ class PhotoEditExecutionPipeline(
+             responseSummary = editOutput.summary,
+             modelName = editOutput.modelName,
+             createdAtEpochMillis = now,
++            provider = aiProvider.name,
++            mediaAssetId = sourceMediaAsset.id,
++            requestSettings = RequestSettingsFormatter.photoEdit(
++                intent = intent,
++                realismLevel = realismLevel,
++                qualityTier = qualityTier,
++                targetPlatform = targetPlatform,
++                hasRefinement = cleanedUserRefinement != null,
++            ),
++            resultReference = editResult.id.value,
+         )
+
+         val currentBeforeSave = repository.get(draftId) ?: run {
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipeline.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipeline.kt
+index 1428d4d..d055ae7 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipeline.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipeline.kt
+@@ -99,9 +99,30 @@ class PostTextGenerationPipeline(
+                 ),
+             )
+         ) {
+-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
+-                PostTextGenerationError.Provider(result.error),
+-            )
++            is AiProviderResult.Failure -> {
++                val now = clock.nowMillis()
++                val idSuffix = nextIdSuffix(now)
++                val failureEntry = PromptHistoryEntry(
++                    id = PromptHistoryEntryId("prompt-caption-generation-failure-$idSuffix"),
++                    draftId = draftId,
++                    operationType = AiOperationType.CaptionGeneration,
++                    prompt = captionPrompt,
++                    responseSummary = null,
++                    modelName = null,
++                    createdAtEpochMillis = now,
++                    provider = aiProvider.name,
++                    mediaAssetId = visionDescription.mediaAssetId,
++                    requestSettings = RequestSettingsFormatter.captionGeneration(
++                        targetPlatform = targetPlatform, tone = activeBrandProfile?.voice,
++                    ),
++                    resultReference = null,
++                    errorMessage = result.error.userMessage,
++                )
++                repository.savePromptHistoryEntry(failureEntry)
++                return PostTextGenerationResult.Failure(
++                    PostTextGenerationError.Provider(result.error),
++                )
++            }
+             is AiProviderResult.Success -> result.value
+         }
+         val altTextOutput = when (
+@@ -113,9 +134,28 @@ class PostTextGenerationPipeline(
+                 ),
+             )
+         ) {
+-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
+-                PostTextGenerationError.Provider(result.error),
+-            )
++            is AiProviderResult.Failure -> {
++                val now = clock.nowMillis()
++                val idSuffix = nextIdSuffix(now)
++                val failureEntry = PromptHistoryEntry(
++                    id = PromptHistoryEntryId("prompt-alt-text-generation-failure-$idSuffix"),
++                    draftId = draftId,
++                    operationType = AiOperationType.AltTextGeneration,
++                    prompt = altTextPrompt,
++                    responseSummary = null,
++                    modelName = null,
++                    createdAtEpochMillis = now,
++                    provider = aiProvider.name,
++                    mediaAssetId = visionDescription.mediaAssetId,
++                    requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
++                    resultReference = null,
++                    errorMessage = result.error.userMessage,
++                )
++                repository.savePromptHistoryEntry(failureEntry)
++                return PostTextGenerationResult.Failure(
++                    PostTextGenerationError.Provider(result.error),
++                )
++            }
+             is AiProviderResult.Success -> result.value
+         }
+
+@@ -157,6 +197,12 @@ class PostTextGenerationPipeline(
+             responseSummary = captionResult.responseSummary(),
+             modelName = captionResult.modelName,
+             createdAtEpochMillis = now,
++            provider = aiProvider.name,
++            mediaAssetId = visionDescription.mediaAssetId,
++            requestSettings = RequestSettingsFormatter.captionGeneration(
++                targetPlatform = targetPlatform, tone = captionRequest.tone,
++            ),
++            resultReference = captionResult.id.value,
+         )
+         val altTextHistoryEntry = PromptHistoryEntry(
+             id = PromptHistoryEntryId("prompt-alt-text-generation-$idSuffix"),
+@@ -166,6 +212,10 @@ class PostTextGenerationPipeline(
+             responseSummary = altTextResult.altText,
+             modelName = altTextResult.modelName,
+             createdAtEpochMillis = now,
++            provider = aiProvider.name,
++            mediaAssetId = visionDescription.mediaAssetId,
++            requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
++            resultReference = altTextResult.id.value,
+         )
+         val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
+             PostTextGenerationError.DraftNotFound,
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/RequestSettingsFormatter.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/RequestSettingsFormatter.kt
+new file mode 100644
+index 0000000..85d7796
+--- /dev/null
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/RequestSettingsFormatter.kt
+@@ -0,0 +1,34 @@
++package com.digitumdei.shotquill.shared.workflow
++
++import com.digitumdei.shotquill.shared.domain.EditIntent
++import com.digitumdei.shotquill.shared.domain.QualityTier
++import com.digitumdei.shotquill.shared.domain.RealismLevel
++import com.digitumdei.shotquill.shared.domain.TargetPlatform
++
++object RequestSettingsFormatter {
++
++    fun visionDescription(fileName: String, mimeType: String): String =
++        "fileName=$fileName, mimeType=$mimeType"
++
++    fun captionGeneration(targetPlatform: TargetPlatform, tone: String?): String {
++        val base = "targetPlatform=${targetPlatform.wireValue}"
++        return "$base, tone=${tone ?: "default"}"
++    }
++
++    fun altTextGeneration(targetPlatform: TargetPlatform): String =
++        "targetPlatform=${targetPlatform.wireValue}"
++
++    fun photoEdit(
++        intent: EditIntent,
++        realismLevel: RealismLevel,
++        qualityTier: QualityTier,
++        targetPlatform: TargetPlatform,
++        hasRefinement: Boolean,
++    ): String = buildString {
++        append("intent=${intent.wireValue}")
++        append(", realismLevel=${realismLevel.wireValue}")
++        append(", qualityTier=${qualityTier.wireValue}")
++        append(", targetPlatform=${targetPlatform.wireValue}")
++        append(", hasRefinement=$hasRefinement")
++    }
++}
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzer.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzer.kt
+index b45e736..7f43b0c 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzer.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzer.kt
+@@ -61,17 +61,38 @@ class VisionDescriptionAnalyzer(
+             )
+         }
+         val image = (sourceImageResult as SourceImageResult.Success).image
+-        return when (val providerResult = aiProvider.describeVision(
+-            VisionDescriptionRequest(
+-                draftId = draft.id,
+-                mediaAssetId = mediaAsset.id,
+-                image = image,
+-                prompt = prompt,
+-            ),
+-        )) {
+-            is AiProviderResult.Failure -> VisionDescriptionAnalysisResult.Failure(
+-                VisionDescriptionAnalysisError.Provider(providerResult.error),
+-            )
++        val visionRequest = VisionDescriptionRequest(
++            draftId = draft.id,
++            mediaAssetId = mediaAsset.id,
++            image = image,
++            prompt = prompt,
++        )
++        return when (val providerResult = aiProvider.describeVision(visionRequest)) {
++            is AiProviderResult.Failure -> {
++                val now = clock.nowMillis()
++                val idSuffix = nextIdSuffix(now)
++                val failureEntry = PromptHistoryEntry(
++                    id = PromptHistoryEntryId("prompt-vision-description-failure-$idSuffix"),
++                    draftId = draft.id,
++                    operationType = AiOperationType.VisionDescription,
++                    prompt = prompt,
++                    responseSummary = null,
++                    modelName = null,
++                    createdAtEpochMillis = now,
++                    provider = aiProvider.name,
++                    mediaAssetId = mediaAsset.id,
++                    requestSettings = RequestSettingsFormatter.visionDescription(
++                        fileName = visionRequest.image.fileName,
++                        mimeType = visionRequest.image.mimeType,
++                    ),
++                    resultReference = null,
++                    errorMessage = providerResult.error.userMessage,
++                )
++                repository.savePromptHistoryEntry(failureEntry)
++                VisionDescriptionAnalysisResult.Failure(
++                    VisionDescriptionAnalysisError.Provider(providerResult.error),
++                )
++            }
+             is AiProviderResult.Success -> {
+                 val now = clock.nowMillis()
+                 val idSuffix = nextIdSuffix(now)
+@@ -91,6 +112,13 @@ class VisionDescriptionAnalyzer(
+                     responseSummary = description.description,
+                     modelName = description.modelName,
+                     createdAtEpochMillis = now,
++                    provider = aiProvider.name,
++                    mediaAssetId = mediaAsset.id,
++                    requestSettings = RequestSettingsFormatter.visionDescription(
++                        fileName = visionRequest.image.fileName,
++                        mimeType = visionRequest.image.mimeType,
++                    ),
++                    resultReference = description.id.value,
+                 )
+                 repository.saveVisionDescription(description)
+                 repository.savePromptHistoryEntry(promptHistoryEntry)
+diff --git a/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/3.sqm b/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/3.sqm
+new file mode 100644
+index 0000000..08af57e
+--- /dev/null
++++ b/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/3.sqm
+@@ -0,0 +1,5 @@
++ALTER TABLE prompt_history_entries ADD COLUMN provider TEXT;
++ALTER TABLE prompt_history_entries ADD COLUMN media_asset_id TEXT;
++ALTER TABLE prompt_history_entries ADD COLUMN request_settings TEXT;
++ALTER TABLE prompt_history_entries ADD COLUMN result_reference TEXT;
++ALTER TABLE prompt_history_entries ADD COLUMN error_message TEXT;
+diff --git a/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/ShotQuill.sq b/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/ShotQuill.sq
+index d90dadc..fda5102 100644
+--- a/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/ShotQuill.sq
++++ b/shared/src/commonMain/sqldelight/com/digitumdei/shotquill/shared/db/ShotQuill.sq
+@@ -159,7 +159,12 @@ CREATE TABLE prompt_history_entries (
+   prompt TEXT NOT NULL,
+   response_summary TEXT,
+   model_name TEXT,
+-  created_at_epoch_millis INTEGER NOT NULL
++  created_at_epoch_millis INTEGER NOT NULL,
++  provider TEXT,
++  media_asset_id TEXT,
++  request_settings TEXT,
++  result_reference TEXT,
++  error_message TEXT
+ );
+
+ CREATE TABLE export_records (
+@@ -570,23 +575,21 @@ FROM photo_edit_results
+ JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
+ WHERE photo_edit_results.id = ?;
+
+-upsertPromptHistoryEntry:
+-INSERT INTO prompt_history_entries(
++insertPromptHistoryEntry:
++INSERT OR IGNORE INTO prompt_history_entries(
+   id,
+   draft_id,
+   operation_type,
+   prompt,
+   response_summary,
+   model_name,
+-  created_at_epoch_millis
+-) VALUES (?, ?, ?, ?, ?, ?, ?)
+-ON CONFLICT(id) DO UPDATE SET
+-  draft_id = excluded.draft_id,
+-  operation_type = excluded.operation_type,
+-  prompt = excluded.prompt,
+-  response_summary = excluded.response_summary,
+-  model_name = excluded.model_name,
+-  created_at_epoch_millis = excluded.created_at_epoch_millis;
++  created_at_epoch_millis,
++  provider,
++  media_asset_id,
++  request_settings,
++  result_reference,
++  error_message
++) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+ deletePromptHistoryEntriesByDraftId:
+ DELETE FROM prompt_history_entries WHERE draft_id = ?;
+@@ -599,6 +602,9 @@ ORDER BY created_at_epoch_millis ASC;
+ selectPromptHistoryEntryById:
+ SELECT * FROM prompt_history_entries WHERE id = ?;
+
++selectPromptHistoryEntriesByMediaAssetId:
++SELECT * FROM prompt_history_entries WHERE media_asset_id = ? ORDER BY created_at_epoch_millis ASC;
++
+ upsertExportRecord:
+ INSERT INTO export_records(
+   id,
+diff --git a/shared/src/commonMain/sqldelight/databases/1.db b/shared/src/commonMain/sqldelight/databases/1.db
+index ec82179..e2389da 100644
+Binary files a/shared/src/commonMain/sqldelight/databases/1.db and b/shared/src/commonMain/sqldelight/databases/1.db differ
+diff --git a/shared/src/commonMain/sqldelight/databases/2.db b/shared/src/commonMain/sqldelight/databases/2.db
+index bcdde17..6d4dc66 100644
+Binary files a/shared/src/commonMain/sqldelight/databases/2.db and b/shared/src/commonMain/sqldelight/databases/2.db differ
+diff --git a/shared/src/commonMain/sqldelight/databases/3.db b/shared/src/commonMain/sqldelight/databases/3.db
+index 6d2fd21..494e4c3 100644
+Binary files a/shared/src/commonMain/sqldelight/databases/3.db and b/shared/src/commonMain/sqldelight/databases/3.db differ
+diff --git a/shared/src/commonMain/sqldelight/databases/4.db b/shared/src/commonMain/sqldelight/databases/4.db
+new file mode 100644
+index 0000000..9cc415c
+Binary files /dev/null and b/shared/src/commonMain/sqldelight/databases/4.db differ
+diff --git a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipelineTest.kt b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipelineTest.kt
+index 8d4564b..dfcd014 100644
+--- a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipelineTest.kt
++++ b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PhotoEditExecutionPipelineTest.kt
+@@ -150,13 +150,15 @@ class PhotoEditExecutionPipelineTest {
+         assertEquals(draftId, persisted.photoEditRequest.draftId)
+         assertNotNull(persisted.assembledPrompt)
+         assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
+-        assertNotNull(persisted.promptHistoryEntry.responseSummary)
++        assertNotNull(persisted.promptHistoryEntry.errorMessage)
++        assertNull(persisted.promptHistoryEntry.responseSummary)
+
+         val stored = assertNotNull(repository.get(draftId))
+         assertEquals(1, stored.photoEditRequests.size)
+         assertEquals(0, stored.photoEditResults.size)
+         assertEquals(1, stored.promptHistory.size)
+-        assertNotNull(stored.promptHistory.first().responseSummary)
++        assertNotNull(stored.promptHistory.first().errorMessage)
++        assertNull(stored.promptHistory.first().responseSummary)
+         assertEquals(DraftStatus.PhotoAdded, stored.status)
+         val persistedUpdatedAt = persisted.updatedDraft.updatedAt
+         assertTrue(persistedUpdatedAt > Instant.fromEpochMilliseconds(baseEpoch), "FailurePersisted.updatedDraft.updatedAt must advance on failure")
+@@ -164,6 +166,63 @@ class PhotoEditExecutionPipelineTest {
+         assertEquals(stored.updatedAt, persistedUpdatedAt, "stored and FailurePersisted updatedAt must match")
+     }
+
++    @Test
++    fun `photo-edit provider failure persists full PromptHistoryEntry metadata`() {
++        val clock = MutableClock(1_700_000_100_000L)
++        val draft = sampleDraftWithVisionDescription()
++        val repository = FakeManualWorkflowRepository(draft)
++        val settingsRepository = apiKeySettings()
++        val failingProvider = object : AiProvider {
++            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
++                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
++            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
++                error("Not used")
++            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
++                error("Not used")
++            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
++                AiProviderResult.Failure(AiError.RateLimited())
++        }
++        val pipeline = pipeline(
++            repository = repository,
++            settingsRepository = settingsRepository,
++            aiProvider = failingProvider,
++            clock = clock,
++        )
++
++        val result = pipeline.execute(
++            draftId = draftId,
++            intent = EditIntent.ImproveLighting,
++            realismLevel = RealismLevel.Photoreal,
++            qualityTier = QualityTier.High,
++            targetPlatform = TargetPlatform.InstagramFeedSquare,
++            userRefinement = null,
++            reuseVisionDescription = true,
++        )
++
++        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
++        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
++        val expectedPrompt = expectedAssembledPrompt()
++        val entry = persisted.promptHistoryEntry
++        assertEquals(AiOperationType.PhotoEdit, entry.operationType)
++        assertEquals("unknown", entry.provider)
++        assertEquals(mediaAssetId, entry.mediaAssetId)
++        assertEquals(
++            "intent=improve_lighting, realismLevel=photoreal, qualityTier=high, targetPlatform=instagram_feed_square, hasRefinement=false",
++            entry.requestSettings,
++        )
++        assertEquals(persisted.photoEditRequest.id.value, entry.resultReference,
++            "resultReference must equal the photo-edit request id for failure entries")
++        assertEquals("The AI provider is rate limited. Try again later.", entry.errorMessage)
++        assertEquals(expectedPrompt, entry.prompt, "Failure entry prompt must match the assembled prompt")
++        assertNull(entry.responseSummary, "responseSummary must be null for failure entry")
++        assertNull(entry.modelName, "modelName must be null for failure entry")
++        assertTrue(entry.isFailure)
++
++        val stored = assertNotNull(repository.get(draftId))
++        val storedEntry = stored.promptHistory.single()
++        assertEquals(entry, storedEntry, "Persisted entry must match stored entry")
++    }
++
+     @Test
+     fun `retry appends another history entry after a failed edit`() {
+         val clock = MutableClock(1_700_000_100_000L)
+@@ -230,7 +289,8 @@ class PhotoEditExecutionPipelineTest {
+         assertEquals(2, stored.promptHistory.size)
+         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance after retry")
+         val historyFailure = stored.promptHistory.first()
+-        assertNotNull(historyFailure.responseSummary)
++        assertNotNull(historyFailure.errorMessage)
++        assertNull(historyFailure.responseSummary)
+         assertEquals(expectedPrompt, historyFailure.prompt, "stored failure promptHistoryEntry.prompt must match the assembled prompt")
+         val historySuccess = stored.promptHistory.last()
+         assertNotNull(historySuccess.responseSummary)
+@@ -943,8 +1003,10 @@ class PhotoEditExecutionPipelineTest {
+         assertEquals(1, stored.promptHistory.size)
+         assertEquals(expectedPrompt, stored.promptHistory.first().prompt,
+             "Stored prompt history entry prompt must match assembled prompt on failure")
+-        assertNotNull(stored.promptHistory.first().responseSummary,
+-            "Failure prompt history entry must have a response summary")
++        assertNotNull(stored.promptHistory.first().errorMessage,
++            "Failure prompt history entry must have an error message")
++        assertNull(stored.promptHistory.first().responseSummary,
++            "Failure prompt history entry must have null responseSummary")
+         assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.first().operationType)
+
+         val baseInstant = Instant.fromEpochMilliseconds(baseEpoch)
+@@ -1126,7 +1188,7 @@ class PhotoEditExecutionPipelineTest {
+     }
+
+     @Test
+-    fun `vision-analysis provider failure before image edit returns Failure without persistence`() {
++    fun `vision-analysis provider failure before image edit returns Failure without edit persistence`() {
+         val clock = MutableClock(1_700_000_100_000L)
+         val draft = sampleDraft()
+         val repository = FakeManualWorkflowRepository(draft)
+@@ -1166,7 +1228,15 @@ class PhotoEditExecutionPipelineTest {
+         assertEquals(AiError.RateLimited(), (failure.error as PhotoEditExecutionError.Provider).error)
+         val stored = assertNotNull(repository.get(draftId))
+         assertEquals(0, stored.photoEditRequests.size, "No edit request must be persisted on vision-analysis failure")
+-        assertEquals(0, stored.promptHistory.size, "No prompt history must be persisted on vision-analysis failure")
++        assertEquals(1, stored.promptHistory.size, "Vision-analysis failure must be persisted in prompt history")
++        val visionFailure = stored.promptHistory.single()
++        assertEquals(AiOperationType.VisionDescription, visionFailure.operationType)
++        assertEquals("unknown", visionFailure.provider)
++        assertEquals(mediaAssetId, visionFailure.mediaAssetId)
++        assertEquals("fileName=test-image.jpg, mimeType=image/jpeg", visionFailure.requestSettings)
++        assertEquals(null, visionFailure.resultReference, "resultReference must be null for a vision failure entry")
++        assertEquals(AiError.RateLimited().userMessage, visionFailure.errorMessage)
++        assertTrue(visionFailure.isFailure)
+         assertEquals(0, stored.photoEditResults.size, "No edit result must be persisted on vision-analysis failure")
+     }
+
+@@ -1803,6 +1873,8 @@ class PhotoEditExecutionPipelineTest {
+             .firstOrNull { it.id == id }
+         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+             drafts[id]?.promptHistory.orEmpty()
++        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
+         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
+             drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },
+         )
+diff --git a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipelineTest.kt b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipelineTest.kt
+index 13a2528..bd26c7e 100644
+--- a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipelineTest.kt
++++ b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/PostTextGenerationPipelineTest.kt
+@@ -19,6 +19,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResultId
+ import com.digitumdei.shotquill.shared.domain.BrandProfile
+ import com.digitumdei.shotquill.shared.domain.BrandProfileId
+ import com.digitumdei.shotquill.shared.domain.CaptionDraft
++import com.digitumdei.shotquill.shared.domain.CaptionPromptAssembler
+ import com.digitumdei.shotquill.shared.domain.CaptionRequest
+ import com.digitumdei.shotquill.shared.domain.CaptionRequestId
+ import com.digitumdei.shotquill.shared.domain.CaptionResult
+@@ -93,6 +94,21 @@ class PostTextGenerationPipelineTest {
+             ),
+             stored.promptHistory.map { it.operationType },
+         )
++        val captionEntry = stored.promptHistory[1]
++        assertEquals("fake", captionEntry.provider)
++        assertEquals(mediaAssetId, captionEntry.mediaAssetId)
++        assertEquals(
++            "targetPlatform=instagram_feed_square, tone=${success.captionRequest.tone ?: "default"}",
++            captionEntry.requestSettings,
++        )
++        assertEquals(success.captionResult.id.value, captionEntry.resultReference)
++        assertNull(captionEntry.errorMessage)
++        val altTextEntry = stored.promptHistory[2]
++        assertEquals("fake", altTextEntry.provider)
++        assertEquals(mediaAssetId, altTextEntry.mediaAssetId)
++        assertEquals("targetPlatform=instagram_feed_square", altTextEntry.requestSettings)
++        assertEquals(success.altTextResult.id.value, altTextEntry.resultReference)
++        assertNull(altTextEntry.errorMessage)
+     }
+
+     @Test
+@@ -285,9 +301,97 @@ class PostTextGenerationPipelineTest {
+             val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
+             assertEquals(AiError.ProviderFailure(statusCode = null), providerError.error)
+             assertEquals(null, repository.get(draftId)?.caption)
++            val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
++            when (stage) {
++                RecordingAiProvider.FailureStage.Caption -> {
++                    val captionFailures = promptHistory.filter {
++                        it.operationType == AiOperationType.CaptionGeneration && it.isFailure
++                    }
++                    assertEquals(1, captionFailures.size, "Expected 1 caption failure entry for stage=$stage")
++                    assertEquals(
++                        AiError.ProviderFailure(statusCode = null).userMessage,
++                        captionFailures.single().errorMessage,
++                    )
++                }
++                RecordingAiProvider.FailureStage.AltText -> {
++                    val altTextFailures = promptHistory.filter {
++                        it.operationType == AiOperationType.AltTextGeneration && it.isFailure
++                    }
++                    assertEquals(1, altTextFailures.size, "Expected 1 alt-text failure entry for stage=$stage")
++                    assertEquals(
++                        AiError.ProviderFailure(statusCode = null).userMessage,
++                        altTextFailures.single().errorMessage,
++                    )
++                }
++                RecordingAiProvider.FailureStage.Vision -> {
++                    // Vision failure history is tested in VisionDescriptionAnalyzerTest
++                }
++            }
+         }
+     }
+
++    @Test
++    fun captionProviderFailurePersistsFullPromptHistoryEntry() {
++        val repository = FakeManualWorkflowRepository(sampleDraft())
++        val pipeline = pipeline(
++            repository = repository,
++            settingsRepository = apiKeySettings(),
++            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.Caption),
++        )
++
++        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
++
++        val failure = assertIs<PostTextGenerationResult.Failure>(result)
++        assertIs<PostTextGenerationError.Provider>(failure.error)
++        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
++        assertEquals(2, promptHistory.size, "Vision success + caption failure = 2 entries")
++        val captionFailure = promptHistory[1]
++        assertEquals(AiOperationType.CaptionGeneration, captionFailure.operationType)
++        assertEquals("unknown", captionFailure.provider)
++        assertEquals(mediaAssetId, captionFailure.mediaAssetId)
++        assertEquals("targetPlatform=instagram_feed_square, tone=default", captionFailure.requestSettings)
++        assertNull(captionFailure.resultReference, "resultReference must be null for caption failure entry")
++        assertEquals("The AI provider returned an unexpected error.", captionFailure.errorMessage)
++        assertNull(captionFailure.responseSummary, "responseSummary must be null for caption failure entry")
++        assertNull(captionFailure.modelName, "modelName must be null for caption failure entry")
++        val expectedCaptionPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
++            .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
++        assertEquals(expectedCaptionPrompt, captionFailure.prompt,
++            "Caption failure prompt must match the exact assembled caption prompt")
++        assertTrue(captionFailure.isFailure)
++    }
++
++    @Test
++    fun altTextProviderFailurePersistsFullPromptHistoryEntry() {
++        val repository = FakeManualWorkflowRepository(sampleDraft())
++        val pipeline = pipeline(
++            repository = repository,
++            settingsRepository = apiKeySettings(),
++            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.AltText),
++        )
++
++        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
++
++        val failure = assertIs<PostTextGenerationResult.Failure>(result)
++        assertIs<PostTextGenerationError.Provider>(failure.error)
++        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
++        assertEquals(2, promptHistory.size, "Vision success + alt-text failure = 2 entries")
++        val altTextFailure = promptHistory[1]
++        assertEquals(AiOperationType.AltTextGeneration, altTextFailure.operationType)
++        assertEquals("unknown", altTextFailure.provider)
++        assertEquals(mediaAssetId, altTextFailure.mediaAssetId)
++        assertEquals("targetPlatform=instagram_feed_square", altTextFailure.requestSettings)
++        assertNull(altTextFailure.resultReference, "resultReference must be null for alt-text failure entry")
++        assertEquals("The AI provider returned an unexpected error.", altTextFailure.errorMessage)
++        assertNull(altTextFailure.responseSummary, "responseSummary must be null for alt-text failure entry")
++        assertNull(altTextFailure.modelName, "modelName must be null for alt-text failure entry")
++        val expectedAltTextPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
++            .assembleAltTextPrompt("Recorded vision.")
++        assertEquals(expectedAltTextPrompt, altTextFailure.prompt,
++            "Alt-text failure prompt must match the exact assembled alt-text prompt")
++        assertTrue(altTextFailure.isFailure)
++    }
++
+     @Test
+     fun reuseVisionDescriptionFalseRunsVisionEvenWhenCachedDescriptionExists() {
+         val repository = FakeManualWorkflowRepository(sampleDraftWithVisionDescription())
+@@ -739,6 +843,9 @@ class PostTextGenerationPipelineTest {
+         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+             drafts[id]?.promptHistory.orEmpty()
+
++        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
++
+         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
+             drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },
+         )
+diff --git a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzerTest.kt b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzerTest.kt
+index f5e47ca..e4d5389 100644
+--- a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzerTest.kt
++++ b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/workflow/VisionDescriptionAnalyzerTest.kt
+@@ -44,12 +44,16 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
+ import com.digitumdei.shotquill.shared.domain.TargetPlatform
+ import com.digitumdei.shotquill.shared.domain.VisionDescription
+ import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
++import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
++import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
+ import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
+ import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
+ import kotlinx.datetime.Instant
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
++import kotlin.test.assertFalse
+ import kotlin.test.assertIs
++import kotlin.test.assertNotNull
+ import kotlin.test.assertTrue
+
+ class VisionDescriptionAnalyzerTest {
+@@ -78,6 +82,10 @@ class VisionDescriptionAnalyzerTest {
+         assertEquals(AiOperationType.VisionDescription, promptHistory?.operationType)
+         assertEquals(success.visionDescription.description, promptHistory?.responseSummary)
+         assertTrue(promptHistory?.prompt?.contains("Visible text or logos") == true)
++        assertEquals("fake", promptHistory?.provider)
++        assertEquals(mediaAssetId, promptHistory?.mediaAssetId)
++        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", promptHistory?.requestSettings)
++        assertEquals(success.visionDescription.id.value, promptHistory?.resultReference)
+     }
+
+     @Test
+@@ -196,7 +204,7 @@ class VisionDescriptionAnalyzerTest {
+     }
+
+     @Test
+-    fun providerFailureReturnsProviderErrorWithoutPersistence() {
++    fun providerFailurePersistsPromptHistoryEntryError() {
+         val repository = FakeManualWorkflowRepository(sampleDraft())
+         val failingProvider = object : AiProvider {
+             override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+@@ -220,8 +228,43 @@ class VisionDescriptionAnalyzerTest {
+         val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
+         val error = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
+         assertIs<AiError.QuotaExceeded>(error.error)
+-        assertEquals(0, repository.get(draftId)?.promptHistory?.size, "No prompt history must be persisted on vision provider failure")
+         assertEquals(null, repository.get(draftId)?.visionDescriptions?.firstOrNull(), "No vision description must be persisted on vision provider failure")
++
++        val promptHistory = repository.get(draftId)?.promptHistory
++        assertEquals(1, promptHistory?.size, "A prompt history entry must be persisted on vision provider failure")
++        val entry = promptHistory?.single()
++        assertEquals(AiOperationType.VisionDescription, entry?.operationType)
++        assertEquals("unknown", entry?.provider)
++        assertEquals(mediaAssetId, entry?.mediaAssetId)
++        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", entry?.requestSettings)
++        assertEquals(null, entry?.resultReference, "resultReference must be null for a failure entry")
++        assertEquals("The OpenAI account quota has been reached.", entry?.errorMessage)
++        assertEquals(null, entry?.responseSummary, "responseSummary must be null for a failure entry")
++        assertEquals(null, entry?.modelName, "modelName must be null for a failure entry")
++        assertTrue(entry?.isFailure == true)
++        val draft = sampleDraft()
++        val expectedPrompt = VisionDescriptionPromptFactory.buildPrompt(draft.primaryMediaAsset())
++        assertEquals(expectedPrompt, entry?.prompt, "Failure entry prompt must match the exact assembled prompt")
++    }
++
++    @Test
++    fun promptHistoryRequestSettingsDoesNotContainSecrets() {
++        val repository = FakeManualWorkflowRepository(sampleDraft())
++        val analyzer = VisionDescriptionAnalyzer(
++            repository = repository,
++            aiProvider = FakeAiProvider(modelName = "fake-vision"),
++            imageSource = fakeImageSource(),
++            clock = FixedClock(1_700_000_100_000L),
++        )
++
++        val result = analyzer.analyzePrimaryPhoto(draftId)
++
++        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
++        val promptHistory = repository.get(draftId)?.promptHistory?.single()
++        val requestSettings = promptHistory?.requestSettings
++        assertNotNull(requestSettings)
++        assertFalse(requestSettings.contains("sk-"), "requestSettings must not expose an OpenAI API key pattern")
++        assertFalse(requestSettings.contains("image-bytes"), "requestSettings must not expose raw image data")
+     }
+
+     private fun sampleDraft(): PostDraft =
+@@ -391,6 +434,9 @@ class VisionDescriptionAnalyzerTest {
+         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
+             drafts[id]?.promptHistory.orEmpty()
+
++        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
++            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
++
+         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
+             val draft = drafts.getValue(promptHistoryEntry.draftId)
+             drafts[promptHistoryEntry.draftId] = draft.copy(promptHistory = draft.promptHistory + promptHistoryEntry)

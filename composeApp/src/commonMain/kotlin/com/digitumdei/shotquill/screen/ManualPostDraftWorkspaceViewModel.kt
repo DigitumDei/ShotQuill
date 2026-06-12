@@ -441,7 +441,7 @@ class ManualPostDraftWorkspaceViewModel(
             state = state.copy(statusMessage = "Clipboard not available")
             return
         }
-        val entry = state.promptHistory.firstOrNull { it.id == entryId }
+        val entry = state.promptHistory.firstOrNull { it.id == entryId } ?: state.photoEditPromptHistory.firstOrNull { it.id == entryId }
         if (entry != null) {
             state = try {
                 clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
