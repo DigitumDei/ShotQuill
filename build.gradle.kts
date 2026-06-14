@@ -37,9 +37,11 @@ kover {
             }
         }
 
-        verify {
-            rule {
-                minBound(80)
+        total {
+            verify {
+                rule {
+                    minBound(80)
+                }
             }
         }
     }
