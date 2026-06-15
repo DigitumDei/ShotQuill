@@ -44,12 +44,16 @@ import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
+import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
+import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.ManualWorkflowRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class VisionDescriptionAnalyzerTest {
@@ -78,6 +82,10 @@ class VisionDescriptionAnalyzerTest {
         assertEquals(AiOperationType.VisionDescription, promptHistory?.operationType)
         assertEquals(success.visionDescription.description, promptHistory?.responseSummary)
         assertTrue(promptHistory?.prompt?.contains("Visible text or logos") == true)
+        assertEquals("fake", promptHistory?.provider)
+        assertEquals(mediaAssetId, promptHistory?.mediaAssetId)
+        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", promptHistory?.requestSettings)
+        assertEquals(success.visionDescription.id.value, promptHistory?.resultReference)
     }
 
     @Test
@@ -196,7 +204,7 @@ class VisionDescriptionAnalyzerTest {
     }
 
     @Test
-    fun providerFailureReturnsProviderErrorWithoutPersistence() {
+    fun providerFailurePersistsPromptHistoryEntryError() {
         val repository = FakeManualWorkflowRepository(sampleDraft())
         val failingProvider = object : AiProvider {
             override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
@@ -220,8 +228,43 @@ class VisionDescriptionAnalyzerTest {
         val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
         val error = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
         assertIs<AiError.QuotaExceeded>(error.error)
-        assertEquals(0, repository.get(draftId)?.promptHistory?.size, "No prompt history must be persisted on vision provider failure")
         assertEquals(null, repository.get(draftId)?.visionDescriptions?.firstOrNull(), "No vision description must be persisted on vision provider failure")
+
+        val promptHistory = repository.get(draftId)?.promptHistory
+        assertEquals(1, promptHistory?.size, "A prompt history entry must be persisted on vision provider failure")
+        val entry = promptHistory?.single()
+        assertEquals(AiOperationType.VisionDescription, entry?.operationType)
+        assertEquals("unknown", entry?.provider)
+        assertEquals(mediaAssetId, entry?.mediaAssetId)
+        assertEquals("fileName=media-1.jpg, mimeType=image/jpeg", entry?.requestSettings)
+        assertEquals(null, entry?.resultReference, "resultReference must be null for a failure entry")
+        assertEquals("The OpenAI account quota has been reached.", entry?.errorMessage)
+        assertEquals(null, entry?.responseSummary, "responseSummary must be null for a failure entry")
+        assertEquals(null, entry?.modelName, "modelName must be null for a failure entry")
+        assertTrue(entry?.isFailure == true)
+        val draft = sampleDraft()
+        val expectedPrompt = VisionDescriptionPromptFactory.buildPrompt(draft.primaryMediaAsset())
+        assertEquals(expectedPrompt, entry?.prompt, "Failure entry prompt must match the exact assembled prompt")
+    }
+
+    @Test
+    fun promptHistoryRequestSettingsDoesNotContainSecrets() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = FakeAiProvider(modelName = "fake-vision"),
+            imageSource = fakeImageSource(),
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val success = assertIs<VisionDescriptionAnalysisResult.Success>(result)
+        val promptHistory = repository.get(draftId)?.promptHistory?.single()
+        val requestSettings = promptHistory?.requestSettings
+        assertNotNull(requestSettings)
+        assertFalse(requestSettings.contains("sk-"), "requestSettings must not expose an OpenAI API key pattern")
+        assertFalse(requestSettings.contains("image-bytes"), "requestSettings must not expose raw image data")
     }
 
     private fun sampleDraft(): PostDraft =
@@ -390,6 +433,9 @@ class VisionDescriptionAnalyzerTest {
 
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             drafts[id]?.promptHistory.orEmpty()
+
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
 
         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
             val draft = drafts.getValue(promptHistoryEntry.draftId)

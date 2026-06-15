@@ -99,11 +99,70 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> {
+                val now = clock.nowMillis()
+                val idSuffix = nextIdSuffix(now)
+                val failureEntry = PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-caption-generation-failure-$idSuffix"),
+                    draftId = draftId,
+                    operationType = AiOperationType.CaptionGeneration,
+                    prompt = captionPrompt,
+                    responseSummary = null,
+                    modelName = null,
+                    createdAtEpochMillis = now,
+                    provider = aiProvider.name,
+                    mediaAssetId = visionDescription.mediaAssetId,
+                    requestSettings = RequestSettingsFormatter.captionGeneration(
+                        targetPlatform = targetPlatform, tone = activeBrandProfile?.voice,
+                    ),
+                    resultReference = null,
+                    errorMessage = result.error.userMessage,
+                )
+                repository.savePromptHistoryEntry(failureEntry)
+                return PostTextGenerationResult.Failure(
+                    PostTextGenerationError.Provider(result.error),
+                )
+            }
             is AiProviderResult.Success -> result.value
         }
+        val captionCreatedAt = clock.nowMillis()
+        val captionIdSuffix = nextIdSuffix(captionCreatedAt)
+        val captionRequest = CaptionRequest(
+            id = CaptionRequestId("caption-request-$captionIdSuffix"),
+            draftId = draftId,
+            targetPlatform = targetPlatform,
+            prompt = captionPrompt,
+            tone = activeBrandProfile?.voice,
+            brandProfileId = activeBrandProfile?.id,
+            createdAtEpochMillis = captionCreatedAt,
+        )
+        val captionResult = CaptionResult(
+            id = CaptionResultId("caption-result-$captionIdSuffix"),
+            requestId = captionRequest.id,
+            draftId = draftId,
+            targetPlatform = targetPlatform,
+            caption = captionOutput.caption.trim(),
+            shortCaption = captionOutput.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
+            hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
+            modelName = captionOutput.modelName,
+            createdAtEpochMillis = captionCreatedAt,
+        )
+        val captionHistoryEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("prompt-caption-generation-$captionIdSuffix"),
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = captionPrompt,
+            responseSummary = captionResult.responseSummary(),
+            modelName = captionResult.modelName,
+            createdAtEpochMillis = captionCreatedAt,
+            provider = aiProvider.name,
+            mediaAssetId = visionDescription.mediaAssetId,
+            requestSettings = RequestSettingsFormatter.captionGeneration(
+                targetPlatform = targetPlatform, tone = captionRequest.tone,
+            ),
+            resultReference = captionResult.id.value,
+        )
+        repository.savePromptHistoryEntry(captionHistoryEntry)
         val altTextOutput = when (
             val result = aiProvider.generateAltText(
                 AltTextGenerationRequest(
@@ -113,49 +172,39 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> {
+                val now = clock.nowMillis()
+                val idSuffix = nextIdSuffix(now)
+                val failureEntry = PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-alt-text-generation-failure-$idSuffix"),
+                    draftId = draftId,
+                    operationType = AiOperationType.AltTextGeneration,
+                    prompt = altTextPrompt,
+                    responseSummary = null,
+                    modelName = null,
+                    createdAtEpochMillis = now,
+                    provider = aiProvider.name,
+                    mediaAssetId = visionDescription.mediaAssetId,
+                    requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
+                    resultReference = null,
+                    errorMessage = result.error.userMessage,
+                )
+                repository.savePromptHistoryEntry(failureEntry)
+                return PostTextGenerationResult.Failure(
+                    PostTextGenerationError.Provider(result.error),
+                )
+            }
             is AiProviderResult.Success -> result.value
         }
 
         val now = clock.nowMillis()
         val idSuffix = nextIdSuffix(now)
-        val captionRequest = CaptionRequest(
-            id = CaptionRequestId("caption-request-$idSuffix"),
-            draftId = draftId,
-            targetPlatform = targetPlatform,
-            prompt = captionPrompt,
-            tone = activeBrandProfile?.voice,
-            brandProfileId = activeBrandProfile?.id,
-            createdAtEpochMillis = now,
-        )
-        val captionResult = CaptionResult(
-            id = CaptionResultId("caption-result-$idSuffix"),
-            requestId = captionRequest.id,
-            draftId = draftId,
-            targetPlatform = targetPlatform,
-            caption = captionOutput.caption.trim(),
-            shortCaption = captionOutput.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
-            hashtags = captionOutput.hashtags.map { it.trim() }.filter { it.isNotEmpty() },
-            modelName = captionOutput.modelName,
-            createdAtEpochMillis = now,
-        )
         val altTextResult = AltTextResult(
             id = AltTextResultId("alt-text-result-$idSuffix"),
             draftId = draftId,
             mediaAssetId = visionDescription.mediaAssetId,
             altText = altTextOutput.altText.trim(),
             modelName = altTextOutput.modelName,
-            createdAtEpochMillis = now,
-        )
-        val captionHistoryEntry = PromptHistoryEntry(
-            id = PromptHistoryEntryId("prompt-caption-generation-$idSuffix"),
-            draftId = draftId,
-            operationType = AiOperationType.CaptionGeneration,
-            prompt = captionPrompt,
-            responseSummary = captionResult.responseSummary(),
-            modelName = captionResult.modelName,
             createdAtEpochMillis = now,
         )
         val altTextHistoryEntry = PromptHistoryEntry(
@@ -166,6 +215,10 @@ class PostTextGenerationPipeline(
             responseSummary = altTextResult.altText,
             modelName = altTextResult.modelName,
             createdAtEpochMillis = now,
+            provider = aiProvider.name,
+            mediaAssetId = visionDescription.mediaAssetId,
+            requestSettings = RequestSettingsFormatter.altTextGeneration(targetPlatform),
+            resultReference = altTextResult.id.value,
         )
         val currentBeforeSave = repository.get(draftId) ?: return PostTextGenerationResult.Failure(
             PostTextGenerationError.DraftNotFound,
@@ -186,7 +239,7 @@ class PostTextGenerationPipeline(
             captionRequest = captionRequest,
             captionResult = captionResult,
             altTextResult = altTextResult,
-            promptHistoryEntries = listOf(captionHistoryEntry, altTextHistoryEntry),
+            promptHistoryEntries = listOf(altTextHistoryEntry),
             updatedAt = operationUpdatedAt(currentBeforeSave, now),
         ) ?: return repository.get(draftId)?.let {
             PostTextGenerationResult.Failure(PostTextGenerationError.InvalidDraftStatus(it.status))

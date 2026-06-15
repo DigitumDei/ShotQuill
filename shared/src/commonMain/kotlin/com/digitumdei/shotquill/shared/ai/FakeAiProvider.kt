@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.ai
 class FakeAiProvider(
     private val modelName: String = "fake-ai-provider",
 ) : AiProvider {
+    override val name: String get() = "fake"
     override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
         AiProviderResult.Success(
             VisionDescriptionOutput(

@@ -159,7 +159,12 @@ CREATE TABLE prompt_history_entries (
   prompt TEXT NOT NULL,
   response_summary TEXT,
   model_name TEXT,
-  created_at_epoch_millis INTEGER NOT NULL
+  created_at_epoch_millis INTEGER NOT NULL,
+  provider TEXT,
+  media_asset_id TEXT,
+  request_settings TEXT,
+  result_reference TEXT,
+  error_message TEXT
 );
 
 CREATE TABLE export_records (
@@ -570,23 +575,21 @@ FROM photo_edit_results
 JOIN media_assets ON media_assets.id = photo_edit_results.edited_media_asset_id
 WHERE photo_edit_results.id = ?;
 
-upsertPromptHistoryEntry:
-INSERT INTO prompt_history_entries(
+insertPromptHistoryEntry:
+INSERT OR IGNORE INTO prompt_history_entries(
   id,
   draft_id,
   operation_type,
   prompt,
   response_summary,
   model_name,
-  created_at_epoch_millis
-) VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-  draft_id = excluded.draft_id,
-  operation_type = excluded.operation_type,
-  prompt = excluded.prompt,
-  response_summary = excluded.response_summary,
-  model_name = excluded.model_name,
-  created_at_epoch_millis = excluded.created_at_epoch_millis;
+  created_at_epoch_millis,
+  provider,
+  media_asset_id,
+  request_settings,
+  result_reference,
+  error_message
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deletePromptHistoryEntriesByDraftId:
 DELETE FROM prompt_history_entries WHERE draft_id = ?;
@@ -598,6 +601,9 @@ ORDER BY created_at_epoch_millis ASC;
 
 selectPromptHistoryEntryById:
 SELECT * FROM prompt_history_entries WHERE id = ?;
+
+selectPromptHistoryEntriesByMediaAssetId:
+SELECT * FROM prompt_history_entries WHERE media_asset_id = ? ORDER BY created_at_epoch_millis ASC;
 
 upsertExportRecord:
 INSERT INTO export_records(

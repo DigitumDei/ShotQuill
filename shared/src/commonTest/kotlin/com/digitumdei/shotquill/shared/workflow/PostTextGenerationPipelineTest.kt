@@ -19,6 +19,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.BrandProfile
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionDraft
+import com.digitumdei.shotquill.shared.domain.CaptionPromptAssembler
 import com.digitumdei.shotquill.shared.domain.CaptionRequest
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
@@ -52,6 +53,7 @@ import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -93,6 +95,21 @@ class PostTextGenerationPipelineTest {
             ),
             stored.promptHistory.map { it.operationType },
         )
+        val captionEntry = stored.promptHistory[1]
+        assertEquals("fake", captionEntry.provider)
+        assertEquals(mediaAssetId, captionEntry.mediaAssetId)
+        assertEquals(
+            "targetPlatform=instagram_feed_square, tone=${success.captionRequest.tone ?: "default"}",
+            captionEntry.requestSettings,
+        )
+        assertEquals(success.captionResult.id.value, captionEntry.resultReference)
+        assertNull(captionEntry.errorMessage)
+        val altTextEntry = stored.promptHistory[2]
+        assertEquals("fake", altTextEntry.provider)
+        assertEquals(mediaAssetId, altTextEntry.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square", altTextEntry.requestSettings)
+        assertEquals(success.altTextResult.id.value, altTextEntry.resultReference)
+        assertNull(altTextEntry.errorMessage)
     }
 
     @Test
@@ -155,7 +172,7 @@ class PostTextGenerationPipelineTest {
         assertEquals(2, stored.altTextResults.size)
         assertEquals(4, stored.promptHistory.size)
         assertEquals(
-            listOf("caption-result-1700000100000-0", "caption-result-1700000200000-1"),
+            listOf("caption-result-1700000100000-0", "caption-result-1700000200000-2"),
             stored.captionResults.map { it.id.value },
         )
     }
@@ -285,7 +302,109 @@ class PostTextGenerationPipelineTest {
             val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
             assertEquals(AiError.ProviderFailure(statusCode = null), providerError.error)
             assertEquals(null, repository.get(draftId)?.caption)
+            val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+            when (stage) {
+                RecordingAiProvider.FailureStage.Caption -> {
+                    val captionFailures = promptHistory.filter {
+                        it.operationType == AiOperationType.CaptionGeneration && it.isFailure
+                    }
+                    assertEquals(1, captionFailures.size, "Expected 1 caption failure entry for stage=$stage")
+                    assertEquals(
+                        AiError.ProviderFailure(statusCode = null).userMessage,
+                        captionFailures.single().errorMessage,
+                    )
+                }
+                RecordingAiProvider.FailureStage.AltText -> {
+                    val altTextFailures = promptHistory.filter {
+                        it.operationType == AiOperationType.AltTextGeneration && it.isFailure
+                    }
+                    assertEquals(1, altTextFailures.size, "Expected 1 alt-text failure entry for stage=$stage")
+                    assertEquals(
+                        AiError.ProviderFailure(statusCode = null).userMessage,
+                        altTextFailures.single().errorMessage,
+                    )
+                }
+                RecordingAiProvider.FailureStage.Vision -> {
+                    // Vision failure history is tested in VisionDescriptionAnalyzerTest
+                }
+            }
         }
+    }
+
+    @Test
+    fun captionProviderFailurePersistsFullPromptHistoryEntry() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.Caption),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertIs<PostTextGenerationError.Provider>(failure.error)
+        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+        assertEquals(2, promptHistory.size, "Vision success + caption failure = 2 entries")
+        val captionFailure = promptHistory[1]
+        assertEquals(AiOperationType.CaptionGeneration, captionFailure.operationType)
+        assertEquals("unknown", captionFailure.provider)
+        assertEquals(mediaAssetId, captionFailure.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square, tone=default", captionFailure.requestSettings)
+        assertNull(captionFailure.resultReference, "resultReference must be null for caption failure entry")
+        assertEquals("The AI provider returned an unexpected error.", captionFailure.errorMessage)
+        assertNull(captionFailure.responseSummary, "responseSummary must be null for caption failure entry")
+        assertNull(captionFailure.modelName, "modelName must be null for caption failure entry")
+        val expectedCaptionPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
+            .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
+        assertEquals(expectedCaptionPrompt, captionFailure.prompt,
+            "Caption failure prompt must match the exact assembled caption prompt")
+        assertTrue(captionFailure.isFailure)
+    }
+
+    @Test
+    fun altTextProviderFailurePersistsFullPromptHistoryEntry() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.AltText),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        assertIs<PostTextGenerationError.Provider>(failure.error)
+        val promptHistory = repository.get(draftId)?.promptHistory.orEmpty()
+        assertEquals(3, promptHistory.size, "Vision success + caption success + alt-text failure = 3 entries")
+        val captionSuccess = promptHistory[1]
+        assertEquals(AiOperationType.CaptionGeneration, captionSuccess.operationType)
+        assertEquals("unknown", captionSuccess.provider)
+        assertEquals(mediaAssetId, captionSuccess.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square, tone=default", captionSuccess.requestSettings)
+        assertEquals("Recorded caption.\nShort: Recorded short caption.\nHashtags: #recorded", captionSuccess.responseSummary)
+        assertEquals("recording-model", captionSuccess.modelName)
+        assertEquals("caption-result-1700000100000-0", captionSuccess.resultReference)
+        assertNull(captionSuccess.errorMessage, "caption success entry must not be marked as a failure")
+        val expectedCaptionPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
+            .assembleCaptionPrompt("Recorded vision.", TargetPlatform.InstagramFeedSquare)
+        assertEquals(expectedCaptionPrompt, captionSuccess.prompt,
+            "Caption success prompt must be persisted when alt-text generation fails")
+        assertFalse(captionSuccess.isFailure)
+        val altTextFailure = promptHistory[2]
+        assertEquals(AiOperationType.AltTextGeneration, altTextFailure.operationType)
+        assertEquals("unknown", altTextFailure.provider)
+        assertEquals(mediaAssetId, altTextFailure.mediaAssetId)
+        assertEquals("targetPlatform=instagram_feed_square", altTextFailure.requestSettings)
+        assertNull(altTextFailure.resultReference, "resultReference must be null for alt-text failure entry")
+        assertEquals("The AI provider returned an unexpected error.", altTextFailure.errorMessage)
+        assertNull(altTextFailure.responseSummary, "responseSummary must be null for alt-text failure entry")
+        assertNull(altTextFailure.modelName, "modelName must be null for alt-text failure entry")
+        val expectedAltTextPrompt = CaptionPromptAssembler(activeBrandProfileStore = null)
+            .assembleAltTextPrompt("Recorded vision.")
+        assertEquals(expectedAltTextPrompt, altTextFailure.prompt,
+            "Alt-text failure prompt must match the exact assembled alt-text prompt")
+        assertTrue(altTextFailure.isFailure)
     }
 
     @Test
@@ -738,6 +857,9 @@ class PostTextGenerationPipelineTest {
 
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             drafts[id]?.promptHistory.orEmpty()
+
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
 
         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
             drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },

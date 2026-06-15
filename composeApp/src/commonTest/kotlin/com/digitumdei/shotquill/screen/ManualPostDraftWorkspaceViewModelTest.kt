@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -101,6 +102,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
         assertFalse(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertFalse(viewModel.state.actions.canShareOrExport)
     }
 
@@ -120,6 +122,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals(TargetPlatform.InstagramFeedSquare, viewModel.state.targetPlatform)
         assertTrue(viewModel.state.actions.canCopyCaption)
         assertTrue(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertTrue(viewModel.state.actions.canShareOrExport)
         assertTrue(viewModel.state.actions.canEditPhotoWithAi)
     }
@@ -489,6 +492,7 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertFalse(viewModel.state.actions.canEditPhotoWithAi)
         assertFalse(viewModel.state.actions.canCopyCaption)
         assertFalse(viewModel.state.actions.canCopyAltText)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
         assertFalse(viewModel.state.actions.canShareOrExport)
     }
 
@@ -510,11 +514,11 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("Photo prepared for instagram_feed_square.", viewModel.state.generatedAltText)
         assertEquals(2, viewModel.state.promptHistory.size)
         assertEquals(
-            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
+            "Generate accessible alt text for file://photo.jpg.",
             viewModel.state.promptHistory[0].prompt,
         )
         assertEquals(
-            "Generate accessible alt text for file://photo.jpg.",
+            "Generate a manual post caption for instagram_feed_square from file://photo.jpg.",
             viewModel.state.promptHistory[1].prompt,
         )
         assertTrue(viewModel.state.actions.canShareOrExport)
@@ -1511,7 +1515,8 @@ class ManualPostDraftWorkspaceViewModelTest {
     @Test
     fun updatesStatusMessagesForCopyActions() {
         val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
-        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
         viewModel.load()
 
         viewModel.markCaptionCopied()
@@ -1519,6 +1524,172 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         viewModel.markAltTextCopied()
         assertEquals("Alt text copied", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun captionCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.markCaptionCopied()
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun altTextCopyFailsWithClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.markAltTextCopied()
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun captionCopySetsFailureStatusWhenClipboardThrows() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.markCaptionCopied()
+
+        assertEquals("Failed to copy caption to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun altTextCopySetsFailureStatusWhenClipboardThrows() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.markAltTextCopied()
+
+        assertEquals("Failed to copy alt text to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptCopiesPromptToClipboard() {
+        val entryId = PromptHistoryEntryId("prompt-caption-1")
+        val promptText = "Generate a caption"
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(
+                    PromptHistoryEntry(
+                        id = entryId,
+                        draftId = draftId,
+                        operationType = AiOperationType.CaptionGeneration,
+                        prompt = promptText,
+                        responseSummary = "caption",
+                        modelName = "fake",
+                        createdAtEpochMillis = 1_700_000_010_000L,
+                    ),
+                ),
+            ),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Caption Generation", clipboard.lastLabel)
+        assertEquals(promptText, clipboard.lastText)
+        assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptCopiesPhotoEditPromptToClipboard() {
+        val entryId = PromptHistoryEntryId("prompt-photo-edit-1")
+        val promptText = "Brighten the image"
+        val repository = FakeManualWorkflowRepository(sampleDraftWithEditedMedia())
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = entryId,
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = promptText,
+                responseSummary = "Brightness adjusted",
+                modelName = "edit-model",
+                createdAtEpochMillis = 1_700_000_010_000L,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clipboardWriter = clipboard,
+            promptHistoryRepository = repository,
+        )
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Photo Edit", clipboard.lastLabel)
+        assertEquals(promptText, clipboard.lastText)
+        assertEquals("Prompt copied to clipboard", viewModel.state.statusMessage)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsNotFoundWhenEntryMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val clipboard = FakeClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("nonexistent"))
+
+        assertNull(clipboard.lastLabel)
+        assertEquals("Prompt entry not found", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsClipboardNotAvailableWhenClipboardMissing() {
+        val repository = FakePostDraftRepository(sampleDraftWithGeneratedText())
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository)
+        viewModel.load()
+
+        viewModel.copyPromptHistoryEntryPrompt(PromptHistoryEntryId("any"))
+
+        assertEquals("Clipboard not available", viewModel.state.statusMessage)
+        assertFalse(viewModel.state.actions.canCopyPrompt)
+    }
+
+    @Test
+    fun copyPromptHistoryEntryPromptShowsFailureStatusWhenClipboardThrows() {
+        val entryId = PromptHistoryEntryId("prompt-caption-1")
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(
+                    PromptHistoryEntry(
+                        id = entryId,
+                        draftId = draftId,
+                        operationType = AiOperationType.CaptionGeneration,
+                        prompt = "Generate a caption",
+                        responseSummary = "caption",
+                        modelName = "fake",
+                        createdAtEpochMillis = 1_700_000_010_000L,
+                    ),
+                ),
+            ),
+        )
+        val clipboard = FailingClipboardWriter()
+        val viewModel = ManualPostDraftWorkspaceViewModel(draftId, repository, clipboard)
+        viewModel.load()
+
+        val historyBefore = viewModel.state.promptHistory
+        viewModel.copyPromptHistoryEntryPrompt(entryId)
+
+        assertEquals("Failed to copy prompt to clipboard", viewModel.state.statusMessage)
+        assertTrue(viewModel.state.actions.canCopyPrompt)
+        assertEquals(historyBefore, viewModel.state.promptHistory, "Stored prompt history must not be mutated on clipboard exception")
     }
 
     @Test
@@ -1870,6 +2041,149 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertEquals("fake-test-model", form.latestModelName)
         assertEquals("Removed the coffee cup.", form.latestSummary)
         assertEquals(PhotoEditFormOperationState.Idle, form.operationState)
+    }
+
+    @Test
+    fun filtersPhotoEditPromptHistoryByOperationType() {
+        val repository = FakeManualWorkflowRepository(sampleDraftWithEditedMedia())
+        val now = 1_700_000_100_000L
+        val visionId = PromptHistoryEntryId("vision-1")
+        val captionId = PromptHistoryEntryId("caption-1")
+        val altId = PromptHistoryEntryId("alt-1")
+        val editId = PromptHistoryEntryId("edit-1")
+
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = visionId,
+                draftId = draftId,
+                operationType = AiOperationType.VisionDescription,
+                prompt = "Describe this image",
+                responseSummary = "A cup of coffee",
+                modelName = "vision-model",
+                createdAtEpochMillis = now,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = captionId,
+                draftId = draftId,
+                operationType = AiOperationType.CaptionGeneration,
+                prompt = "Write a caption",
+                responseSummary = "Morning coffee",
+                modelName = "caption-model",
+                createdAtEpochMillis = now + 1000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = altId,
+                draftId = draftId,
+                operationType = AiOperationType.AltTextGeneration,
+                prompt = "Describe for accessibility",
+                responseSummary = "Coffee cup on table",
+                modelName = "alt-model",
+                createdAtEpochMillis = now + 2000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+        repository.savePromptHistoryEntry(
+            PromptHistoryEntry(
+                id = editId,
+                draftId = draftId,
+                operationType = AiOperationType.PhotoEdit,
+                prompt = "Brighten the image",
+                responseSummary = "Brightness adjusted",
+                modelName = "edit-model",
+                createdAtEpochMillis = now + 3000,
+                mediaAssetId = mediaAssetId,
+            ),
+        )
+
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            promptHistoryRepository = repository,
+        )
+        viewModel.load()
+
+        assertEquals(1, viewModel.state.photoEditPromptHistory.size)
+        assertEquals(editId, viewModel.state.photoEditPromptHistory.single().id)
+    }
+
+    @Test
+    fun exposesAllPromptHistoryMetadataFieldsIncludingFailedEntry() {
+        val now = 1_700_000_100_000L
+        val successEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("success-1"),
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            prompt = "Write a caption for this image",
+            responseSummary = "A beautiful sunset",
+            modelName = "gpt-4o",
+            createdAtEpochMillis = now,
+            provider = "OpenAI",
+            mediaAssetId = mediaAssetId,
+            requestSettings = "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
+            resultReference = "caption-result-1",
+        )
+        val failedEntry = PromptHistoryEntry(
+            id = PromptHistoryEntryId("failed-1"),
+            draftId = draftId,
+            operationType = AiOperationType.VisionDescription,
+            prompt = "Describe this image for accessibility",
+            responseSummary = null,
+            modelName = null,
+            createdAtEpochMillis = now + 5000,
+            provider = "Anthropic",
+            mediaAssetId = mediaAssetId,
+            requestSettings = "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
+            resultReference = null,
+            errorMessage = "The AI provider is rate limited. Try again later.",
+        )
+        val repository = FakePostDraftRepository(
+            sampleDraftWithGeneratedText().copy(
+                promptHistory = listOf(successEntry, failedEntry),
+            ),
+        )
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            clock = FixedClock(now),
+            clipboardWriter = FakeClipboardWriter(),
+        )
+        viewModel.load()
+
+        assertEquals(2, viewModel.state.promptHistory.size)
+        assertTrue(viewModel.state.actions.canViewPromptHistory)
+
+        val loadedSuccess = viewModel.state.promptHistory.firstOrNull { it.id == successEntry.id }
+        assertNotNull(loadedSuccess)
+        assertEquals("OpenAI", loadedSuccess.provider)
+        assertEquals(now, loadedSuccess.createdAtEpochMillis)
+        assertEquals(
+            "{\"target_platform\":\"instagram_feed_square\",\"tone\":\"casual\"}",
+            loadedSuccess.requestSettings,
+        )
+        assertEquals("caption-result-1", loadedSuccess.resultReference)
+        assertNull(loadedSuccess.errorMessage)
+        assertFalse(loadedSuccess.isFailure)
+
+        val loadedFailed = viewModel.state.promptHistory.firstOrNull { it.id == failedEntry.id }
+        assertNotNull(loadedFailed)
+        assertEquals("Anthropic", loadedFailed.provider)
+        assertEquals(now + 5000, loadedFailed.createdAtEpochMillis)
+        assertEquals(
+            "{\"image_mime\":\"image/jpeg\",\"file_name\":\"test.jpg\"}",
+            loadedFailed.requestSettings,
+        )
+        assertNull(loadedFailed.resultReference)
+        assertEquals(
+            "The AI provider is rate limited. Try again later.",
+            loadedFailed.errorMessage,
+        )
+        assertTrue(loadedFailed.isFailure)
     }
 
     @Test
@@ -3232,6 +3546,21 @@ class ManualPostDraftWorkspaceViewModelTest {
         }
     }
 
+    private class FakeClipboardWriter : ClipboardWriter {
+        var lastLabel: String? = null
+        var lastText: String? = null
+        override fun copy(label: String, text: String) {
+            lastLabel = label
+            lastText = text
+        }
+    }
+
+    private class FailingClipboardWriter : ClipboardWriter {
+        override fun copy(label: String, text: String) {
+            throw RuntimeException("Clipboard unavailable")
+        }
+    }
+
     private class FakeManualWorkflowRepository(
         initialDraft: PostDraft? = null,
     ) : ManualWorkflowRepository {
@@ -3285,6 +3614,9 @@ class ManualPostDraftWorkspaceViewModelTest {
         override fun get(id: PromptHistoryEntryId): PromptHistoryEntry? = storedPromptHistory.find { it.id == id }
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             storedPromptHistory.filter { it.draftId == id }
+
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            storedPromptHistory.filter { it.mediaAssetId == id }
 
         override fun save(mediaAsset: MediaAsset) {}
         override fun get(id: MediaAssetId): MediaAsset? = null

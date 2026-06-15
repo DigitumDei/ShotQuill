@@ -150,18 +150,77 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(draftId, persisted.photoEditRequest.draftId)
         assertNotNull(persisted.assembledPrompt)
         assertEquals(AiOperationType.PhotoEdit, persisted.promptHistoryEntry.operationType)
-        assertNotNull(persisted.promptHistoryEntry.responseSummary)
+        assertNotNull(persisted.promptHistoryEntry.errorMessage)
+        assertNull(persisted.promptHistoryEntry.responseSummary)
 
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(1, stored.photoEditRequests.size)
         assertEquals(0, stored.photoEditResults.size)
         assertEquals(1, stored.promptHistory.size)
-        assertNotNull(stored.promptHistory.first().responseSummary)
+        assertNotNull(stored.promptHistory.first().errorMessage)
+        assertNull(stored.promptHistory.first().responseSummary)
         assertEquals(DraftStatus.PhotoAdded, stored.status)
         val persistedUpdatedAt = persisted.updatedDraft.updatedAt
         assertTrue(persistedUpdatedAt > Instant.fromEpochMilliseconds(baseEpoch), "FailurePersisted.updatedDraft.updatedAt must advance on failure")
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "stored draft updatedAt must advance on failure")
         assertEquals(stored.updatedAt, persistedUpdatedAt, "stored and FailurePersisted updatedAt must match")
+    }
+
+    @Test
+    fun `photo-edit provider failure persists full PromptHistoryEntry metadata`() {
+        val clock = MutableClock(1_700_000_100_000L)
+        val draft = sampleDraftWithVisionDescription()
+        val repository = FakeManualWorkflowRepository(draft)
+        val settingsRepository = apiKeySettings()
+        val failingProvider = object : AiProvider {
+            override fun describeVision(request: VisionDescriptionRequest): AiProviderResult<VisionDescriptionOutput> =
+                AiProviderResult.Success(VisionDescriptionOutput("Recorded vision.", "recording-model"))
+            override fun generateCaption(request: CaptionGenerationRequest): AiProviderResult<CaptionGenerationOutput> =
+                error("Not used")
+            override fun generateAltText(request: AltTextGenerationRequest): AiProviderResult<AltTextGenerationOutput> =
+                error("Not used")
+            override fun editPhoto(request: PhotoEditGenerationRequest): AiProviderResult<PhotoEditOutput> =
+                AiProviderResult.Failure(AiError.RateLimited())
+        }
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = settingsRepository,
+            aiProvider = failingProvider,
+            clock = clock,
+        )
+
+        val result = pipeline.execute(
+            draftId = draftId,
+            intent = EditIntent.ImproveLighting,
+            realismLevel = RealismLevel.Photoreal,
+            qualityTier = QualityTier.High,
+            targetPlatform = TargetPlatform.InstagramFeedSquare,
+            userRefinement = null,
+            reuseVisionDescription = true,
+        )
+
+        val failure = assertIs<PhotoEditExecutionResult.Failure>(result)
+        val persisted = assertIs<PhotoEditExecutionError.FailurePersisted>(failure.error)
+        val expectedPrompt = expectedAssembledPrompt()
+        val entry = persisted.promptHistoryEntry
+        assertEquals(AiOperationType.PhotoEdit, entry.operationType)
+        assertEquals("unknown", entry.provider)
+        assertEquals(mediaAssetId, entry.mediaAssetId)
+        assertEquals(
+            "intent=improve_lighting, realismLevel=photoreal, qualityTier=high, targetPlatform=instagram_feed_square, hasRefinement=false",
+            entry.requestSettings,
+        )
+        assertEquals(persisted.photoEditRequest.id.value, entry.resultReference,
+            "resultReference must equal the photo-edit request id for failure entries")
+        assertEquals("The AI provider is rate limited. Try again later.", entry.errorMessage)
+        assertEquals(expectedPrompt, entry.prompt, "Failure entry prompt must match the assembled prompt")
+        assertNull(entry.responseSummary, "responseSummary must be null for failure entry")
+        assertNull(entry.modelName, "modelName must be null for failure entry")
+        assertTrue(entry.isFailure)
+
+        val stored = assertNotNull(repository.get(draftId))
+        val storedEntry = stored.promptHistory.single()
+        assertEquals(entry, storedEntry, "Persisted entry must match stored entry")
     }
 
     @Test
@@ -230,7 +289,8 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(2, stored.promptHistory.size)
         assertTrue(stored.updatedAt > Instant.fromEpochMilliseconds(baseEpoch), "updatedAt must advance after retry")
         val historyFailure = stored.promptHistory.first()
-        assertNotNull(historyFailure.responseSummary)
+        assertNotNull(historyFailure.errorMessage)
+        assertNull(historyFailure.responseSummary)
         assertEquals(expectedPrompt, historyFailure.prompt, "stored failure promptHistoryEntry.prompt must match the assembled prompt")
         val historySuccess = stored.promptHistory.last()
         assertNotNull(historySuccess.responseSummary)
@@ -943,8 +1003,10 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(1, stored.promptHistory.size)
         assertEquals(expectedPrompt, stored.promptHistory.first().prompt,
             "Stored prompt history entry prompt must match assembled prompt on failure")
-        assertNotNull(stored.promptHistory.first().responseSummary,
-            "Failure prompt history entry must have a response summary")
+        assertNotNull(stored.promptHistory.first().errorMessage,
+            "Failure prompt history entry must have an error message")
+        assertNull(stored.promptHistory.first().responseSummary,
+            "Failure prompt history entry must have null responseSummary")
         assertEquals(AiOperationType.PhotoEdit, stored.promptHistory.first().operationType)
 
         val baseInstant = Instant.fromEpochMilliseconds(baseEpoch)
@@ -1126,7 +1188,7 @@ class PhotoEditExecutionPipelineTest {
     }
 
     @Test
-    fun `vision-analysis provider failure before image edit returns Failure without persistence`() {
+    fun `vision-analysis provider failure before image edit returns Failure without edit persistence`() {
         val clock = MutableClock(1_700_000_100_000L)
         val draft = sampleDraft()
         val repository = FakeManualWorkflowRepository(draft)
@@ -1166,7 +1228,15 @@ class PhotoEditExecutionPipelineTest {
         assertEquals(AiError.RateLimited(), (failure.error as PhotoEditExecutionError.Provider).error)
         val stored = assertNotNull(repository.get(draftId))
         assertEquals(0, stored.photoEditRequests.size, "No edit request must be persisted on vision-analysis failure")
-        assertEquals(0, stored.promptHistory.size, "No prompt history must be persisted on vision-analysis failure")
+        assertEquals(1, stored.promptHistory.size, "Vision-analysis failure must be persisted in prompt history")
+        val visionFailure = stored.promptHistory.single()
+        assertEquals(AiOperationType.VisionDescription, visionFailure.operationType)
+        assertEquals("unknown", visionFailure.provider)
+        assertEquals(mediaAssetId, visionFailure.mediaAssetId)
+        assertEquals("fileName=test-image.jpg, mimeType=image/jpeg", visionFailure.requestSettings)
+        assertEquals(null, visionFailure.resultReference, "resultReference must be null for a vision failure entry")
+        assertEquals(AiError.RateLimited().userMessage, visionFailure.errorMessage)
+        assertTrue(visionFailure.isFailure)
         assertEquals(0, stored.photoEditResults.size, "No edit result must be persisted on vision-analysis failure")
     }
 
@@ -1803,6 +1873,8 @@ class PhotoEditExecutionPipelineTest {
             .firstOrNull { it.id == id }
         override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> =
             drafts[id]?.promptHistory.orEmpty()
+        override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+            drafts.values.flatMap { it.promptHistory }.filter { it.mediaAssetId == id }
         override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) = save(
             drafts.getValue(promptHistoryEntry.draftId).let { it.copy(promptHistory = it.promptHistory + promptHistoryEntry) },
         )

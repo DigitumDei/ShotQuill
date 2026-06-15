@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -23,6 +24,7 @@ import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
+import com.digitumdei.shotquill.shared.storage.PromptHistoryRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.AnalyzeVision
 import com.digitumdei.shotquill.shared.workflow.PhotoEditExecutionError
@@ -70,9 +72,11 @@ data class ManualPostDraftWorkspaceState(
     val targetPlatform: TargetPlatform?,
     val draftStatus: DraftStatus?,
     val promptHistory: List<PromptHistoryEntry>,
+    val photoEditPromptHistory: List<PromptHistoryEntry>,
     val actions: ManualPostDraftWorkspaceActions,
     val statusMessage: String?,
     val isPromptHistoryVisible: Boolean,
+    val isPhotoEditHistoryVisible: Boolean,
     val photoEditForm: PhotoEditFormState,
 )
 
@@ -82,6 +86,7 @@ data class ManualPostDraftWorkspaceActions(
     val canEditPhotoWithAi: Boolean,
     val canCopyCaption: Boolean,
     val canCopyAltText: Boolean,
+    val canCopyPrompt: Boolean,
     val canShareOrExport: Boolean,
     val canViewPromptHistory: Boolean,
     val canSelectEditedPhoto: Boolean,
@@ -91,6 +96,8 @@ data class ManualPostDraftWorkspaceActions(
 class ManualPostDraftWorkspaceViewModel(
     private val draftId: PostDraftId,
     private val postDraftRepository: PostDraftRepository,
+    private val clipboardWriter: ClipboardWriter? = null,
+    private val promptHistoryRepository: PromptHistoryRepository? = null,
     private val analyzeVision: AnalyzeVision? = null,
     private val postTextGenerator: PostTextGenerator? = null,
     private val photoEditExecutor: PhotoEditExecutor? = null,
@@ -399,14 +406,57 @@ class ManualPostDraftWorkspaceViewModel(
 
     fun markCaptionCopied() {
         if (state.actions.canCopyCaption) {
-            state = state.copy(statusMessage = "Caption copied")
+            val text = state.generatedCaption
+            if (clipboardWriter != null && text != null) {
+                state = try {
+                    clipboardWriter.copy("caption", text)
+                    state.copy(statusMessage = "Caption copied")
+                } catch (_: Exception) {
+                    state.copy(statusMessage = "Failed to copy caption to clipboard")
+                }
+            } else if (clipboardWriter == null) {
+                state = state.copy(statusMessage = "Clipboard not available")
+            }
         }
     }
 
     fun markAltTextCopied() {
         if (state.actions.canCopyAltText) {
-            state = state.copy(statusMessage = "Alt text copied")
+            val text = state.generatedAltText
+            if (clipboardWriter != null && text != null) {
+                state = try {
+                    clipboardWriter.copy("alt text", text)
+                    state.copy(statusMessage = "Alt text copied")
+                } catch (_: Exception) {
+                    state.copy(statusMessage = "Failed to copy alt text to clipboard")
+                }
+            } else if (clipboardWriter == null) {
+                state = state.copy(statusMessage = "Clipboard not available")
+            }
         }
+    }
+
+    fun copyPromptHistoryEntryPrompt(entryId: PromptHistoryEntryId) {
+        if (clipboardWriter == null) {
+            state = state.copy(statusMessage = "Clipboard not available")
+            return
+        }
+        val entry = state.promptHistory.firstOrNull { it.id == entryId }
+            ?: state.photoEditPromptHistory.firstOrNull { it.id == entryId }
+        if (entry != null) {
+            state = try {
+                clipboardWriter.copy(entry.operationType.displayName, entry.prompt)
+                state.copy(statusMessage = "Prompt copied to clipboard")
+            } catch (_: Exception) {
+                state.copy(statusMessage = "Failed to copy prompt to clipboard")
+            }
+        } else {
+            state = state.copy(statusMessage = "Prompt entry not found")
+        }
+    }
+
+    fun togglePhotoEditHistory() {
+        state = state.copy(isPhotoEditHistoryVisible = !state.isPhotoEditHistoryVisible)
     }
 
     fun togglePromptHistory() {
@@ -502,13 +552,33 @@ class ManualPostDraftWorkspaceViewModel(
             generatedAltText = altText,
             targetPlatform = platform,
             draftStatus = status,
-            promptHistory = promptHistory.sortedByDescending { it.createdAtEpochMillis },
+            promptHistory = promptHistory.sortedWith(
+                compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
+                    .thenBy { it.id.value },
+            ),
+            photoEditPromptHistory = run {
+                val activeId = activePhoto?.id
+                val sourceId = photoEditRequests.maxByOrNull { it.createdAtEpochMillis }?.sourceMediaAssetId
+                val ids = listOfNotNull(activeId, sourceId).distinct()
+                if (ids.isEmpty() || promptHistoryRepository == null) {
+                    emptyList()
+                } else {
+                    ids.flatMap { promptHistoryRepository.listPromptHistoryForMediaAsset(it) }
+                        .filter { it.operationType == AiOperationType.PhotoEdit }
+                        .distinctBy { it.id }
+                        .sortedWith(
+                            compareByDescending<PromptHistoryEntry> { it.createdAtEpochMillis }
+                                .thenBy { it.id.value },
+                        )
+                }
+            },
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
                 canEditPhotoWithAi = canMutateDraft && photoEditExecutor != null,
                 canCopyCaption = !captionText.isNullOrBlank(),
                 canCopyAltText = !altText.isNullOrBlank(),
+                canCopyPrompt = clipboardWriter != null,
                 canShareOrExport = canMutateDraft && !captionText.isNullOrBlank() && !altText.isNullOrBlank(),
                 canViewPromptHistory = promptHistory.isNotEmpty(),
                 canSelectEditedPhoto = canMutateDraft && editedPhoto != null && editedPhoto.id != activePhoto?.id,
@@ -516,6 +586,7 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = isPromptHistoryVisible,
+            isPhotoEditHistoryVisible = state.isPhotoEditHistoryVisible,
             photoEditForm = PhotoEditFormState(
                 selectedIntent = latestRequest?.intent ?: EditIntent.ImproveLighting,
                 userRefinementText = latestRequest?.userRefinement ?: "",
@@ -545,12 +616,14 @@ class ManualPostDraftWorkspaceViewModel(
             targetPlatform = null,
             draftStatus = null,
             promptHistory = emptyList(),
+            photoEditPromptHistory = emptyList(),
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = false,
                 canGeneratePostText = false,
                 canEditPhotoWithAi = false,
                 canCopyCaption = false,
                 canCopyAltText = false,
+                canCopyPrompt = false,
                 canShareOrExport = false,
                 canViewPromptHistory = false,
                 canSelectEditedPhoto = false,
@@ -558,6 +631,7 @@ class ManualPostDraftWorkspaceViewModel(
             ),
             statusMessage = statusMessage,
             isPromptHistoryVisible = false,
+            isPhotoEditHistoryVisible = false,
             photoEditForm = PhotoEditFormState(
                 selectedIntent = EditIntent.ImproveLighting,
                 userRefinementText = "",

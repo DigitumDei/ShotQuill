@@ -420,7 +420,7 @@ class SqlDelightManualWorkflowRepository(
     }
 
     override fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry) {
-        queries.upsertPromptHistoryEntry(
+        queries.insertPromptHistoryEntry(
             id = promptHistoryEntry.id.value,
             draft_id = promptHistoryEntry.draftId.value,
             operation_type = promptHistoryEntry.operationType.wireValue,
@@ -428,6 +428,11 @@ class SqlDelightManualWorkflowRepository(
             response_summary = promptHistoryEntry.responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
             model_name = promptHistoryEntry.modelName,
             created_at_epoch_millis = promptHistoryEntry.createdAtEpochMillis,
+            provider = promptHistoryEntry.provider,
+            media_asset_id = promptHistoryEntry.mediaAssetId?.value,
+            request_settings = promptHistoryEntry.requestSettings?.let(SecretRedactor::redactOpenAiApiKeys),
+            result_reference = promptHistoryEntry.resultReference,
+            error_message = promptHistoryEntry.errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
         )
     }
 
@@ -435,6 +440,9 @@ class SqlDelightManualWorkflowRepository(
         queries.selectPromptHistoryEntryById(id.value, ManualWorkflowStorageMapper::promptHistoryEntry).executeAsOneOrNull()
 
     override fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry> = selectPromptHistoryEntries(id)
+
+    override fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry> =
+        queries.selectPromptHistoryEntriesByMediaAssetId(id.value, ManualWorkflowStorageMapper::promptHistoryEntry).executeAsList()
 
     override fun save(exportRecord: ExportRecord) {
         saveExportRecord(exportRecord)
@@ -610,8 +618,10 @@ class SqlDelightManualWorkflowRepository(
     private fun deleteOwnedDraftRows(id: PostDraftId) {
         // final_post_content is intentionally not deleted here; see the
         // PostDraftRepository.save contract on finalPostContent preservation.
+        // prompt_history_entries are also exempt: history is append-only and
+        // immutable after creation, so saves from stale draft snapshots must
+        // not drop or rewrite entries recorded by AI pipelines.
         queries.deleteExportRecordsByDraftId(id.value)
-        queries.deletePromptHistoryEntriesByDraftId(id.value)
         queries.deletePhotoEditResultsByDraftId(id.value)
         queries.deletePhotoEditRequestsByDraftId(id.value)
         queries.deleteAltTextResultsByDraftId(id.value)
@@ -802,8 +812,26 @@ class SqlDelightManualWorkflowRepository(
                 responseSummary,
                 modelName,
                 createdAt,
+                provider,
+                mediaAssetId,
+                requestSettings,
+                resultReference,
+                errorMessage,
             ->
-            ManualWorkflowStorageMapper.promptHistoryEntry(entryId, draftId, operationType, prompt, responseSummary, modelName, createdAt)
+            ManualWorkflowStorageMapper.promptHistoryEntry(
+                entryId,
+                draftId,
+                operationType,
+                prompt,
+                responseSummary,
+                modelName,
+                createdAt,
+                provider,
+                mediaAssetId,
+                requestSettings,
+                resultReference,
+                errorMessage,
+            )
         }.executeAsList()
 
     private fun selectExportRecords(id: PostDraftId): List<ExportRecord> =
@@ -1045,6 +1073,11 @@ internal object ManualWorkflowStorageMapper {
         responseSummary: String?,
         modelName: String?,
         createdAt: Long,
+        provider: String?,
+        mediaAssetId: String?,
+        requestSettings: String?,
+        resultReference: String?,
+        errorMessage: String?,
     ): PromptHistoryEntry = PromptHistoryEntry(
         id = PromptHistoryEntryId(entryId),
         draftId = PostDraftId(draftId),
@@ -1053,6 +1086,11 @@ internal object ManualWorkflowStorageMapper {
         responseSummary = responseSummary?.let(SecretRedactor::redactOpenAiApiKeys),
         modelName = modelName,
         createdAtEpochMillis = createdAt,
+        provider = provider,
+        mediaAssetId = mediaAssetId?.let(::MediaAssetId),
+        requestSettings = requestSettings?.let(SecretRedactor::redactOpenAiApiKeys),
+        resultReference = resultReference,
+        errorMessage = errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
     )
 
     fun exportRecord(

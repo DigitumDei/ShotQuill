@@ -1,0 +1,31 @@
+name: Jules Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  jules-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Ensures Jules can see the commit history/context
+
+      - name: Run Jules Reviewer
+        uses: google-labs-code/jules-invoke@v1.0.0
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: ${{ github.head_ref }}
+          include_commit_log: true
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Focus on correctness, regressions, missing tests, and maintainability.
+            Do not create commits, push changes, open a pull request, or make any fixes yourself.
+            Publish your findings as inline review comments on the pull request whenever possible.
+            If a finding cannot be attached inline, include it as a pull request review comment.

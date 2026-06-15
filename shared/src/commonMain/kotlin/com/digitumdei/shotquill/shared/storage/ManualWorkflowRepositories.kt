@@ -48,6 +48,11 @@ interface PostDraftRepository {
      * content separately and then save drafts that were loaded without it, so
      * deleting on null would silently discard the user's edited caption and alt
      * text. A non-null [PostDraft.finalPostContent] overwrites the stored row.
+     *
+     * Prompt history is also exempt from replacement: entries are immutable and
+     * append-only, so [PostDraft.promptHistory] entries are inserted if new and
+     * otherwise left untouched. Entries already persisted for the draft are
+     * never deleted or rewritten by this method.
      */
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
@@ -91,6 +96,7 @@ interface PromptHistoryRepository {
     fun save(promptHistoryEntry: PromptHistoryEntry)
     fun get(id: PromptHistoryEntryId): PromptHistoryEntry?
     fun listPromptHistoryForDraft(id: PostDraftId): List<PromptHistoryEntry>
+    fun listPromptHistoryForMediaAsset(id: MediaAssetId): List<PromptHistoryEntry>
 }
 
 interface ExportRepository {

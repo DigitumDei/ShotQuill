@@ -102,9 +102,20 @@ class PhotoEditExecutionPipeline(
                 draftId = draftId,
                 operationType = AiOperationType.PhotoEdit,
                 prompt = assembledPrompt,
-                responseSummary = failureSummary(cause),
+                responseSummary = null,
                 modelName = null,
                 createdAtEpochMillis = now,
+                provider = aiProvider.name,
+                mediaAssetId = editRequest.sourceMediaAssetId,
+                requestSettings = RequestSettingsFormatter.photoEdit(
+                    intent = editRequest.intent,
+                    realismLevel = editRequest.realismLevel,
+                    qualityTier = editRequest.qualityTier,
+                    targetPlatform = editRequest.targetPlatform,
+                    hasRefinement = editRequest.userRefinement != null,
+                ),
+                resultReference = editRequest.id.value,
+                errorMessage = failureSummary(cause),
             )
             val updatedAt = operationUpdatedAt(currentDraft, now)
             val persistedDraft = repository.savePhotoEditFailure(
@@ -281,6 +292,16 @@ class PhotoEditExecutionPipeline(
             responseSummary = editOutput.summary,
             modelName = editOutput.modelName,
             createdAtEpochMillis = now,
+            provider = aiProvider.name,
+            mediaAssetId = sourceMediaAsset.id,
+            requestSettings = RequestSettingsFormatter.photoEdit(
+                intent = intent,
+                realismLevel = realismLevel,
+                qualityTier = qualityTier,
+                targetPlatform = targetPlatform,
+                hasRefinement = cleanedUserRefinement != null,
+            ),
+            resultReference = editResult.id.value,
         )
 
         val currentBeforeSave = repository.get(draftId) ?: run {
