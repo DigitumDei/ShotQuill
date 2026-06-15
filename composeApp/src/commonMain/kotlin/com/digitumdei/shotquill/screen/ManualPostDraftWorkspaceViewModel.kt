@@ -1,5 +1,8 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.shared.domain.AiErrorType
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -33,6 +36,7 @@ import com.digitumdei.shotquill.shared.domain.VisionDescription
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionId
 import com.digitumdei.shotquill.shared.domain.VisionDescriptionPromptFactory
 import com.digitumdei.shotquill.shared.domain.primaryMediaAsset
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationError
 import com.digitumdei.shotquill.shared.workflow.PostTextGenerationResult
@@ -40,6 +44,7 @@ import com.digitumdei.shotquill.shared.workflow.PostTextGenerator
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.Instant
 
 enum class PhotoEditFormOperationState {
@@ -77,6 +82,9 @@ data class ManualPostDraftWorkspaceState(
     val statusMessage: String?,
     val isPromptHistoryVisible: Boolean,
     val photoEditForm: PhotoEditFormState,
+    val isAiOperationInProgress: Boolean = false,
+    val activeAiOperation: AiOperationType? = null,
+    val failureHistory: List<AiFailureRecord> = emptyList(),
 )
 
 data class ManualPostDraftWorkspaceActions(
@@ -176,6 +184,7 @@ class ManualPostDraftWorkspaceViewModel(
     var state: ManualPostDraftWorkspaceState by mutableStateOf(unloadedState())
         private set
     private var operationSequence = 0
+    private var operationInProgress = false
 
     fun load() {
         state = postDraftRepository.get(draftId)?.toState(
@@ -185,135 +194,165 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun analyzeVisionDescription() {
-        val draft = postDraftRepository.get(draftId) ?: run {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
-        }
-        draft.visionDescription?.let {
-            state = draft.toState("Reused cached vision description", state.isPromptHistoryVisible)
-            return
-        }
-        val now = clock.nowMillis()
-        val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (draft.status !in mutableDraftStatuses) {
-            state = draft.toState(
-                statusMessage = "Cannot analyze vision while status is ${draft.status.wireValue}",
-                isPromptHistoryVisible = state.isPromptHistoryVisible,
-            )
-            return
-        }
-        val idSuffix = nextIdSuffix(now)
-        val generated = aiProvider.analyzeVision(draft, now)
-        val original = draft.primaryMediaAsset()
-        val visionDescription = VisionDescription(
-            id = VisionDescriptionId("vision-description-$idSuffix"),
-            draftId = draft.id,
-            mediaAssetId = original.id,
-            description = generated.description,
-            modelName = generated.modelName,
-            createdAtEpochMillis = now,
-        )
-        val updated = draft.copy(
-            visionDescription = visionDescription,
-            promptHistory = draft.promptHistory + PromptHistoryEntry(
-                id = PromptHistoryEntryId("prompt-vision-description-$idSuffix"),
+        if (!beginOperation(AiOperationType.VisionDescription)) return
+        try {
+            val draft = postDraftRepository.get(draftId) ?: run {
+                state = unloadedState(statusMessage = "Draft not found")
+                return
+            }
+            draft.visionDescription?.let {
+                state = draft.toState("Reused cached vision description", state.isPromptHistoryVisible)
+                return
+            }
+            val now = clock.nowMillis()
+            val operationUpdatedAt = operationUpdatedAt(draft, now)
+            if (draft.status !in mutableDraftStatuses) {
+                state = draft.toState(
+                    statusMessage = "Cannot analyze vision while status is ${draft.status.wireValue}",
+                    isPromptHistoryVisible = state.isPromptHistoryVisible,
+                )
+                return
+            }
+            val idSuffix = nextIdSuffix(now)
+            val generated = aiProvider.analyzeVision(draft, now)
+            val original = draft.primaryMediaAsset()
+            val visionDescription = VisionDescription(
+                id = VisionDescriptionId("vision-description-$idSuffix"),
                 draftId = draft.id,
-                operationType = AiOperationType.VisionDescription,
-                prompt = generated.prompt,
-                responseSummary = generated.description,
+                mediaAssetId = original.id,
+                description = generated.description,
                 modelName = generated.modelName,
                 createdAtEpochMillis = now,
-            ),
-            updatedAt = operationUpdatedAt,
-        )
-        postDraftRepository.save(updated)
-        state = updated.toState("Analyzed photo", state.isPromptHistoryVisible)
+            )
+            val updated = draft.copy(
+                visionDescription = visionDescription,
+                promptHistory = draft.promptHistory + PromptHistoryEntry(
+                    id = PromptHistoryEntryId("prompt-vision-description-$idSuffix"),
+                    draftId = draft.id,
+                    operationType = AiOperationType.VisionDescription,
+                    prompt = generated.prompt,
+                    responseSummary = generated.description,
+                    modelName = generated.modelName,
+                    createdAtEpochMillis = now,
+                ),
+                updatedAt = operationUpdatedAt,
+            )
+            postDraftRepository.save(updated)
+            state = updated.toState("Analyzed photo", state.isPromptHistoryVisible)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            val history = recordFailure(AiOperationType.VisionDescription, failure)
+            state = state.copy(
+                statusMessage = "Vision analysis failed: ${SecretRedactor.redactOpenAiApiKeys(failure.message ?: "Unknown error")}",
+                failureHistory = history,
+                isAiOperationInProgress = false,
+                activeAiOperation = null,
+            )
+        } finally {
+            operationInProgress = false
+        }
     }
 
     fun generatePostText() {
-        postTextGenerator?.let {
-            generatePostTextWithPipeline(it)
-            return
-        }
-        val draft = postDraftRepository.get(draftId) ?: run {
-            state = unloadedState(statusMessage = "Draft not found")
-            return
-        }
-        val now = clock.nowMillis()
-        val nextStatus = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated
-        val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (!draft.canUpdateOrTransitionTo(nextStatus)) {
-            state = draft.toState(
-                statusMessage = "Cannot generate text while status is ${draft.status.wireValue}",
-                isPromptHistoryVisible = state.isPromptHistoryVisible,
+        if (!beginOperation(AiOperationType.CaptionGeneration)) return
+        try {
+            postTextGenerator?.let {
+                generatePostTextWithPipeline(it)
+                return
+            }
+            val draft = postDraftRepository.get(draftId) ?: run {
+                state = unloadedState(statusMessage = "Draft not found")
+                return
+            }
+            val now = clock.nowMillis()
+            val nextStatus = if (draft.status == DraftStatus.PhotoEdited) DraftStatus.PhotoEdited else DraftStatus.TextGenerated
+            val operationUpdatedAt = operationUpdatedAt(draft, now)
+            if (!draft.canUpdateOrTransitionTo(nextStatus)) {
+                state = draft.toState(
+                    statusMessage = "Cannot generate text while status is ${draft.status.wireValue}",
+                    isPromptHistoryVisible = state.isPromptHistoryVisible,
+                )
+                return
+            }
+            val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
+            val idSuffix = nextIdSuffix(now)
+            val generated = aiProvider.generatePostText(draft, platform, now)
+            val captionRequest = CaptionRequest(
+                id = CaptionRequestId("caption-request-$idSuffix"),
+                draftId = draft.id,
+                targetPlatform = platform,
+                prompt = generated.captionPrompt,
+                tone = draft.brandProfile?.voice,
+                brandProfileId = draft.brandProfile?.id,
+                createdAtEpochMillis = now,
             )
-            return
-        }
-        val platform = draft.preferredTargetPlatform() ?: defaultTargetPlatform
-        val idSuffix = nextIdSuffix(now)
-        val generated = aiProvider.generatePostText(draft, platform, now)
-        val captionRequest = CaptionRequest(
-            id = CaptionRequestId("caption-request-$idSuffix"),
-            draftId = draft.id,
-            targetPlatform = platform,
-            prompt = generated.captionPrompt,
-            tone = draft.brandProfile?.voice,
-            brandProfileId = draft.brandProfile?.id,
-            createdAtEpochMillis = now,
-        )
-        val captionResult = CaptionResult(
-            id = CaptionResultId("caption-result-$idSuffix"),
-            requestId = captionRequest.id,
-            draftId = draft.id,
-            targetPlatform = platform,
-            caption = generated.caption,
-            shortCaption = generated.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
-            hashtags = generated.hashtags,
-            modelName = generated.modelName,
-            createdAtEpochMillis = now,
-        )
-        val altText = AltTextResult(
-            id = AltTextResultId("alt-text-$idSuffix"),
-            draftId = draft.id,
-            mediaAssetId = draft.primaryMediaAsset().id,
-            altText = generated.altText,
-            modelName = generated.modelName,
-            createdAtEpochMillis = now,
-        )
-        val transitioned = if (draft.status == nextStatus) {
-            draft.copy(updatedAt = operationUpdatedAt)
-        } else {
-            draft.transitionTo(nextStatus, operationUpdatedAt)
-        }
-        val updated = transitioned.copy(
-            caption = CaptionDraft(generated.caption, generated.hashtags),
-            targetPlatforms = draft.targetPlatforms + platform,
-            captionRequests = draft.captionRequests + captionRequest,
-            captionResults = draft.captionResults + captionResult,
-            altTextResults = draft.altTextResults + altText,
-            promptHistory = draft.promptHistory + listOf(
-                PromptHistoryEntry(
-                    id = PromptHistoryEntryId("prompt-caption-$idSuffix"),
-                    draftId = draft.id,
-                    operationType = AiOperationType.CaptionGeneration,
-                    prompt = generated.captionPrompt,
-                    responseSummary = generated.caption,
-                    modelName = generated.modelName,
-                    createdAtEpochMillis = now,
+            val captionResult = CaptionResult(
+                id = CaptionResultId("caption-result-$idSuffix"),
+                requestId = captionRequest.id,
+                draftId = draft.id,
+                targetPlatform = platform,
+                caption = generated.caption,
+                shortCaption = generated.shortCaption?.trim()?.takeIf { it.isNotEmpty() },
+                hashtags = generated.hashtags,
+                modelName = generated.modelName,
+                createdAtEpochMillis = now,
+            )
+            val altText = AltTextResult(
+                id = AltTextResultId("alt-text-$idSuffix"),
+                draftId = draft.id,
+                mediaAssetId = draft.primaryMediaAsset().id,
+                altText = generated.altText,
+                modelName = generated.modelName,
+                createdAtEpochMillis = now,
+            )
+            val transitioned = if (draft.status == nextStatus) {
+                draft.copy(updatedAt = operationUpdatedAt)
+            } else {
+                draft.transitionTo(nextStatus, operationUpdatedAt)
+            }
+            val updated = transitioned.copy(
+                caption = CaptionDraft(generated.caption, generated.hashtags),
+                targetPlatforms = draft.targetPlatforms + platform,
+                captionRequests = draft.captionRequests + captionRequest,
+                captionResults = draft.captionResults + captionResult,
+                altTextResults = draft.altTextResults + altText,
+                promptHistory = draft.promptHistory + listOf(
+                    PromptHistoryEntry(
+                        id = PromptHistoryEntryId("prompt-caption-$idSuffix"),
+                        draftId = draft.id,
+                        operationType = AiOperationType.CaptionGeneration,
+                        prompt = generated.captionPrompt,
+                        responseSummary = generated.caption,
+                        modelName = generated.modelName,
+                        createdAtEpochMillis = now,
+                    ),
+                    PromptHistoryEntry(
+                        id = PromptHistoryEntryId("prompt-alt-text-$idSuffix"),
+                        draftId = draft.id,
+                        operationType = AiOperationType.AltTextGeneration,
+                        prompt = generated.altTextPrompt,
+                        responseSummary = generated.altText,
+                        modelName = generated.modelName,
+                        createdAtEpochMillis = now,
+                    ),
                 ),
-                PromptHistoryEntry(
-                    id = PromptHistoryEntryId("prompt-alt-text-$idSuffix"),
-                    draftId = draft.id,
-                    operationType = AiOperationType.AltTextGeneration,
-                    prompt = generated.altTextPrompt,
-                    responseSummary = generated.altText,
-                    modelName = generated.modelName,
-                    createdAtEpochMillis = now,
-                ),
-            ),
-        )
-        postDraftRepository.save(updated)
-        state = updated.toState("Generated caption and alt text", state.isPromptHistoryVisible)
+            )
+            postDraftRepository.save(updated)
+            state = updated.toState("Generated caption and alt text", state.isPromptHistoryVisible)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            val history = recordFailure(AiOperationType.CaptionGeneration, failure)
+            state = state.copy(
+                statusMessage = "Post text generation failed: ${SecretRedactor.redactOpenAiApiKeys(failure.message ?: "Unknown error")}",
+                failureHistory = history,
+                isAiOperationInProgress = false,
+                activeAiOperation = null,
+            )
+        } finally {
+            operationInProgress = false
+        }
     }
 
     private fun generatePostTextWithPipeline(generator: PostTextGenerator) {
@@ -327,7 +366,8 @@ class ManualPostDraftWorkspaceViewModel(
                 state = result.draft.toState("Generated caption and alt text", state.isPromptHistoryVisible)
             }
             is PostTextGenerationResult.Failure -> {
-                state = draft.toState(result.error.statusMessage(), state.isPromptHistoryVisible)
+                val latest = postDraftRepository.get(draftId) ?: draft
+                state = latest.toState(result.error.statusMessage(), state.isPromptHistoryVisible)
             }
         }
     }
@@ -374,93 +414,103 @@ class ManualPostDraftWorkspaceViewModel(
     }
 
     fun editPhotoWithAi() {
-        val draft = postDraftRepository.get(draftId) ?: run {
-            state = state.copy(
-                statusMessage = "Draft not found",
-                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
-                actions = state.actions.copy(canEditPhotoWithAi = false),
-            )
-            return
-        }
-        val now = clock.nowMillis()
-        val operationUpdatedAt = operationUpdatedAt(draft, now)
-        if (!draft.canUpdateOrTransitionTo(DraftStatus.PhotoEdited)) {
-            state = state.copy(
-                statusMessage = "Cannot edit photo while status is ${draft.status.wireValue}",
-                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
-                actions = state.actions.copy(canEditPhotoWithAi = false),
-            )
-            return
-        }
-        state = state.copy(
-            statusMessage = "Editing photo with AI...",
-            photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Loading),
-            actions = state.actions.copy(canEditPhotoWithAi = false),
-        )
-        val currentForm = state.photoEditForm
+        if (operationInProgress) return
+        operationInProgress = true
         try {
-            val idSuffix = nextIdSuffix(now)
-            val generated = aiProvider.editPhoto(draft, currentForm, now)
-            val original = draft.primaryMediaAsset()
-            val request = PhotoEditRequest(
-                id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
-                draftId = draft.id,
-                sourceMediaAssetId = original.id,
-                intent = currentForm.selectedIntent,
-                realismLevel = currentForm.selectedRealismLevel,
-                qualityTier = currentForm.selectedQualityTier,
-                prompt = generated.prompt,
-                userRefinement = currentForm.userRefinementText.trim().takeIf { it.isNotEmpty() },
-                subjectDescription = draft.visionDescription?.description,
-                targetPlatform = currentForm.selectedTargetPlatform,
-                maskRegion = null,
-                createdAtEpochMillis = now,
-            )
-            val assembledPrompt = PhotoEditPromptAssembler.assemble(request)
-            val editedMedia = MediaAsset(
-                id = MediaAssetId("edited-media-$idSuffix"),
-                type = MediaType.EditedPhoto,
-                uri = generated.editedMediaUri,
-                mimeType = original.mimeType,
-                widthPx = original.widthPx,
-                heightPx = original.heightPx,
-                createdAtEpochMillis = now,
-            )
-            val result = PhotoEditResult(
-                id = PhotoEditResultId("photo-edit-result-$idSuffix"),
-                requestId = request.id,
-                draftId = draft.id,
-                editedMediaAsset = editedMedia,
-                summary = generated.summary,
-                modelName = generated.modelName,
-                createdAtEpochMillis = now,
-            )
-            val transitioned = if (draft.status == DraftStatus.PhotoEdited) {
-                draft.copy(updatedAt = operationUpdatedAt)
-            } else {
-                draft.transitionTo(DraftStatus.PhotoEdited, operationUpdatedAt)
+            val draft = postDraftRepository.get(draftId) ?: run {
+                state = state.copy(
+                    statusMessage = "Draft not found",
+                    photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
+                    actions = state.actions.copy(canEditPhotoWithAi = false),
+                )
+                return
             }
-            val updated = transitioned.copy(
-                photoEditRequests = draft.photoEditRequests + request,
-                photoEditResults = draft.photoEditResults + result,
-                promptHistory = draft.promptHistory + PromptHistoryEntry(
-                    id = PromptHistoryEntryId("prompt-photo-edit-$idSuffix"),
+            val now = clock.nowMillis()
+            val operationUpdatedAt = operationUpdatedAt(draft, now)
+            if (!draft.canUpdateOrTransitionTo(DraftStatus.PhotoEdited)) {
+                state = state.copy(
+                    statusMessage = "Cannot edit photo while status is ${draft.status.wireValue}",
+                    photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Error),
+                    actions = state.actions.copy(canEditPhotoWithAi = false),
+                )
+                return
+            }
+            state = state.copy(
+                statusMessage = "Editing photo with AI...",
+                photoEditForm = state.photoEditForm.copy(operationState = PhotoEditFormOperationState.Loading),
+                actions = state.actions.copy(canEditPhotoWithAi = false),
+                isAiOperationInProgress = true,
+                activeAiOperation = AiOperationType.PhotoEdit,
+            )
+            val currentForm = state.photoEditForm
+            try {
+                val idSuffix = nextIdSuffix(now)
+                val generated = aiProvider.editPhoto(draft, currentForm, now)
+                val original = draft.primaryMediaAsset()
+                val request = PhotoEditRequest(
+                    id = PhotoEditRequestId("photo-edit-request-$idSuffix"),
                     draftId = draft.id,
-                    operationType = AiOperationType.PhotoEdit,
-                    prompt = assembledPrompt,
-                    responseSummary = generated.summary,
+                    sourceMediaAssetId = original.id,
+                    intent = currentForm.selectedIntent,
+                    realismLevel = currentForm.selectedRealismLevel,
+                    qualityTier = currentForm.selectedQualityTier,
+                    prompt = generated.prompt,
+                    userRefinement = currentForm.userRefinementText.trim().takeIf { it.isNotEmpty() },
+                    subjectDescription = draft.visionDescription?.description,
+                    targetPlatform = currentForm.selectedTargetPlatform,
+                    maskRegion = null,
+                    createdAtEpochMillis = now,
+                )
+                val assembledPrompt = PhotoEditPromptAssembler.assemble(request)
+                val editedMedia = MediaAsset(
+                    id = MediaAssetId("edited-media-$idSuffix"),
+                    type = MediaType.EditedPhoto,
+                    uri = generated.editedMediaUri,
+                    mimeType = original.mimeType,
+                    widthPx = original.widthPx,
+                    heightPx = original.heightPx,
+                    createdAtEpochMillis = now,
+                )
+                val result = PhotoEditResult(
+                    id = PhotoEditResultId("photo-edit-result-$idSuffix"),
+                    requestId = request.id,
+                    draftId = draft.id,
+                    editedMediaAsset = editedMedia,
+                    summary = generated.summary,
                     modelName = generated.modelName,
                     createdAtEpochMillis = now,
-                ),
-            )
-            postDraftRepository.save(updated)
-            state = updated.toState("Edited photo preview created", state.isPromptHistoryVisible)
-        } catch (e: Exception) {
-            state = state.copy(
-                statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
-                photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
-                actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
-            )
+                )
+                val transitioned = if (draft.status == DraftStatus.PhotoEdited) {
+                    draft.copy(updatedAt = operationUpdatedAt)
+                } else {
+                    draft.transitionTo(DraftStatus.PhotoEdited, operationUpdatedAt)
+                }
+                val updated = transitioned.copy(
+                    photoEditRequests = draft.photoEditRequests + request,
+                    photoEditResults = draft.photoEditResults + result,
+                    promptHistory = draft.promptHistory + PromptHistoryEntry(
+                        id = PromptHistoryEntryId("prompt-photo-edit-$idSuffix"),
+                        draftId = draft.id,
+                        operationType = AiOperationType.PhotoEdit,
+                        prompt = assembledPrompt,
+                        responseSummary = generated.summary,
+                        modelName = generated.modelName,
+                        createdAtEpochMillis = now,
+                    ),
+                )
+                postDraftRepository.save(updated)
+                state = updated.toState("Edited photo preview created", state.isPromptHistoryVisible)
+            } catch (e: Exception) {
+                val history = recordFailure(AiOperationType.PhotoEdit, e)
+                state = state.copy(
+                    statusMessage = "Photo edit failed: ${e.message ?: "Unknown error"}",
+                    photoEditForm = currentForm.copy(operationState = PhotoEditFormOperationState.Error),
+                    actions = state.actions.copy(canEditPhotoWithAi = state.draftStatus in mutableDraftStatuses),
+                    failureHistory = history,
+                )
+            }
+        } finally {
+            operationInProgress = false
         }
     }
 
@@ -519,6 +569,31 @@ class ManualPostDraftWorkspaceViewModel(
         state = state.copy(isPromptHistoryVisible = !state.isPromptHistoryVisible)
     }
 
+    private fun beginOperation(operation: AiOperationType): Boolean {
+        if (operationInProgress) return false
+        operationInProgress = true
+        state = state.copy(isAiOperationInProgress = true, activeAiOperation = operation)
+        return true
+    }
+
+    private fun recordFailure(operation: AiOperationType, throwable: Throwable): List<AiFailureRecord> {
+        val draft = postDraftRepository.get(draftId)
+        val now = clock.nowMillis()
+        val failure = AiFailureRecord(
+            id = AiFailureRecordId("ai-failure-${nextIdSuffix(now)}"),
+            draftId = draftId,
+            operationType = operation,
+            errorType = AiErrorType.ProviderFailure,
+            userMessage = SecretRedactor.redactOpenAiApiKeys(throwable.message ?: "Unknown error"),
+            attempt = (draft?.aiFailureRecords?.size ?: 0) + 1,
+            createdAtEpochMillis = now,
+        )
+        if (draft != null) {
+            postDraftRepository.save(draft.copy(aiFailureRecords = draft.aiFailureRecords + failure))
+        }
+        return ((draft?.aiFailureRecords ?: emptyList()) + failure).sortedByDescending { it.createdAtEpochMillis }
+    }
+
     private fun PostDraft.toState(
         statusMessage: String?,
         isPromptHistoryVisible: Boolean,
@@ -568,6 +643,9 @@ class ManualPostDraftWorkspaceViewModel(
                 latestSummary = latestResult?.summary,
                 operationState = PhotoEditFormOperationState.Idle,
             ),
+            isAiOperationInProgress = false,
+            activeAiOperation = null,
+            failureHistory = aiFailureRecords.sortedByDescending { it.createdAtEpochMillis },
         )
     }
 

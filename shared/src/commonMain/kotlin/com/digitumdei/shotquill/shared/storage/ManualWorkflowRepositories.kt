@@ -24,6 +24,8 @@ import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import kotlinx.datetime.Instant
 
@@ -86,6 +88,12 @@ interface ExportRepository {
     fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord>
 }
 
+interface AiFailureRepository {
+    fun save(aiFailureRecord: AiFailureRecord)
+    fun get(id: AiFailureRecordId): AiFailureRecord?
+    fun listAiFailureRecordsForDraft(id: PostDraftId): List<AiFailureRecord>
+}
+
 interface ManualWorkflowRepository :
     MediaAssetRepository,
     BrandProfileRepository,
@@ -95,7 +103,8 @@ interface ManualWorkflowRepository :
     AltTextRepository,
     PhotoEditRepository,
     PromptHistoryRepository,
-    ExportRepository {
+    ExportRepository,
+    AiFailureRepository {
     fun saveVisionDescription(visionDescription: VisionDescription)
     fun saveCaptionRequest(captionRequest: CaptionRequest)
     fun saveCaptionResult(captionResult: CaptionResult)
@@ -104,6 +113,7 @@ interface ManualWorkflowRepository :
     fun savePhotoEditResult(photoEditResult: PhotoEditResult)
     fun savePromptHistoryEntry(promptHistoryEntry: PromptHistoryEntry)
     fun saveExportRecord(exportRecord: ExportRecord)
+    fun saveAiFailureRecord(aiFailureRecord: AiFailureRecord)
     fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,

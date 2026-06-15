@@ -13,6 +13,9 @@ import com.digitumdei.shotquill.shared.ai.PhotoEditGenerationRequest
 import com.digitumdei.shotquill.shared.ai.PhotoEditOutput
 import com.digitumdei.shotquill.shared.ai.VisionDescriptionOutput
 import com.digitumdei.shotquill.shared.ai.VisionDescriptionRequest
+import com.digitumdei.shotquill.shared.domain.AiErrorType
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -357,17 +360,111 @@ class PostTextGenerationPipelineTest {
         assertEquals(3, stored.promptHistory.size)
     }
 
+    @Test
+    fun recordsFailureHistoryWhenProviderFails() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.Caption),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        assertIs<PostTextGenerationResult.Failure>(result)
+        val records = repository.listAiFailureRecordsForDraft(draftId)
+        assertEquals(1, records.size)
+        assertEquals(AiOperationType.CaptionGeneration, records.single().operationType)
+        assertEquals(AiErrorType.ProviderFailure, records.single().errorType)
+    }
+
+    @Test
+    fun retryAfterFailureAppendsAnotherFailureRecord() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(failureStage = RecordingAiProvider.FailureStage.Caption),
+        )
+
+        pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+        pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val records = repository.listAiFailureRecordsForDraft(draftId)
+        assertEquals(2, records.size)
+        assertEquals(1, records[0].attempt)
+        assertEquals(2, records[1].attempt)
+    }
+
+    @Test
+    fun missingApiKeyRecordsFailureRecordBeforeProviderCall() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val provider = RecordingAiProvider()
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = InMemoryLocalSettingsRepository(),
+            aiProvider = provider,
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
+        assertEquals(AiError.MissingApiKey, providerError.error)
+        assertEquals(0, provider.totalCalls)
+        val records = repository.listAiFailureRecordsForDraft(draftId)
+        assertEquals(1, records.size)
+        assertEquals(AiErrorType.MissingApiKey, records.single().errorType)
+    }
+
+    @Test
+    fun imageUnavailableIsRecordedAsFailure() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(),
+            imageSource = VisionImageSource { throw RuntimeException("boom") },
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        val failure = assertIs<PostTextGenerationResult.Failure>(result)
+        val providerError = assertIs<PostTextGenerationError.Provider>(failure.error)
+        assertIs<AiError.ImageUnavailable>(providerError.error)
+        val records = repository.listAiFailureRecordsForDraft(draftId)
+        assertEquals(1, records.size)
+        assertEquals(AiOperationType.VisionDescription, records.single().operationType)
+        assertEquals(AiErrorType.ImageUnavailable, records.single().errorType)
+    }
+
+    @Test
+    fun invalidDraftStatusDoesNotRecordFailure() {
+        val repository = FakeManualWorkflowRepository(sampleDraft().copy(status = DraftStatus.Archived))
+        val pipeline = pipeline(
+            repository = repository,
+            settingsRepository = apiKeySettings(),
+            aiProvider = RecordingAiProvider(),
+        )
+
+        val result = pipeline.generateText(draftId, TargetPlatform.InstagramFeedSquare)
+
+        assertIs<PostTextGenerationResult.Failure>(result)
+        assertEquals(emptyList(), repository.listAiFailureRecordsForDraft(draftId))
+    }
+
     private fun pipeline(
         repository: ManualWorkflowRepository,
         settingsRepository: InMemoryLocalSettingsRepository,
         aiProvider: AiProvider,
         clock: EpochClock = MutableClock(1_700_000_100_000L),
+        imageSource: VisionImageSource = fakeImageSource(),
     ): PostTextGenerationPipeline {
         val profileRepository = InMemoryBrandProfileRepository()
         return PostTextGenerationPipeline(
             repository = repository,
             aiProvider = aiProvider,
-            imageSource = fakeImageSource(),
+            imageSource = imageSource,
             activeBrandProfileStore = ActiveBrandProfileStore(settingsRepository, profileRepository),
             settingsRepository = settingsRepository,
             clock = clock,
@@ -513,6 +610,7 @@ class PostTextGenerationPipelineTest {
 
     private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        private val aiFailureRecords = mutableListOf<AiFailureRecord>()
         var deleteBeforeDraftGetNumber: Int? = null
         private var draftGetCount = 0
 
@@ -625,6 +723,13 @@ class PostTextGenerationPipelineTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+
+        override fun save(aiFailureRecord: AiFailureRecord) = saveAiFailureRecord(aiFailureRecord)
+        override fun saveAiFailureRecord(aiFailureRecord: AiFailureRecord) { aiFailureRecords += aiFailureRecord }
+        override fun get(id: AiFailureRecordId): AiFailureRecord? = aiFailureRecords.firstOrNull { it.id == id }
+        override fun listAiFailureRecordsForDraft(id: PostDraftId): List<AiFailureRecord> =
+            aiFailureRecords.filter { it.draftId == id }
+
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,
@@ -654,7 +759,10 @@ class PostTextGenerationPipelineTest {
             return drafts[draftId]
         }
 
-        override fun clearAll() = drafts.clear()
+        override fun clearAll() {
+            drafts.clear()
+            aiFailureRecords.clear()
+        }
 
         private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
             when {

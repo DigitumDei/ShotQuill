@@ -157,17 +157,24 @@ fun ManualPostDraftWorkspaceContent(
         WorkspaceSection("Target platform", state.targetPlatform?.wireValue ?: "No target platform selected")
         WorkspaceSection("Draft status", state.draftStatus?.wireValue ?: "Unknown")
 
+        if (state.isAiOperationInProgress) {
+            Text(
+                text = "Working on ${state.activeAiOperation?.displayName ?: "AI operation"}...",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         OutlinedButton(
             onClick = onAnalyzeVision,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canAnalyzeVision,
+            enabled = state.actions.canAnalyzeVision && !state.isAiOperationInProgress,
         ) {
             Text("Analyze photo")
         }
         Button(
             onClick = onGeneratePostText,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canGeneratePostText,
+            enabled = state.actions.canGeneratePostText && !state.isAiOperationInProgress,
         ) {
             Text("Generate post text")
         }
@@ -232,7 +239,7 @@ fun ManualPostDraftWorkspaceContent(
         OutlinedButton(
             onClick = onEditPhotoWithAi,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading,
+            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading && !state.isAiOperationInProgress,
         ) {
             Text(if (state.editedPhotoUri != null) "Re-run photo edit" else "Run photo edit")
         }
@@ -305,6 +312,25 @@ fun ManualPostDraftWorkspaceContent(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        if (state.failureHistory.isNotEmpty()) {
+            WorkspaceSection("Recent errors", "")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.failureHistory.forEach { record ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = record.operationType.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = record.userMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }

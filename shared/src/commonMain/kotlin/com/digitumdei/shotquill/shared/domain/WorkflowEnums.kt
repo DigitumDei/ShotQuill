@@ -142,3 +142,20 @@ enum class ExportStatus(val wireValue: String) {
         fun fromWireValue(value: String): ExportStatus? = entries.firstOrNull { it.wireValue == value }
     }
 }
+
+enum class AiErrorType(val wireValue: String) {
+    MissingApiKey("missing_api_key"),
+    InvalidApiKey("invalid_api_key"),
+    RateLimited("rate_limited"),
+    QuotaExceeded("quota_exceeded"),
+    ContextLengthExceeded("context_length_exceeded"),
+    ContentPolicyViolation("content_policy_violation"),
+    ImageRejected("image_rejected"),
+    ImageUnavailable("image_unavailable"),
+    NetworkFailure("network_failure"),
+    ProviderFailure("provider_failure");
+
+    companion object {
+        fun fromWireValue(value: String): AiErrorType? = entries.firstOrNull { it.wireValue == value }
+    }
+}

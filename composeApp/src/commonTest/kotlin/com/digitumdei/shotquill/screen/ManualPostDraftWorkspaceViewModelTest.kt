@@ -1,5 +1,7 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.shared.domain.AiErrorType
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -1199,6 +1201,211 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(result.summary.contains("refinement=Make it warmer"))
         assertTrue(result.prompt.contains("background_adjustment"))
         assertTrue(result.prompt.contains("bluesky_post"))
+    }
+
+    @Test
+    fun exposesLoadingStateWhileGeneratingPostText() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val capturedIsInProgress = mutableListOf<Boolean>()
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val capturingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText {
+                capturedIsInProgress.add(viewModelRef[0]!!.state.isAiOperationInProgress)
+                return FakeManualDraftAiProvider().generatePostText(draft, targetPlatform, nowEpochMillis)
+            }
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                error("unused")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = capturingProvider,
+            clock = FixedClock(1_700_000_100_000L),
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        assertEquals(1, capturedIsInProgress.size)
+        assertTrue(capturedIsInProgress.single())
+        assertFalse(viewModel.state.isAiOperationInProgress)
+        assertNull(viewModel.state.activeAiOperation)
+    }
+
+    @Test
+    fun exposesLoadingStateWhileAnalyzingVision() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val capturedIsInProgress = mutableListOf<Boolean>()
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val capturingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription {
+                capturedIsInProgress.add(viewModelRef[0]!!.state.isAiOperationInProgress)
+                return FakeManualDraftAiProvider().analyzeVision(draft, nowEpochMillis)
+            }
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                error("unused")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = capturingProvider,
+            clock = FixedClock(1_700_000_090_000L),
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals(1, capturedIsInProgress.size)
+        assertTrue(capturedIsInProgress.single())
+        assertFalse(viewModel.state.isAiOperationInProgress)
+        assertNull(viewModel.state.activeAiOperation)
+    }
+
+    @Test
+    fun ignoresDuplicateGeneratePostTextWhileInProgress() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val reentrantProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText {
+                viewModelRef[0]!!.generatePostText()
+                return FakeManualDraftAiProvider().generatePostText(draft, targetPlatform, nowEpochMillis)
+            }
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                error("unused")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = reentrantProvider,
+            clock = FixedClock(1_700_000_100_000L),
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        assertEquals(2, viewModel.state.promptHistory.size)
+        assertEquals(1, repository.get(draftId)?.captionResults?.size)
+    }
+
+    @Test
+    fun recordsAndSurfacesFailureWhenPhotoEditThrows() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                throw RuntimeException("Provider failure")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = throwingProvider,
+            clock = FixedClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+
+        assertEquals(1, viewModel.state.failureHistory.size)
+        val record = viewModel.state.failureHistory.single()
+        assertEquals(AiOperationType.PhotoEdit, record.operationType)
+        assertEquals(AiErrorType.ProviderFailure, record.errorType)
+        assertEquals("Photo edit failed: Provider failure", viewModel.state.statusMessage)
+        assertEquals(PhotoEditFormOperationState.Error, viewModel.state.photoEditForm.operationState)
+        assertEquals(1, repository.get(draftId)?.aiFailureRecords?.size)
+    }
+
+    @Test
+    fun retryAfterPhotoEditFailureAppendsSecondFailureRecord() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                error("unused")
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                throw RuntimeException("Provider failure")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = throwingProvider,
+            clock = IncrementingClock(1_700_000_200_000L),
+        )
+        viewModel.load()
+
+        viewModel.editPhotoWithAi()
+        viewModel.editPhotoWithAi()
+
+        val stored = repository.get(draftId)
+        assertEquals(2, stored?.aiFailureRecords?.size)
+        val sorted = stored!!.aiFailureRecords.sortedBy { it.attempt }
+        assertEquals(1, sorted[0].attempt)
+        assertEquals(2, sorted[1].attempt)
+        assertEquals(2, viewModel.state.failureHistory.size)
+    }
+
+    @Test
+    fun recordsFailureWhenVisionAnalysisThrows() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val throwingProvider = object : ManualDraftAiProvider {
+            override fun analyzeVision(draft: PostDraft, nowEpochMillis: Long): GeneratedVisionDescription =
+                throw RuntimeException("vision boom")
+            override fun generatePostText(
+                draft: PostDraft,
+                targetPlatform: TargetPlatform,
+                nowEpochMillis: Long,
+            ): GeneratedPostText =
+                error("unused")
+            override fun editPhoto(draft: PostDraft, formState: PhotoEditFormState, nowEpochMillis: Long): GeneratedPhotoEdit =
+                error("unused")
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            aiProvider = throwingProvider,
+            clock = FixedClock(1_700_000_090_000L),
+        )
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals(1, viewModel.state.failureHistory.size)
+        val record = viewModel.state.failureHistory.single()
+        assertEquals(AiOperationType.VisionDescription, record.operationType)
+        assertTrue(viewModel.state.statusMessage!!.startsWith("Vision analysis failed:"))
+        assertEquals(1, repository.get(draftId)?.aiFailureRecords?.size)
     }
 
     private class RecordingPostTextGenerator(

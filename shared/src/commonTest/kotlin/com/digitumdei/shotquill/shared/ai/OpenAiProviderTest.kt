@@ -192,6 +192,20 @@ class OpenAiProviderTest {
     }
 
     @Test
+    fun mapsContextLengthFailureFromTransport() {
+        val provider = configuredProvider(
+            FailingOpenAiTransport(
+                OpenAiHttpResult.Success(400, """{"error":{"code":"context_length_exceeded"}}"""),
+            ),
+        )
+
+        val result = provider.generateCaption(sampleCaptionRequest())
+
+        val failure = assertIs<AiProviderResult.Failure>(result)
+        assertIs<AiError.ContextLengthExceeded>(failure.error)
+    }
+
+    @Test
     fun mapsHttpAndNetworkFailuresFromTransport() {
         val invalidKeyProvider = configuredProvider(FailingOpenAiTransport(OpenAiHttpResult.Success(401, "{}")))
         val quotaProvider = configuredProvider(

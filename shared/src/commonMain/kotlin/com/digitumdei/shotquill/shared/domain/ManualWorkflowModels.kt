@@ -20,6 +20,7 @@ data class PostDraft(
     val exportRecords: List<ExportRecord>,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val aiFailureRecords: List<AiFailureRecord> = emptyList(),
 ) {
     init {
         require(mediaItems.isNotEmpty()) { "Post draft must include at least one media item" }
@@ -160,6 +161,21 @@ data class PromptHistoryEntry(
     val modelName: String?,
     val createdAtEpochMillis: Long,
 )
+
+data class AiFailureRecord(
+    val id: AiFailureRecordId,
+    val draftId: PostDraftId,
+    val operationType: AiOperationType,
+    val errorType: AiErrorType,
+    val userMessage: String,
+    val attempt: Int,
+    val createdAtEpochMillis: Long,
+) {
+    init {
+        require(attempt >= 1) { "attempt must be at least 1" }
+        require(createdAtEpochMillis >= 0) { "createdAtEpochMillis must be non-negative" }
+    }
+}
 
 data class ExportRecord(
     val id: ExportRecordId,

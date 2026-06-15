@@ -32,3 +32,6 @@ value class ExportRecordId(val value: String)
 
 @JvmInline
 value class BrandProfileId(val value: String)
+
+@JvmInline
+value class AiFailureRecordId(val value: String)

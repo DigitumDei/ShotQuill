@@ -2,6 +2,9 @@ package com.digitumdei.shotquill.shared.storage
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.digitumdei.shotquill.shared.db.ShotQuillDatabase
+import com.digitumdei.shotquill.shared.domain.AiErrorType
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -599,6 +602,73 @@ class SqlDelightManualWorkflowRepositoryTest {
         assertNull(repository.getPhotoEditResult(PhotoEditResultId("photo-edit-result-1")))
         assertNull(repository.get(PromptHistoryEntryId("prompt-1")))
         assertNull(repository.get(ExportRecordId("export-1")))
+        driver.close()
+    }
+
+    @Test
+    fun persistsAndReadsAiFailureRecords() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val draftId = PostDraftId("draft-1")
+        val failureId = AiFailureRecordId("ai-failure-1")
+
+        repository.save(samplePostDraft())
+        val record = AiFailureRecord(
+            id = failureId,
+            draftId = draftId,
+            operationType = AiOperationType.CaptionGeneration,
+            errorType = AiErrorType.RateLimited,
+            userMessage = "Rate limited by provider.",
+            attempt = 1,
+            createdAtEpochMillis = createdAt,
+        )
+        repository.saveAiFailureRecord(record)
+
+        val byId = repository.get(failureId)
+        assertNotNull(byId)
+        assertEquals(failureId, byId.id)
+        assertEquals(draftId, byId.draftId)
+        assertEquals(AiOperationType.CaptionGeneration, byId.operationType)
+        assertEquals(AiErrorType.RateLimited, byId.errorType)
+        assertEquals("Rate limited by provider.", byId.userMessage)
+        assertEquals(1, byId.attempt)
+        assertEquals(createdAt, byId.createdAtEpochMillis)
+
+        val list = repository.listAiFailureRecordsForDraft(draftId)
+        assertEquals(1, list.size)
+        assertEquals(failureId, list.single().id)
+
+        val draftWithRecords = repository.get(draftId)
+        assertNotNull(draftWithRecords)
+        assertEquals(1, draftWithRecords.aiFailureRecords.size)
+        assertEquals(failureId, draftWithRecords.aiFailureRecords.single().id)
+
+        driver.close()
+    }
+
+    @Test
+    fun redactsOpenAiApiKeysInAiFailureRecordUserMessage() {
+        val driver = inMemoryDriver()
+        val repository = SqlDelightManualWorkflowRepository(driver)
+        val draftId = PostDraftId("draft-1")
+        val failureId = AiFailureRecordId("ai-failure-secret-1")
+
+        repository.save(samplePostDraft())
+        repository.saveAiFailureRecord(
+            AiFailureRecord(
+                id = failureId,
+                draftId = draftId,
+                operationType = AiOperationType.VisionDescription,
+                errorType = AiErrorType.ProviderFailure,
+                userMessage = "Failed with sk-live_abcdefghi123456 in message.",
+                attempt = 1,
+                createdAtEpochMillis = createdAt,
+            ),
+        )
+
+        val stored = repository.get(failureId)
+        assertNotNull(stored)
+        assertEquals("Failed with ${SecretRedactor.Redacted} in message.", stored.userMessage)
         driver.close()
     }
 

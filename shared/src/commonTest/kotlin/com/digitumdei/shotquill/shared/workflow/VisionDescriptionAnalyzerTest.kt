@@ -12,6 +12,8 @@ import com.digitumdei.shotquill.shared.ai.PhotoEditGenerationRequest
 import com.digitumdei.shotquill.shared.ai.PhotoEditOutput
 import com.digitumdei.shotquill.shared.ai.VisionDescriptionOutput
 import com.digitumdei.shotquill.shared.ai.VisionDescriptionRequest
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -133,6 +135,23 @@ class VisionDescriptionAnalyzerTest {
         assertEquals(1, repository.get(draftId)?.promptHistory?.size)
     }
 
+    @Test
+    fun imageLoadFailureMapsToImageUnavailable() {
+        val repository = FakeManualWorkflowRepository(sampleDraft())
+        val analyzer = VisionDescriptionAnalyzer(
+            repository = repository,
+            aiProvider = FakeAiProvider(),
+            imageSource = VisionImageSource { throw RuntimeException("disk error") },
+            clock = FixedClock(1_700_000_100_000L),
+        )
+
+        val result = analyzer.analyzePrimaryPhoto(draftId)
+
+        val failure = assertIs<VisionDescriptionAnalysisResult.Failure>(result)
+        val providerError = assertIs<VisionDescriptionAnalysisError.Provider>(failure.error)
+        assertIs<com.digitumdei.shotquill.shared.ai.AiError.ImageUnavailable>(providerError.error)
+    }
+
     private fun sampleDraft(): PostDraft =
         PostDraft(
             id = draftId,
@@ -201,6 +220,7 @@ class VisionDescriptionAnalyzerTest {
 
     private class FakeManualWorkflowRepository(initialDraft: PostDraft) : ManualWorkflowRepository {
         private val drafts = mutableMapOf(initialDraft.id to initialDraft)
+        private val aiFailureRecords = mutableListOf<AiFailureRecord>()
 
         override fun save(mediaAsset: MediaAsset) = Unit
         override fun get(id: MediaAssetId): MediaAsset? = drafts.values
@@ -286,6 +306,13 @@ class VisionDescriptionAnalyzerTest {
         override fun get(id: ExportRecordId): ExportRecord? = null
         override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = emptyList()
         override fun saveExportRecord(exportRecord: ExportRecord) = Unit
+
+        override fun save(aiFailureRecord: AiFailureRecord) = saveAiFailureRecord(aiFailureRecord)
+        override fun saveAiFailureRecord(aiFailureRecord: AiFailureRecord) { aiFailureRecords += aiFailureRecord }
+        override fun get(id: AiFailureRecordId): AiFailureRecord? = aiFailureRecords.firstOrNull { it.id == id }
+        override fun listAiFailureRecordsForDraft(id: PostDraftId): List<AiFailureRecord> =
+            aiFailureRecords.filter { it.draftId == id }
+
         override fun recordPostTextGeneration(
             draftId: PostDraftId,
             status: DraftStatus,
@@ -315,7 +342,10 @@ class VisionDescriptionAnalyzerTest {
             return drafts[draftId]
         }
 
-        override fun clearAll() = drafts.clear()
+        override fun clearAll() {
+            drafts.clear()
+            aiFailureRecords.clear()
+        }
 
         private fun postTextGenerationStatus(current: DraftStatus, requested: DraftStatus): DraftStatus? =
             when {

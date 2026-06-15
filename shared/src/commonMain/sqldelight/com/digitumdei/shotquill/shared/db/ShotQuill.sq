@@ -165,6 +165,16 @@ CREATE TABLE export_records (
   completed_at_epoch_millis INTEGER
 );
 
+CREATE TABLE ai_failure_records (
+  id TEXT NOT NULL PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  operation_type TEXT NOT NULL,
+  error_type TEXT NOT NULL,
+  user_message TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
 upsertMediaAsset:
 INSERT INTO media_assets(
   id,
@@ -592,6 +602,38 @@ SELECT * FROM export_records WHERE id = ?;
 
 deleteAllExportRecords:
 DELETE FROM export_records;
+
+upsertAiFailureRecord:
+INSERT INTO ai_failure_records(
+  id,
+  draft_id,
+  operation_type,
+  error_type,
+  user_message,
+  attempt,
+  created_at_epoch_millis
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  draft_id = excluded.draft_id,
+  operation_type = excluded.operation_type,
+  error_type = excluded.error_type,
+  user_message = excluded.user_message,
+  attempt = excluded.attempt,
+  created_at_epoch_millis = excluded.created_at_epoch_millis;
+
+deleteAiFailureRecordsByDraftId:
+DELETE FROM ai_failure_records WHERE draft_id = ?;
+
+selectAiFailureRecordsByDraftId:
+SELECT * FROM ai_failure_records
+WHERE draft_id = ?
+ORDER BY created_at_epoch_millis ASC;
+
+selectAiFailureRecordById:
+SELECT * FROM ai_failure_records WHERE id = ?;
+
+deleteAllAiFailureRecords:
+DELETE FROM ai_failure_records;
 
 deleteAllPromptHistoryEntries:
 DELETE FROM prompt_history_entries;

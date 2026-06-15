@@ -2,6 +2,9 @@ package com.digitumdei.shotquill.shared.storage
 
 import app.cash.sqldelight.db.SqlDriver
 import com.digitumdei.shotquill.shared.db.ShotQuillDatabase
+import com.digitumdei.shotquill.shared.domain.AiErrorType
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -147,6 +150,7 @@ class SqlDelightManualWorkflowRepository(
             postDraft.photoEditResults.forEach { savePhotoEditResult(it) }
             postDraft.promptHistory.forEach { savePromptHistoryEntry(it) }
             postDraft.exportRecords.forEach { saveExportRecord(it) }
+            postDraft.aiFailureRecords.forEach { saveAiFailureRecord(it) }
         }
     }
 
@@ -199,6 +203,7 @@ class SqlDelightManualWorkflowRepository(
             photoEditResults = selectPhotoEditResults(id),
             promptHistory = selectPromptHistoryEntries(id),
             exportRecords = selectExportRecords(id),
+            aiFailureRecords = selectAiFailureRecords(id),
             createdAt = Instant.fromEpochMilliseconds(draft.createdAt),
             updatedAt = Instant.fromEpochMilliseconds(draft.updatedAt),
         )
@@ -428,6 +433,27 @@ class SqlDelightManualWorkflowRepository(
 
     override fun listExportRecordsForDraft(id: PostDraftId): List<ExportRecord> = selectExportRecords(id)
 
+    override fun save(aiFailureRecord: AiFailureRecord) {
+        saveAiFailureRecord(aiFailureRecord)
+    }
+
+    override fun saveAiFailureRecord(aiFailureRecord: AiFailureRecord) {
+        queries.upsertAiFailureRecord(
+            id = aiFailureRecord.id.value,
+            draft_id = aiFailureRecord.draftId.value,
+            operation_type = aiFailureRecord.operationType.wireValue,
+            error_type = aiFailureRecord.errorType.wireValue,
+            user_message = SecretRedactor.redactOpenAiApiKeys(aiFailureRecord.userMessage),
+            attempt = aiFailureRecord.attempt.toLong(),
+            created_at_epoch_millis = aiFailureRecord.createdAtEpochMillis,
+        )
+    }
+
+    override fun get(id: AiFailureRecordId): AiFailureRecord? =
+        queries.selectAiFailureRecordById(id.value, ManualWorkflowStorageMapper::aiFailureRecord).executeAsOneOrNull()
+
+    override fun listAiFailureRecordsForDraft(id: PostDraftId): List<AiFailureRecord> = selectAiFailureRecords(id)
+
     override fun recordPostTextGeneration(
         draftId: PostDraftId,
         status: DraftStatus,
@@ -484,6 +510,7 @@ class SqlDelightManualWorkflowRepository(
 
     override fun clearAll() {
         queries.transaction {
+            queries.deleteAllAiFailureRecords()
             queries.deleteAllExportRecords()
             queries.deleteAllPromptHistoryEntries()
             queries.deleteAllPhotoEditResults()
@@ -506,6 +533,7 @@ class SqlDelightManualWorkflowRepository(
     }
 
     private fun deleteOwnedDraftRows(id: PostDraftId) {
+        queries.deleteAiFailureRecordsByDraftId(id.value)
         queries.deleteExportRecordsByDraftId(id.value)
         queries.deletePromptHistoryEntriesByDraftId(id.value)
         queries.deletePhotoEditResultsByDraftId(id.value)
@@ -516,6 +544,19 @@ class SqlDelightManualWorkflowRepository(
         queries.deleteCaptionRequestsByDraftId(id.value)
         queries.deleteVisionDescriptionsByDraftId(id.value)
     }
+
+    private fun selectAiFailureRecords(id: PostDraftId): List<AiFailureRecord> =
+        queries.selectAiFailureRecordsByDraftId(id.value) {
+                recordId,
+                draftId,
+                operationType,
+                errorType,
+                userMessage,
+                attempt,
+                createdAt,
+            ->
+            ManualWorkflowStorageMapper.aiFailureRecord(recordId, draftId, operationType, errorType, userMessage, attempt, createdAt)
+        }.executeAsList()
 
     private fun selectMediaAsset(id: MediaAssetId): MediaAsset? =
         queries.selectMediaAssetById(id.value, ::mediaAsset).executeAsOneOrNull()
@@ -953,6 +994,24 @@ internal object ManualWorkflowStorageMapper {
         errorMessage = errorMessage?.let(SecretRedactor::redactOpenAiApiKeys),
         createdAtEpochMillis = createdAt,
         completedAtEpochMillis = completedAt,
+    )
+
+    fun aiFailureRecord(
+        id: String,
+        draftId: String,
+        operationType: String,
+        errorType: String,
+        userMessage: String,
+        attempt: Long,
+        createdAt: Long,
+    ): AiFailureRecord = AiFailureRecord(
+        id = AiFailureRecordId(id),
+        draftId = PostDraftId(draftId),
+        operationType = enumFromWire(operationType, AiOperationType::fromWireValue),
+        errorType = enumFromWire(errorType, AiErrorType::fromWireValue),
+        userMessage = SecretRedactor.redactOpenAiApiKeys(userMessage),
+        attempt = attempt.toInt(),
+        createdAtEpochMillis = createdAt,
     )
 
     fun <T> enumFromWire(value: String, parser: (String) -> T?): T =

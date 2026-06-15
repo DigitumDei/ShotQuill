@@ -42,7 +42,15 @@ class VisionDescriptionAnalyzer(
         }
 
         val prompt = VisionDescriptionPromptFactory.buildPrompt(mediaAsset)
-        val image = imageSource.load(mediaAsset)
+        val image = try {
+            imageSource.load(mediaAsset)
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            return VisionDescriptionAnalysisResult.Failure(
+                VisionDescriptionAnalysisError.Provider(AiError.ImageUnavailable()),
+            )
+        }
         return when (val providerResult = aiProvider.describeVision(
             VisionDescriptionRequest(
                 draftId = draft.id,

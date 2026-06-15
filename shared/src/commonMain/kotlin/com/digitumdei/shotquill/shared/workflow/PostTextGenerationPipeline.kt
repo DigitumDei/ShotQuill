@@ -3,8 +3,11 @@ package com.digitumdei.shotquill.shared.workflow
 import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.ai.AiProvider
 import com.digitumdei.shotquill.shared.ai.AiProviderResult
+import com.digitumdei.shotquill.shared.ai.toFailureType
 import com.digitumdei.shotquill.shared.ai.AltTextGenerationRequest
 import com.digitumdei.shotquill.shared.ai.CaptionGenerationRequest
+import com.digitumdei.shotquill.shared.domain.AiFailureRecord
+import com.digitumdei.shotquill.shared.domain.AiFailureRecordId
 import com.digitumdei.shotquill.shared.domain.AiOperationType
 import com.digitumdei.shotquill.shared.domain.AltTextResult
 import com.digitumdei.shotquill.shared.domain.AltTextResultId
@@ -64,7 +67,7 @@ class PostTextGenerationPipeline(
             PostTextGenerationError.DraftNotFound,
         )
         if (!settingsRepository.hasOpenAiApiKey()) {
-            return PostTextGenerationResult.Failure(PostTextGenerationError.Provider(AiError.MissingApiKey))
+            return providerFailure(draftId, AiOperationType.CaptionGeneration, AiError.MissingApiKey)
         }
         if (textGeneratedStatus(draft) == null) {
             return PostTextGenerationResult.Failure(PostTextGenerationError.InvalidDraftStatus(draft.status))
@@ -78,12 +81,10 @@ class PostTextGenerationPipeline(
                 clock = clock,
             ).analyzePrimaryPhoto(draftId, reuseCached = reuseVisionDescription)
         ) {
-            is VisionDescriptionAnalysisResult.Failure -> return PostTextGenerationResult.Failure(
-                when (val error = result.error) {
-                    VisionDescriptionAnalysisError.DraftNotFound -> PostTextGenerationError.DraftNotFound
-                    is VisionDescriptionAnalysisError.Provider -> PostTextGenerationError.Provider(error.error)
-                },
-            )
+            is VisionDescriptionAnalysisResult.Failure -> return when (val error = result.error) {
+                VisionDescriptionAnalysisError.DraftNotFound -> PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
+                is VisionDescriptionAnalysisError.Provider -> providerFailure(draftId, AiOperationType.VisionDescription, error.error)
+            }
             is VisionDescriptionAnalysisResult.Success -> result.visionDescription
         }
 
@@ -107,9 +108,7 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> return providerFailure(draftId, AiOperationType.CaptionGeneration, result.error)
             is AiProviderResult.Success -> result.value
         }
         val altTextOutput = when (
@@ -121,9 +120,7 @@ class PostTextGenerationPipeline(
                 ),
             )
         ) {
-            is AiProviderResult.Failure -> return PostTextGenerationResult.Failure(
-                PostTextGenerationError.Provider(result.error),
-            )
+            is AiProviderResult.Failure -> return providerFailure(draftId, AiOperationType.AltTextGeneration, result.error)
             is AiProviderResult.Success -> result.value
         }
 
@@ -225,6 +222,26 @@ class PostTextGenerationPipeline(
     private fun operationUpdatedAt(draft: PostDraft, nowEpochMillis: Long): Instant {
         val now = Instant.fromEpochMilliseconds(nowEpochMillis)
         return if (now >= draft.updatedAt) now else draft.updatedAt
+    }
+
+    private fun providerFailure(
+        draftId: PostDraftId,
+        operationType: AiOperationType,
+        error: AiError,
+    ): PostTextGenerationResult.Failure {
+        val now = clock.nowMillis()
+        repository.saveAiFailureRecord(
+            AiFailureRecord(
+                id = AiFailureRecordId("ai-failure-${nextIdSuffix(now)}"),
+                draftId = draftId,
+                operationType = operationType,
+                errorType = error.toFailureType(),
+                userMessage = error.userMessage,
+                attempt = repository.listAiFailureRecordsForDraft(draftId).size + 1,
+                createdAtEpochMillis = now,
+            ),
+        )
+        return PostTextGenerationResult.Failure(PostTextGenerationError.Provider(error))
     }
 
     private fun CaptionResult.responseSummary(): String =
