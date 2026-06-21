@@ -111,16 +111,13 @@ class ManualPostDraftWorkspaceViewModel(
     var state: ManualPostDraftWorkspaceState by mutableStateOf(unloadedState())
         private set
     private var operationSequence = 0
-    private var operationInProgress = false
 
     private fun runAiOperation(operation: AiOperationType, block: () -> Unit) {
-        if (operationInProgress) return
-        operationInProgress = true
+        if (state.isAiOperationInProgress) return
         state = state.copy(isAiOperationInProgress = true, activeAiOperation = operation)
         try {
             block()
         } finally {
-            operationInProgress = false
             state = state.copy(isAiOperationInProgress = false, activeAiOperation = null)
         }
     }

@@ -69,7 +69,6 @@ object AiErrorMapper {
                     redactedBody.contains("context_length") ||
                         redactedBody.contains("context length") ||
                         redactedBody.contains("maximum context") ||
-                        redactedBody.contains("too long") ||
                         redactedBody.contains("too many tokens") -> AiError.ContextLengthExceeded()
                     redactedBody.contains("image") ||
                         redactedBody.contains("size") ||
