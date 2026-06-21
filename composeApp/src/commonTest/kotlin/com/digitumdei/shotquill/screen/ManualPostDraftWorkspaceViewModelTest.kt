@@ -3317,6 +3317,126 @@ class ManualPostDraftWorkspaceViewModelTest {
         assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Should still be able to re-edit after failure")
     }
 
+    @Test
+    fun exposesLoadingStateWhileAnalyzingVision() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val capturedFlags = mutableListOf<Boolean>()
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val analyzer = object : AnalyzeVision {
+            override fun analyzePrimaryPhoto(
+                draftId: PostDraftId,
+                reuseCached: Boolean,
+            ): VisionDescriptionAnalysisResult {
+                capturedFlags.add(viewModelRef[0]!!.state.isAiOperationInProgress)
+                return VisionDescriptionAnalysisResult.Failure(
+                    VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
+                )
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = analyzer,
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals(1, capturedFlags.size)
+        assertTrue(capturedFlags.single())
+        assertFalse(viewModel.state.isAiOperationInProgress)
+    }
+
+    @Test
+    fun exposesLoadingStateWhileGeneratingPostText() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        val capturedFlags = mutableListOf<Boolean>()
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val generator = object : PostTextGenerator {
+            override fun generateText(
+                draftId: PostDraftId,
+                targetPlatform: TargetPlatform,
+                reuseVisionDescription: Boolean,
+            ): PostTextGenerationResult {
+                capturedFlags.add(viewModelRef[0]!!.state.isAiOperationInProgress)
+                return PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            postTextGenerator = generator,
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        assertEquals(1, capturedFlags.size)
+        assertTrue(capturedFlags.single())
+        assertFalse(viewModel.state.isAiOperationInProgress)
+    }
+
+    @Test
+    fun ignoresDuplicateAnalyzeWhileInProgress() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        var invocationCount = 0
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val analyzer = object : AnalyzeVision {
+            override fun analyzePrimaryPhoto(
+                draftId: PostDraftId,
+                reuseCached: Boolean,
+            ): VisionDescriptionAnalysisResult {
+                invocationCount++
+                viewModelRef[0]!!.analyzeVisionDescription()
+                return VisionDescriptionAnalysisResult.Failure(
+                    VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
+                )
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            analyzeVision = analyzer,
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.analyzeVisionDescription()
+
+        assertEquals(1, invocationCount)
+    }
+
+    @Test
+    fun ignoresDuplicateGeneratePostTextWhileInProgress() {
+        val repository = FakePostDraftRepository(sampleDraft())
+        var invocationCount = 0
+        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
+        val generator = object : PostTextGenerator {
+            override fun generateText(
+                draftId: PostDraftId,
+                targetPlatform: TargetPlatform,
+                reuseVisionDescription: Boolean,
+            ): PostTextGenerationResult {
+                invocationCount++
+                viewModelRef[0]!!.generatePostText()
+                return PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
+            }
+        }
+        val viewModel = ManualPostDraftWorkspaceViewModel(
+            draftId = draftId,
+            postDraftRepository = repository,
+            postTextGenerator = generator,
+        )
+        viewModelRef[0] = viewModel
+        viewModel.load()
+
+        viewModel.generatePostText()
+
+        assertEquals(1, invocationCount)
+    }
+
     private class RecordingPhotoEditExecutor(
         private val resultDraft: PostDraft? = null,
         private val result: PhotoEditExecutionResult? = null,

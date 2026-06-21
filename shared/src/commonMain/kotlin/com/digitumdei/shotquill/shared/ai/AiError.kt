@@ -21,6 +21,10 @@ sealed class AiError {
         override val userMessage: String = "The OpenAI account quota has been reached.",
     ) : AiError()
 
+    data class ContextLengthExceeded(
+        override val userMessage: String = "The request was too large for the AI model. Try a smaller image or shorter prompt.",
+    ) : AiError()
+
     data class ImageRejected(
         override val userMessage: String = "The image could not be used by the AI provider.",
     ) : AiError()
@@ -49,6 +53,7 @@ object AiErrorMapper {
         val redactedBody = SecretRedactor.redactKnownSecrets(body, knownSecrets).lowercase()
         return when (statusCode) {
             401 -> AiError.InvalidApiKey()
+            413 -> AiError.ContextLengthExceeded()
             429 -> {
                 if (redactedBody.contains("quota") || redactedBody.contains("insufficient_quota")) {
                     AiError.QuotaExceeded()
@@ -61,6 +66,11 @@ object AiErrorMapper {
                     redactedBody.contains("content_policy") ||
                         redactedBody.contains("content policy") ||
                         redactedBody.contains("safety") -> AiError.ContentPolicyViolation()
+                    redactedBody.contains("context_length") ||
+                        redactedBody.contains("context length") ||
+                        redactedBody.contains("maximum context") ||
+                        redactedBody.contains("too long") ||
+                        redactedBody.contains("too many tokens") -> AiError.ContextLengthExceeded()
                     redactedBody.contains("image") ||
                         redactedBody.contains("size") ||
                         redactedBody.contains("format") -> AiError.ImageRejected()
