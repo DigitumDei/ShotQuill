@@ -1,0 +1,363 @@
+diff --git a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
+index e8cb474..40daf5b 100644
+--- a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
++++ b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceScreen.kt
+@@ -89,6 +89,24 @@ fun ManualPostDraftWorkspaceScreen(
+         }
+     }
+
++    // AI operations DROP (rather than queue) a tap that arrives while another
++    // operation holds the lock, so a double-tap cannot enqueue a duplicate AI
++    // call. Cheap, non-duplicate actions (selection, copy, toggles) keep using
++    // the queuing helpers above so they still apply after a running operation.
++    fun refreshAiOperation(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
++        coroutineScope.launch {
++            if (operationMutex.tryLock()) {
++                try {
++                    withContext(Dispatchers.IO) {
++                        viewModel.block()
++                    }
++                } finally {
++                    operationMutex.unlock()
++                }
++            }
++        }
++    }
++
+     fun refreshInMemory(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
+         coroutineScope.launch {
+             operationMutex.withLock {
+@@ -107,9 +125,9 @@ fun ManualPostDraftWorkspaceScreen(
+
+     ManualPostDraftWorkspaceContent(
+         state = state,
+-        onAnalyzeVision = { refresh { analyzeVisionDescription() } },
+-        onGeneratePostText = { refresh { generatePostText() } },
+-        onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
++        onAnalyzeVision = { refreshAiOperation { analyzeVisionDescription() } },
++        onGeneratePostText = { refreshAiOperation { generatePostText() } },
++        onEditPhotoWithAi = { refreshAiOperation { editPhotoWithAi() } },
+         onSelectEditedPhoto = { refresh { selectEditedPhoto() } },
+         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
+         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
+@@ -172,6 +190,13 @@ fun ManualPostDraftWorkspaceContent(
+             Text(it, style = MaterialTheme.typography.bodyMedium)
+         }
+
++        if (state.isAiOperationInProgress) {
++            Text(
++                text = "Working on ${state.activeAiOperation?.displayName ?: "AI operation"}...",
++                style = MaterialTheme.typography.bodySmall,
++            )
++        }
++
+         WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
+         WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
+         WorkspaceSection("Active photo", state.activePhotoUri ?: state.originalPhotoUri ?: "No active photo")
+@@ -198,14 +223,14 @@ fun ManualPostDraftWorkspaceContent(
+         OutlinedButton(
+             onClick = onAnalyzeVision,
+             modifier = Modifier.fillMaxWidth(),
+-            enabled = state.actions.canAnalyzeVision,
++            enabled = state.actions.canAnalyzeVision && !state.isAiOperationInProgress,
+         ) {
+             Text("Analyze photo")
+         }
+         Button(
+             onClick = onGeneratePostText,
+             modifier = Modifier.fillMaxWidth(),
+-            enabled = state.actions.canGeneratePostText,
++            enabled = state.actions.canGeneratePostText && !state.isAiOperationInProgress,
+         ) {
+             Text("Generate post text")
+         }
+@@ -270,7 +295,7 @@ fun ManualPostDraftWorkspaceContent(
+         OutlinedButton(
+             onClick = onEditPhotoWithAi,
+             modifier = Modifier.fillMaxWidth(),
+-            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading,
++            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading && !state.isAiOperationInProgress,
+         ) {
+             Text(if (state.editedPhotoUri != null) "Re-run photo edit" else "Run photo edit")
+         }
+diff --git a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
+index b831427..375a753 100644
+--- a/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
++++ b/composeApp/src/commonMain/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModel.kt
+@@ -78,6 +78,8 @@ data class ManualPostDraftWorkspaceState(
+     val isPromptHistoryVisible: Boolean,
+     val isPhotoEditHistoryVisible: Boolean,
+     val photoEditForm: PhotoEditFormState,
++    val isAiOperationInProgress: Boolean = false,
++    val activeAiOperation: AiOperationType? = null,
+ )
+
+ data class ManualPostDraftWorkspaceActions(
+@@ -110,6 +112,16 @@ class ManualPostDraftWorkspaceViewModel(
+         private set
+     private var operationSequence = 0
+
++    private fun runAiOperation(operation: AiOperationType, block: () -> Unit) {
++        if (state.isAiOperationInProgress) return
++        state = state.copy(isAiOperationInProgress = true, activeAiOperation = operation)
++        try {
++            block()
++        } finally {
++            state = state.copy(isAiOperationInProgress = false, activeAiOperation = null)
++        }
++    }
++
+     fun load() {
+         state = postDraftRepository.get(draftId)?.toState(
+             statusMessage = null,
+@@ -117,7 +129,9 @@ class ManualPostDraftWorkspaceViewModel(
+         ) ?: unloadedState(statusMessage = "Draft not found")
+     }
+
+-    fun analyzeVisionDescription() {
++    fun analyzeVisionDescription() = runAiOperation(AiOperationType.VisionDescription) { analyzeVisionDescriptionInternal() }
++
++    private fun analyzeVisionDescriptionInternal() {
+         val analyzer = analyzeVision ?: run {
+             state = state.copy(statusMessage = "Vision analysis not available")
+             return
+@@ -154,7 +168,9 @@ class ManualPostDraftWorkspaceViewModel(
+         }
+     }
+
+-    fun generatePostText() {
++    fun generatePostText() = runAiOperation(AiOperationType.CaptionGeneration) { generatePostTextInternal() }
++
++    private fun generatePostTextInternal() {
+         postTextGenerator?.let {
+             generatePostTextWithPipeline(it)
+             return
+@@ -312,7 +328,9 @@ class ManualPostDraftWorkspaceViewModel(
+         )
+     }
+
+-    fun editPhotoWithAi() {
++    fun editPhotoWithAi() = runAiOperation(AiOperationType.PhotoEdit) { editPhotoWithAiInternal() }
++
++    private fun editPhotoWithAiInternal() {
+         val executor = photoEditExecutor ?: run {
+             state = state.copy(
+                 statusMessage = "Photo edit execution pipeline not available",
+diff --git a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
+index 88af0a8..5206c1f 100644
+--- a/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
++++ b/composeApp/src/commonTest/kotlin/com/digitumdei/shotquill/screen/ManualPostDraftWorkspaceViewModelTest.kt
+@@ -3317,6 +3317,126 @@ class ManualPostDraftWorkspaceViewModelTest {
+         assertTrue(viewModel.state.actions.canEditPhotoWithAi, "Should still be able to re-edit after failure")
+     }
+
++    @Test
++    fun exposesLoadingStateWhileAnalyzingVision() {
++        val repository = FakePostDraftRepository(sampleDraft())
++        val capturedFlags = mutableListOf<Boolean>()
++        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
++        val analyzer = object : AnalyzeVision {
++            override fun analyzePrimaryPhoto(
++                draftId: PostDraftId,
++                reuseCached: Boolean,
++            ): VisionDescriptionAnalysisResult {
++                capturedFlags.add(viewModelRef[0]!!.state.isAiOperationInProgress)
++                return VisionDescriptionAnalysisResult.Failure(
++                    VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
++                )
++            }
++        }
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            analyzeVision = analyzer,
++        )
++        viewModelRef[0] = viewModel
++        viewModel.load()
++
++        viewModel.analyzeVisionDescription()
++
++        assertEquals(1, capturedFlags.size)
++        assertTrue(capturedFlags.single())
++        assertFalse(viewModel.state.isAiOperationInProgress)
++    }
++
++    @Test
++    fun exposesLoadingStateWhileGeneratingPostText() {
++        val repository = FakePostDraftRepository(sampleDraft())
++        val capturedFlags = mutableListOf<Boolean>()
++        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
++        val generator = object : PostTextGenerator {
++            override fun generateText(
++                draftId: PostDraftId,
++                targetPlatform: TargetPlatform,
++                reuseVisionDescription: Boolean,
++            ): PostTextGenerationResult {
++                capturedFlags.add(viewModelRef[0]!!.state.isAiOperationInProgress)
++                return PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
++            }
++        }
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            postTextGenerator = generator,
++        )
++        viewModelRef[0] = viewModel
++        viewModel.load()
++
++        viewModel.generatePostText()
++
++        assertEquals(1, capturedFlags.size)
++        assertTrue(capturedFlags.single())
++        assertFalse(viewModel.state.isAiOperationInProgress)
++    }
++
++    @Test
++    fun ignoresDuplicateAnalyzeWhileInProgress() {
++        val repository = FakePostDraftRepository(sampleDraft())
++        var invocationCount = 0
++        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
++        val analyzer = object : AnalyzeVision {
++            override fun analyzePrimaryPhoto(
++                draftId: PostDraftId,
++                reuseCached: Boolean,
++            ): VisionDescriptionAnalysisResult {
++                invocationCount++
++                viewModelRef[0]!!.analyzeVisionDescription()
++                return VisionDescriptionAnalysisResult.Failure(
++                    VisionDescriptionAnalysisError.Provider(AiError.RateLimited()),
++                )
++            }
++        }
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            analyzeVision = analyzer,
++        )
++        viewModelRef[0] = viewModel
++        viewModel.load()
++
++        viewModel.analyzeVisionDescription()
++
++        assertEquals(1, invocationCount)
++    }
++
++    @Test
++    fun ignoresDuplicateGeneratePostTextWhileInProgress() {
++        val repository = FakePostDraftRepository(sampleDraft())
++        var invocationCount = 0
++        val viewModelRef = arrayOfNulls<ManualPostDraftWorkspaceViewModel>(1)
++        val generator = object : PostTextGenerator {
++            override fun generateText(
++                draftId: PostDraftId,
++                targetPlatform: TargetPlatform,
++                reuseVisionDescription: Boolean,
++            ): PostTextGenerationResult {
++                invocationCount++
++                viewModelRef[0]!!.generatePostText()
++                return PostTextGenerationResult.Failure(PostTextGenerationError.DraftNotFound)
++            }
++        }
++        val viewModel = ManualPostDraftWorkspaceViewModel(
++            draftId = draftId,
++            postDraftRepository = repository,
++            postTextGenerator = generator,
++        )
++        viewModelRef[0] = viewModel
++        viewModel.load()
++
++        viewModel.generatePostText()
++
++        assertEquals(1, invocationCount)
++    }
++
+     private class RecordingPhotoEditExecutor(
+         private val resultDraft: PostDraft? = null,
+         private val result: PhotoEditExecutionResult? = null,
+diff --git a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiError.kt b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiError.kt
+index 23c5f42..742c858 100644
+--- a/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiError.kt
++++ b/shared/src/commonMain/kotlin/com/digitumdei/shotquill/shared/ai/AiError.kt
+@@ -21,6 +21,10 @@ sealed class AiError {
+         override val userMessage: String = "The OpenAI account quota has been reached.",
+     ) : AiError()
+
++    data class ContextLengthExceeded(
++        override val userMessage: String = "The request was too large for the AI model. Try a smaller image or shorter prompt.",
++    ) : AiError()
++
+     data class ImageRejected(
+         override val userMessage: String = "The image could not be used by the AI provider.",
+     ) : AiError()
+@@ -49,6 +53,7 @@ object AiErrorMapper {
+         val redactedBody = SecretRedactor.redactKnownSecrets(body, knownSecrets).lowercase()
+         return when (statusCode) {
+             401 -> AiError.InvalidApiKey()
++            413 -> AiError.ContextLengthExceeded()
+             429 -> {
+                 if (redactedBody.contains("quota") || redactedBody.contains("insufficient_quota")) {
+                     AiError.QuotaExceeded()
+@@ -61,6 +66,10 @@ object AiErrorMapper {
+                     redactedBody.contains("content_policy") ||
+                         redactedBody.contains("content policy") ||
+                         redactedBody.contains("safety") -> AiError.ContentPolicyViolation()
++                    redactedBody.contains("context_length") ||
++                        redactedBody.contains("context length") ||
++                        redactedBody.contains("maximum context") ||
++                        redactedBody.contains("too many tokens") -> AiError.ContextLengthExceeded()
+                     redactedBody.contains("image") ||
+                         redactedBody.contains("size") ||
+                         redactedBody.contains("format") -> AiError.ImageRejected()
+diff --git a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/AiErrorMapperTest.kt b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/AiErrorMapperTest.kt
+index 1b72520..bf2d3d2 100644
+--- a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/AiErrorMapperTest.kt
++++ b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/AiErrorMapperTest.kt
+@@ -34,6 +34,23 @@ class AiErrorMapperTest {
+         assertIs<AiError.ContentPolicyViolation>(policy)
+     }
+
++    @Test
++    fun mapsContextLengthExceededFromStatus413() {
++        val error = AiErrorMapper.fromHttpStatus(413, "{}")
++
++        assertIs<AiError.ContextLengthExceeded>(error)
++    }
++
++    @Test
++    fun mapsContextLengthExceededFromBodyKeywords() {
++        val error = AiErrorMapper.fromHttpStatus(
++            400,
++            """{"error":{"code":"context_length_exceeded","message":"maximum context length"}}""",
++        )
++
++        assertIs<AiError.ContextLengthExceeded>(error)
++    }
++
+     @Test
+     fun mapsNetworkFailuresWithSecretRedaction() {
+         val error = AiErrorMapper.fromNetworkFailure("network failed for $apiKey", listOf(apiKey))
+diff --git a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProviderTest.kt b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProviderTest.kt
+index ba04a2a..e05981a 100644
+--- a/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProviderTest.kt
++++ b/shared/src/commonTest/kotlin/com/digitumdei/shotquill/shared/ai/OpenAiProviderTest.kt
+@@ -208,6 +208,20 @@ class OpenAiProviderTest {
+         assertTrue(logger.events.any { it.body.contains("[REDACTED_IMAGE_PAYLOAD]") })
+     }
+
++    @Test
++    fun mapsContextLengthFailureFromTransport() {
++        val provider = configuredProvider(
++            FailingOpenAiTransport(
++                OpenAiHttpResult.Success(400, """{"error":{"code":"context_length_exceeded"}}"""),
++            ),
++        )
++
++        val result = provider.generateCaption(sampleCaptionRequest())
++
++        val failure = assertIs<AiProviderResult.Failure>(result)
++        assertIs<AiError.ContextLengthExceeded>(failure.error)
++    }
++
+     @Test
+     fun mapsHttpAndNetworkFailuresFromTransport() {
+         val invalidKeyProvider = configuredProvider(FailingOpenAiTransport(OpenAiHttpResult.Success(401, "{}")))
