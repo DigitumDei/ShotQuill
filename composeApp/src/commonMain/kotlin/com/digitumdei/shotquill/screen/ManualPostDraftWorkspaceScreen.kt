@@ -81,6 +81,20 @@ fun ManualPostDraftWorkspaceScreen(
 
     fun refresh(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
         coroutineScope.launch {
+            operationMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    viewModel.block()
+                }
+            }
+        }
+    }
+
+    // AI operations DROP (rather than queue) a tap that arrives while another
+    // operation holds the lock, so a double-tap cannot enqueue a duplicate AI
+    // call. Cheap, non-duplicate actions (selection, copy, toggles) keep using
+    // the queuing helpers above so they still apply after a running operation.
+    fun refreshAiOperation(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
+        coroutineScope.launch {
             if (operationMutex.tryLock()) {
                 try {
                     withContext(Dispatchers.IO) {
@@ -111,9 +125,9 @@ fun ManualPostDraftWorkspaceScreen(
 
     ManualPostDraftWorkspaceContent(
         state = state,
-        onAnalyzeVision = { refresh { analyzeVisionDescription() } },
-        onGeneratePostText = { refresh { generatePostText() } },
-        onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
+        onAnalyzeVision = { refreshAiOperation { analyzeVisionDescription() } },
+        onGeneratePostText = { refreshAiOperation { generatePostText() } },
+        onEditPhotoWithAi = { refreshAiOperation { editPhotoWithAi() } },
         onSelectEditedPhoto = { refresh { selectEditedPhoto() } },
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
