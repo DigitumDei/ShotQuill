@@ -89,6 +89,24 @@ fun ManualPostDraftWorkspaceScreen(
         }
     }
 
+    // AI operations DROP (rather than queue) a tap that arrives while another
+    // operation holds the lock, so a double-tap cannot enqueue a duplicate AI
+    // call. Cheap, non-duplicate actions (selection, copy, toggles) keep using
+    // the queuing helpers above so they still apply after a running operation.
+    fun refreshAiOperation(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
+        coroutineScope.launch {
+            if (operationMutex.tryLock()) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        viewModel.block()
+                    }
+                } finally {
+                    operationMutex.unlock()
+                }
+            }
+        }
+    }
+
     fun refreshInMemory(block: ManualPostDraftWorkspaceViewModel.() -> Unit) {
         coroutineScope.launch {
             operationMutex.withLock {
@@ -107,9 +125,9 @@ fun ManualPostDraftWorkspaceScreen(
 
     ManualPostDraftWorkspaceContent(
         state = state,
-        onAnalyzeVision = { refresh { analyzeVisionDescription() } },
-        onGeneratePostText = { refresh { generatePostText() } },
-        onEditPhotoWithAi = { refresh { editPhotoWithAi() } },
+        onAnalyzeVision = { refreshAiOperation { analyzeVisionDescription() } },
+        onGeneratePostText = { refreshAiOperation { generatePostText() } },
+        onEditPhotoWithAi = { refreshAiOperation { editPhotoWithAi() } },
         onSelectEditedPhoto = { refresh { selectEditedPhoto() } },
         onSelectOriginalPhoto = { refresh { selectOriginalPhoto() } },
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
@@ -172,6 +190,13 @@ fun ManualPostDraftWorkspaceContent(
             Text(it, style = MaterialTheme.typography.bodyMedium)
         }
 
+        if (state.isAiOperationInProgress) {
+            Text(
+                text = "Working on ${state.activeAiOperation?.displayName ?: "AI operation"}...",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
         WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
         WorkspaceSection("Active photo", state.activePhotoUri ?: state.originalPhotoUri ?: "No active photo")
@@ -198,14 +223,14 @@ fun ManualPostDraftWorkspaceContent(
         OutlinedButton(
             onClick = onAnalyzeVision,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canAnalyzeVision,
+            enabled = state.actions.canAnalyzeVision && !state.isAiOperationInProgress,
         ) {
             Text("Analyze photo")
         }
         Button(
             onClick = onGeneratePostText,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canGeneratePostText,
+            enabled = state.actions.canGeneratePostText && !state.isAiOperationInProgress,
         ) {
             Text("Generate post text")
         }
@@ -270,7 +295,7 @@ fun ManualPostDraftWorkspaceContent(
         OutlinedButton(
             onClick = onEditPhotoWithAi,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading,
+            enabled = state.actions.canEditPhotoWithAi && form.operationState != PhotoEditFormOperationState.Loading && !state.isAiOperationInProgress,
         ) {
             Text(if (state.editedPhotoUri != null) "Re-run photo edit" else "Run photo edit")
         }

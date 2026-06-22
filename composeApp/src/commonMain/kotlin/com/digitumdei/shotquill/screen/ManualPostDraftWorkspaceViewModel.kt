@@ -78,6 +78,8 @@ data class ManualPostDraftWorkspaceState(
     val isPromptHistoryVisible: Boolean,
     val isPhotoEditHistoryVisible: Boolean,
     val photoEditForm: PhotoEditFormState,
+    val isAiOperationInProgress: Boolean = false,
+    val activeAiOperation: AiOperationType? = null,
 )
 
 data class ManualPostDraftWorkspaceActions(
@@ -110,6 +112,16 @@ class ManualPostDraftWorkspaceViewModel(
         private set
     private var operationSequence = 0
 
+    private fun runAiOperation(operation: AiOperationType, block: () -> Unit) {
+        if (state.isAiOperationInProgress) return
+        state = state.copy(isAiOperationInProgress = true, activeAiOperation = operation)
+        try {
+            block()
+        } finally {
+            state = state.copy(isAiOperationInProgress = false, activeAiOperation = null)
+        }
+    }
+
     fun load() {
         state = postDraftRepository.get(draftId)?.toState(
             statusMessage = null,
@@ -117,7 +129,9 @@ class ManualPostDraftWorkspaceViewModel(
         ) ?: unloadedState(statusMessage = "Draft not found")
     }
 
-    fun analyzeVisionDescription() {
+    fun analyzeVisionDescription() = runAiOperation(AiOperationType.VisionDescription) { analyzeVisionDescriptionInternal() }
+
+    private fun analyzeVisionDescriptionInternal() {
         val analyzer = analyzeVision ?: run {
             state = state.copy(statusMessage = "Vision analysis not available")
             return
@@ -154,7 +168,9 @@ class ManualPostDraftWorkspaceViewModel(
         }
     }
 
-    fun generatePostText() {
+    fun generatePostText() = runAiOperation(AiOperationType.CaptionGeneration) { generatePostTextInternal() }
+
+    private fun generatePostTextInternal() {
         postTextGenerator?.let {
             generatePostTextWithPipeline(it)
             return
@@ -312,7 +328,9 @@ class ManualPostDraftWorkspaceViewModel(
         )
     }
 
-    fun editPhotoWithAi() {
+    fun editPhotoWithAi() = runAiOperation(AiOperationType.PhotoEdit) { editPhotoWithAiInternal() }
+
+    private fun editPhotoWithAiInternal() {
         val executor = photoEditExecutor ?: run {
             state = state.copy(
                 statusMessage = "Photo edit execution pipeline not available",

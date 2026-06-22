@@ -35,6 +35,23 @@ class AiErrorMapperTest {
     }
 
     @Test
+    fun mapsContextLengthExceededFromStatus413() {
+        val error = AiErrorMapper.fromHttpStatus(413, "{}")
+
+        assertIs<AiError.ContextLengthExceeded>(error)
+    }
+
+    @Test
+    fun mapsContextLengthExceededFromBodyKeywords() {
+        val error = AiErrorMapper.fromHttpStatus(
+            400,
+            """{"error":{"code":"context_length_exceeded","message":"maximum context length"}}""",
+        )
+
+        assertIs<AiError.ContextLengthExceeded>(error)
+    }
+
+    @Test
     fun mapsNetworkFailuresWithSecretRedaction() {
         val error = AiErrorMapper.fromNetworkFailure("network failed for $apiKey", listOf(apiKey))
 
