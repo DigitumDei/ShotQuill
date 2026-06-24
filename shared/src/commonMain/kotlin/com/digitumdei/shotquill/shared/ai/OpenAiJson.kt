@@ -33,8 +33,9 @@ object OpenAiJson {
             ?.getString("revised_prompt")
 
     fun parseCaptionOutput(content: String): CaptionGenerationOutput {
-        val contentObject = content.asJsonObject()
-        val caption = contentObject?.getString("caption") ?: content.trim()
+        val stripped = content.stripMarkdownCodeFence()
+        val contentObject = stripped.asJsonObject()
+        val caption = contentObject?.getString("caption") ?: stripped.trim()
         val shortCaption = contentObject?.getString("shortCaption")
             ?: contentObject?.getString("short_caption")
             ?: caption.take(96)
@@ -49,6 +50,13 @@ object OpenAiJson {
 
     fun extractString(body: String, name: String): String? =
         body.asJsonObject()?.getString(name)
+
+    private fun String.stripMarkdownCodeFence(): String {
+        val trimmed = trim()
+        if (!trimmed.startsWith("```")) return trimmed
+        val withoutOpening = trimmed.removePrefix("```json").removePrefix("```").trimStart('\n', '\r')
+        return withoutOpening.trimEnd().removeSuffix("```").trimEnd()
+    }
 
     private fun String.asJsonObject(): JsonObject? =
         runCatching { json.parseToJsonElement(this) as? JsonObject }.getOrNull()

@@ -106,6 +106,10 @@ fun NewPostScreen(
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("Processing image...")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(onClick = onDismissError) {
+                        Text("Cancel")
+                    }
                 }
             }
 

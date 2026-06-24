@@ -43,6 +43,7 @@ class OpenAiProvider(
                     model = config.textModel,
                     prompt = request.prompt,
                     responseInstruction = "Return JSON with caption, shortCaption, and hashtags string array.",
+                    jsonMode = true,
                 ).encodeToByteArray(),
                 redactedBody = request.prompt,
             )
@@ -157,10 +158,16 @@ class OpenAiProvider(
             "Content-Type" to contentType,
         )
 
-    private fun buildTextChatBody(model: String, prompt: String, responseInstruction: String): String =
+    private fun buildTextChatBody(
+        model: String,
+        prompt: String,
+        responseInstruction: String,
+        jsonMode: Boolean = false,
+    ): String =
         buildString {
             append("{")
             appendJsonField("model", model)
+            if (jsonMode) append(",\"response_format\":{\"type\":\"json_object\"}")
             append(",\"messages\":[")
             append("{")
             appendJsonField("role", "system")

@@ -4,10 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -160,7 +163,22 @@ fun App(
     }
 
     MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)) {
+            PlatformBackHandler(enabled = currentScreen != AppScreen.NewPost.name) {
+                when (appScreenFromSaveable(currentScreen)) {
+                    AppScreen.Settings -> currentScreen = AppScreen.NewPost.name
+                    AppScreen.DraftWorkspace -> {
+                        currentScreen = AppScreen.NewPost.name
+                        currentDraftId = null
+                        onClearCaptureResult?.invoke()
+                        draftCreatedMessage = null
+                        saveError = null
+                        lastProcessedUri = null
+                    }
+                    AppScreen.FinalComposer -> currentScreen = AppScreen.DraftWorkspace.name
+                    AppScreen.NewPost -> {}
+                }
+            }
             when (appScreenFromSaveable(currentScreen)) {
                 AppScreen.NewPost -> {
                     NewPostScreen(
@@ -319,7 +337,7 @@ private fun SettingsScreen(
         ) {
             Text(text = "ShotQuill Settings", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = onNavigateToNewPost) {
-                Text("New Post")
+                Text("Back")
             }
         }
 
