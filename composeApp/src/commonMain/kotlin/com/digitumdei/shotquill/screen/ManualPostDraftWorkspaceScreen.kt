@@ -1,8 +1,10 @@
 package com.digitumdei.shotquill.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +18,8 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,8 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -197,23 +204,14 @@ fun ManualPostDraftWorkspaceContent(
             )
         }
 
-        WorkspaceSection("Original photo", state.originalPhotoUri ?: "No original photo")
-        WorkspaceSection("Edited photo", state.editedPhotoUri ?: "No edited photo yet")
-        WorkspaceSection("Active photo", state.activePhotoUri ?: state.originalPhotoUri ?: "No active photo")
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(
-                onClick = onSelectOriginalPhoto,
-                enabled = state.actions.canSelectOriginalPhoto,
-            ) {
-                Text("Use original")
-            }
-            OutlinedButton(
-                onClick = onSelectEditedPhoto,
-                enabled = state.actions.canSelectEditedPhoto,
-            ) {
-                Text("Use edited")
-            }
-        }
+        PhotoPreviewSection(
+            originalPhotoUri = state.originalPhotoUri,
+            editedPhotoUri = state.editedPhotoUri,
+            activePhotoUri = state.activePhotoUri,
+            onSelectOriginalPhoto = onSelectOriginalPhoto,
+            onSelectEditedPhoto = onSelectEditedPhoto,
+        )
+
         WorkspaceSection("Vision description", state.visionDescription ?: "No vision description yet")
         WorkspaceSection("Generated caption", state.generatedCaption ?: "No caption generated yet")
         WorkspaceSection("Generated alt text", state.generatedAltText ?: "No alt text generated yet")
@@ -522,6 +520,63 @@ private fun WorkspaceSection(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.titleSmall)
         Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun PhotoPreviewSection(
+    originalPhotoUri: String?,
+    editedPhotoUri: String?,
+    activePhotoUri: String?,
+    onSelectOriginalPhoto: () -> Unit,
+    onSelectEditedPhoto: () -> Unit,
+) {
+    val tabs = listOf(
+        "Original" to (originalPhotoUri != null),
+        "Edited" to (editedPhotoUri != null),
+    )
+    val selectedTabIndex = if (activePhotoUri == editedPhotoUri && editedPhotoUri != null) 1 else 0
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+            tabs.forEachIndexed { index, (label, enabled) ->
+                Tab(
+                    selected = selectedTabIndex == index,
+                    onClick = {
+                        when (index) {
+                            0 -> onSelectOriginalPhoto()
+                            1 -> onSelectEditedPhoto()
+                        }
+                    },
+                    enabled = enabled,
+                    text = { Text(label) },
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            val uriToShow = when (selectedTabIndex) {
+                1 -> editedPhotoUri
+                else -> originalPhotoUri
+            }
+            if (uriToShow != null) {
+                AsyncImage(
+                    model = uriToShow,
+                    contentDescription = if (selectedTabIndex == 0) "Original photo" else "Edited photo",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(
+                    text = if (selectedTabIndex == 0) "No original photo" else "No edited photo yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
 
