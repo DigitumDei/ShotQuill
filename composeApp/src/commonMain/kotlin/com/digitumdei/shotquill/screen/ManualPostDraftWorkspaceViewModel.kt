@@ -61,6 +61,14 @@ data class PhotoEditFormState(
     val operationState: PhotoEditFormOperationState,
 )
 
+data class PhotoEditHistoryItem(
+    val resultId: PhotoEditResultId,
+    val editedPhotoUri: String,
+    val summary: String?,
+    val modelName: String?,
+    val createdAtEpochMillis: Long,
+)
+
 data class ManualPostDraftWorkspaceState(
     val draftId: PostDraftId,
     val originalPhotoUri: String?,
@@ -73,6 +81,7 @@ data class ManualPostDraftWorkspaceState(
     val draftStatus: DraftStatus?,
     val promptHistory: List<PromptHistoryEntry>,
     val photoEditPromptHistory: List<PromptHistoryEntry>,
+    val photoEditHistoryItems: List<PhotoEditHistoryItem>,
     val actions: ManualPostDraftWorkspaceActions,
     val statusMessage: String?,
     val isPromptHistoryVisible: Boolean,
@@ -541,6 +550,40 @@ class ManualPostDraftWorkspaceViewModel(
         }
     }
 
+    fun selectHistoricalEditedPhoto(resultId: PhotoEditResultId) {
+        val draft = postDraftRepository.get(draftId) ?: run {
+            state = unloadedState(statusMessage = "Draft not found")
+            return
+        }
+        if (draft.status !in mutableDraftStatuses) {
+            state = draft.toState(
+                statusMessage = "Cannot select photo while status is ${draft.status.wireValue}",
+                isPromptHistoryVisible = state.isPromptHistoryVisible,
+            )
+            return
+        }
+        val result = draft.photoEditResults.firstOrNull { it.id == resultId } ?: run {
+            state = draft.toState("Edited photo not found", state.isPromptHistoryVisible)
+            return
+        }
+        val now = clock.nowMillis()
+        val operationUpdatedAt = operationUpdatedAt(draft, now)
+        when (postDraftRepository.updateSelectedMediaAsset(draftId, result.editedMediaAsset.id, operationUpdatedAt)) {
+            UpdateSelectionResult.Success -> {
+                state = postDraftRepository.get(draftId)?.toState(
+                    "Using edited photo from ${result.modelName ?: "unknown"}",
+                    state.isPromptHistoryVisible,
+                ) ?: unloadedState(statusMessage = "Draft not found")
+            }
+            UpdateSelectionResult.DraftNotFound -> {
+                state = unloadedState(statusMessage = "Draft not found")
+            }
+            UpdateSelectionResult.AssetNotOwnedByDraft -> {
+                state = state.copy(statusMessage = "Selected asset is not part of this draft")
+            }
+        }
+    }
+
     private fun PostDraft.toState(
         statusMessage: String?,
         isPromptHistoryVisible: Boolean,
@@ -590,6 +633,17 @@ class ManualPostDraftWorkspaceViewModel(
                         )
                 }
             },
+            photoEditHistoryItems = photoEditResults
+                .sortedByDescending { it.createdAtEpochMillis }
+                .map { result ->
+                    PhotoEditHistoryItem(
+                        resultId = result.id,
+                        editedPhotoUri = result.editedMediaAsset.uri,
+                        summary = result.summary,
+                        modelName = result.modelName,
+                        createdAtEpochMillis = result.createdAtEpochMillis,
+                    )
+                },
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = canMutateDraft,
                 canGeneratePostText = canMutateDraft,
@@ -635,6 +689,7 @@ class ManualPostDraftWorkspaceViewModel(
             draftStatus = null,
             promptHistory = emptyList(),
             photoEditPromptHistory = emptyList(),
+            photoEditHistoryItems = emptyList(),
             actions = ManualPostDraftWorkspaceActions(
                 canAnalyzeVision = false,
                 canGeneratePostText = false,

@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,7 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -35,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.shared.domain.EditIntent
+import com.digitumdei.shotquill.shared.domain.PhotoEditResultId
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PromptHistoryEntryId
 import com.digitumdei.shotquill.shared.domain.QualityTier
@@ -140,6 +145,7 @@ fun ManualPostDraftWorkspaceScreen(
         onCopyCaption = { refreshInMemory { markCaptionCopied() } },
         onCopyAltText = { refreshInMemory { markAltTextCopied() } },
         onCopyPromptHistoryEntry = { entryId -> refreshInMemory { copyPromptHistoryEntryPrompt(entryId) } },
+        onSelectHistoricalEditedPhoto = { resultId -> refresh { selectHistoricalEditedPhoto(resultId) } },
         onShareOrExport = onNavigateToFinalComposer,
         onTogglePromptHistory = { refreshInMemory { togglePromptHistory() } },
         onTogglePhotoEditHistory = { refreshInMemory { togglePhotoEditHistory() } },
@@ -163,6 +169,7 @@ fun ManualPostDraftWorkspaceContent(
     onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
     onCopyPromptHistoryEntry: (PromptHistoryEntryId) -> Unit,
+    onSelectHistoricalEditedPhoto: (PhotoEditResultId) -> Unit,
     onShareOrExport: () -> Unit,
     onTogglePromptHistory: () -> Unit,
     onTogglePhotoEditHistory: () -> Unit,
@@ -323,6 +330,36 @@ fun ManualPostDraftWorkspaceContent(
 
         if (state.isPhotoEditHistoryVisible) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Previous edits", style = MaterialTheme.typography.titleMedium)
+                state.photoEditHistoryItems.forEach { item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectHistoricalEditedPhoto(item.resultId) },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = item.editedPhotoUri,
+                            contentDescription = "Edited photo",
+                            modifier = Modifier.size(60.dp),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            item.modelName?.let {
+                                Text(it, style = MaterialTheme.typography.titleSmall)
+                            }
+                            item.summary?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text(
+                                text = Instant.fromEpochMilliseconds(item.createdAtEpochMillis).toString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 state.photoEditPromptHistory.forEach { entry ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(
