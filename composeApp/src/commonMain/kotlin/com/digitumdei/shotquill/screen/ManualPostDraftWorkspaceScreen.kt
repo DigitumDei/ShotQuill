@@ -215,6 +215,7 @@ fun ManualPostDraftWorkspaceContent(
             originalPhotoUri = state.originalPhotoUri,
             editedPhotoUri = state.editedPhotoUri,
             activePhotoUri = state.activePhotoUri,
+            editedPhotoUris = state.photoEditHistoryItems.map { it.editedPhotoUri }.toSet(),
             onSelectOriginalPhoto = onSelectOriginalPhoto,
             onSelectEditedPhoto = onSelectEditedPhoto,
         )
@@ -565,6 +566,7 @@ private fun PhotoPreviewSection(
     originalPhotoUri: String?,
     editedPhotoUri: String?,
     activePhotoUri: String?,
+    editedPhotoUris: Set<String>,
     onSelectOriginalPhoto: () -> Unit,
     onSelectEditedPhoto: () -> Unit,
 ) {
@@ -572,7 +574,8 @@ private fun PhotoPreviewSection(
         "Original" to (originalPhotoUri != null),
         "Edited" to (editedPhotoUri != null),
     )
-    val selectedTabIndex = if (activePhotoUri == editedPhotoUri && editedPhotoUri != null) 1 else 0
+    val isActiveAnEditedPhoto = activePhotoUri != null && activePhotoUri in editedPhotoUris
+    val selectedTabIndex = if (isActiveAnEditedPhoto) 1 else 0
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
@@ -597,7 +600,7 @@ private fun PhotoPreviewSection(
             contentAlignment = Alignment.Center,
         ) {
             val uriToShow = when (selectedTabIndex) {
-                1 -> editedPhotoUri
+                1 -> activePhotoUri
                 else -> originalPhotoUri
             }
             if (uriToShow != null) {
