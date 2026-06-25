@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
+import com.digitumdei.shotquill.screen.DraftsListScreen
 import com.digitumdei.shotquill.screen.FinalPostComposerScreen
 import com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreen
 import com.digitumdei.shotquill.screen.NewPostScreen
@@ -70,6 +71,7 @@ import kotlin.random.Random
 
 internal enum class AppScreen {
     NewPost,
+    DraftsList,
     DraftWorkspace,
     Settings,
     FinalComposer,
@@ -167,6 +169,7 @@ fun App(
             PlatformBackHandler(enabled = currentScreen != AppScreen.NewPost.name) {
                 when (appScreenFromSaveable(currentScreen)) {
                     AppScreen.Settings -> currentScreen = AppScreen.NewPost.name
+                    AppScreen.DraftsList -> currentScreen = AppScreen.NewPost.name
                     AppScreen.DraftWorkspace -> {
                         currentScreen = AppScreen.NewPost.name
                         currentDraftId = null
@@ -185,6 +188,7 @@ fun App(
                         onCaptureFromCamera = onCaptureFromCamera ?: {},
                         onPickFromGallery = onPickFromGallery ?: {},
                         onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
+                        onNavigateToDrafts = { currentScreen = AppScreen.DraftsList.name },
                         captureResult = captureResult,
                         errorMessage = captureError ?: saveError,
                         draftCreatedMessage = draftCreatedMessage,
@@ -203,6 +207,17 @@ fun App(
                             saveError = null
                             lastProcessedUri = null
                         },
+                    )
+                }
+
+                AppScreen.DraftsList -> {
+                    DraftsListScreen(
+                        manualWorkflowRepository = manualWorkflowRepository,
+                        onNavigateToDraft = { draftId ->
+                            currentDraftId = draftId
+                            currentScreen = AppScreen.DraftWorkspace.name
+                        },
+                        onNavigateToNewPost = { currentScreen = AppScreen.NewPost.name },
                     )
                 }
 
@@ -240,6 +255,7 @@ fun App(
                             onCaptureFromCamera = onCaptureFromCamera ?: {},
                             onPickFromGallery = onPickFromGallery ?: {},
                             onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
+                            onNavigateToDrafts = {},
                             captureResult = null,
                             errorMessage = "Draft repository not available",
                             onDismissResult = {},
@@ -274,6 +290,7 @@ fun App(
                             onCaptureFromCamera = onCaptureFromCamera ?: {},
                             onPickFromGallery = onPickFromGallery ?: {},
                             onNavigateToSettings = { currentScreen = AppScreen.Settings.name },
+                            onNavigateToDrafts = {},
                             captureResult = null,
                             errorMessage = finalComposerUnavailableMessage(
                                 hasManualWorkflowRepository = manualWorkflowRepository != null,

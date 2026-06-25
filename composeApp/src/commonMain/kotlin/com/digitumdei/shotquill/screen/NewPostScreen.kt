@@ -45,6 +45,7 @@ fun NewPostScreen(
     onCaptureFromCamera: () -> Unit,
     onPickFromGallery: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToDrafts: () -> Unit,
     captureResult: MediaCaptureResult?,
     errorMessage: String?,
     draftCreatedMessage: String? = null,
@@ -95,6 +96,13 @@ fun NewPostScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Settings")
+                }
+
+                OutlinedButton(
+                    onClick = onNavigateToDrafts,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("My Drafts")
                 }
             }
 

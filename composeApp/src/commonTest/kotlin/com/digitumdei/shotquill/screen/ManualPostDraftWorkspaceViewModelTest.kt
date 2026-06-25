@@ -10,6 +10,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.ai.AiError
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.DraftSummary
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
@@ -1935,6 +1936,10 @@ class ManualPostDraftWorkspaceViewModelTest {
 
         override fun get(id: PostDraftId): PostDraft? = drafts[id]
 
+        override fun listPostDrafts(): List<DraftSummary> = drafts.values.map {
+            DraftSummary(it.id, it.status, it.caption?.text, it.createdAt.toEpochMilliseconds(), it.updatedAt.toEpochMilliseconds(), null)
+        }
+
         fun delete(id: PostDraftId) {
             drafts.remove(id)
         }
@@ -3711,6 +3716,9 @@ class ManualPostDraftWorkspaceViewModelTest {
             val current = drafts[id] ?: return UpdateSelectionResult.DraftNotFound
             drafts[id] = current.copy(selectedMediaAssetId = mediaAssetId, updatedAt = updatedAt)
             return UpdateSelectionResult.Success
+        }
+        override fun listPostDrafts(): List<DraftSummary> = drafts.values.map {
+            DraftSummary(it.id, it.status, it.caption?.text, it.createdAt.toEpochMilliseconds(), it.updatedAt.toEpochMilliseconds(), null)
         }
 
         override fun saveVisionDescription(visionDescription: VisionDescription) {

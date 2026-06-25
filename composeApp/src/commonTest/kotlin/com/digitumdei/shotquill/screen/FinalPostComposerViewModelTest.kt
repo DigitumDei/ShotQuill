@@ -13,6 +13,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.DraftSummary
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.ExportRecord
@@ -1499,6 +1500,10 @@ class FinalPostComposerViewModelTest {
             getCount++
             return drafts[id]
         }
+        override fun listPostDrafts(): List<DraftSummary> = drafts.values.map {
+            DraftSummary(it.id, it.status, it.caption?.text, it.createdAt.toEpochMilliseconds(), it.updatedAt.toEpochMilliseconds(), null)
+        }
+
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
             val current = drafts[id] ?: return false
             drafts[id] = current.copy(status = status, updatedAt = updatedAt)

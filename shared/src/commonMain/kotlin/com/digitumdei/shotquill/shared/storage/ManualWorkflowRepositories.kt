@@ -24,6 +24,7 @@ import com.digitumdei.shotquill.shared.domain.AltTextResultId
 import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.DraftSummary
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
 import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import kotlinx.datetime.Instant
@@ -56,6 +57,7 @@ interface PostDraftRepository {
      */
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
+    fun listPostDrafts(): List<DraftSummary>
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean
     fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean
     fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean
