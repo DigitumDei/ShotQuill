@@ -1,31 +1,24 @@
-name: Jules Code Review
-
+name: Jules PR Review
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: jules-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  jules-review:
+  review:
+    # Fork PRs don't receive repo secrets — skip at the job level.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: write
-
+      contents: read
+      statuses: write
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Ensures Jules can see the commit history/context
-
-      - name: Run Jules Reviewer
-        uses: google-labs-code/jules-invoke@v1.0.0
+      - uses: DigitumDei/jules-pr-reviewer@v2
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
-          starting_branch: ${{ github.head_ref }}
-          include_commit_log: true
-          prompt: |
-            Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
-            Focus on correctness, regressions, missing tests, and maintainability.
-            Do not create commits, push changes, open a pull request, or make any fixes yourself.
-            Publish your findings as inline review comments on the pull request whenever possible.
-            If a finding cannot be attached inline, include it as a pull request review comment.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_on: blocking
