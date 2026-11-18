@@ -257,6 +257,29 @@ class PhotoTreatmentTest {
         assertEquals("Unchanged", appendSnippet("Unchanged", "   "))
     }
 
+    @Test
+    fun dictationOpensTheCaptionWithACapital() {
+        assertEquals("First pour of the witbier", appendDictation("", "  first pour of the witbier "))
+    }
+
+    @Test
+    fun dictationContinuesASentenceOnTheSameLine() {
+        assertEquals("Brew day and it went well", appendDictation("Brew day", "and it went well"))
+        assertEquals("Brew day and it went well", appendDictation("Brew day ", "and it went well"))
+    }
+
+    @Test
+    fun dictationStartsANewSentenceWithACapital() {
+        assertEquals("Brew day. It went well", appendDictation("Brew day.", "it went well"))
+        assertEquals("Really? Yes", appendDictation("Really? ", "yes"))
+        assertEquals("Done!\nNext one", appendDictation("Done!\n", "next one"))
+    }
+
+    @Test
+    fun emptyDictationChangesNothing() {
+        assertEquals("Unchanged", appendDictation("Unchanged", "   "))
+    }
+
     private fun assertClose(expected: Float, actual: Float, tolerance: Float = 0.01f) {
         assertTrue(abs(expected - actual) <= tolerance, "expected $expected but was $actual")
     }

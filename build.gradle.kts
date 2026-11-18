@@ -33,6 +33,7 @@ kover {
             "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
             "com.digitumdei.shotquill.media.LogoImporter*",
             "com.digitumdei.shotquill.image.AndroidPhotoRenderer*",
+            "com.digitumdei.shotquill.speech.Android*",
             "com.digitumdei.shotquill.screen.HomeScreenKt*",
             "com.digitumdei.shotquill.screen.PostEditorScreenKt*",
             "com.digitumdei.shotquill.screen.SettingsScreenKt*",

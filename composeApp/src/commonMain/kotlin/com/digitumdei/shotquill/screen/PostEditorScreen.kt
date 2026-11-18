@@ -21,7 +21,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +54,8 @@ import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.speech.DictationController
+import com.digitumdei.shotquill.speech.DictationState
 import com.digitumdei.shotquill.ui.CornerPicker
 import com.digitumdei.shotquill.ui.Panel
 import com.digitumdei.shotquill.ui.PanelDivider
@@ -75,6 +79,7 @@ fun PostEditorScreen(
     renderer: PhotoRenderer,
     clipboardWriter: ClipboardWriter,
     shareLauncher: PostShareLauncher,
+    dictation: DictationController?,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -112,6 +117,9 @@ fun PostEditorScreen(
             viewModel.persistTreatment()
         }
     }
+    DisposableEffect(dictation) {
+        onDispose { dictation?.stop() }
+    }
 
     LaunchedEffect(state.isMissing, state.isLoaded) {
         if (state.isMissing && !state.isLoaded && state.message == null) onBack()
@@ -121,6 +129,17 @@ fun PostEditorScreen(
         state = state,
         onBack = onBack,
         onOpenSettings = onOpenSettings,
+        dictationAvailable = dictation?.isAvailable == true,
+        dictationState = dictation?.state ?: DictationState.Idle,
+        onToggleDictation = {
+            if (dictation != null) {
+                if (dictation.state is DictationState.Listening) {
+                    dictation.stop()
+                } else {
+                    dictation.start(viewModel::addDictation)
+                }
+            }
+        },
         onCaptionChange = viewModel::updateCaption,
         onAddSnippet = viewModel::addSnippet,
         onSelectShape = viewModel::selectShape,
@@ -148,6 +167,9 @@ fun PostEditorContent(
     state: PostEditorState,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    dictationAvailable: Boolean,
+    dictationState: DictationState,
+    onToggleDictation: () -> Unit,
     onCaptionChange: (String) -> Unit,
     onAddSnippet: (CaptionSnippet) -> Unit,
     onSelectShape: (CropShape) -> Unit,
@@ -270,7 +292,51 @@ fun PostEditorContent(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("Caption")
+                val listening = dictationState is DictationState.Listening
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Caption", modifier = Modifier.weight(1f))
+                    if (dictationAvailable) {
+                        FilledTonalButton(
+                            onClick = onToggleDictation,
+                            enabled = state.isLoaded,
+                            colors = if (listening) {
+                                ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                ButtonDefaults.filledTonalButtonColors()
+                            },
+                        ) {
+                            Icon(
+                                if (listening) ShotQuillIcons.Stop else ShotQuillIcons.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (listening) "Stop" else "Dictate")
+                        }
+                    }
+                }
+                when (dictationState) {
+                    is DictationState.Listening -> Text(
+                        text = if (dictationState.heard.isBlank()) {
+                            "Listening. Say your caption."
+                        } else {
+                            dictationState.heard
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+
+                    is DictationState.Failed -> Text(
+                        text = dictationState.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+
+                    DictationState.Idle -> Unit
+                }
                 OutlinedTextField(
                     value = state.caption,
                     onValueChange = onCaptionChange,

@@ -284,6 +284,23 @@ private val HashtagPattern = Regex("(^|\\s)#[\\p{L}\\p{N}_]+")
 fun captionStats(caption: String): CaptionStats =
     CaptionStats(characters = caption.length, hashtags = HashtagPattern.findAll(caption).count())
 
+/**
+ * Adds a dictated phrase to [caption]. The phrase follows on the same line
+ * after a space, and starts with a capital when it opens the caption, a new
+ * line or a new sentence. The spoken words themselves are left as they came.
+ */
+fun appendDictation(caption: String, spoken: String): String {
+    val phrase = spoken.trim()
+    if (phrase.isEmpty()) return caption
+    val startsFresh = caption.isEmpty() || caption.endsWith('\n')
+    val startsSentence = startsFresh || caption.trimEnd().lastOrNull() in SentenceEnders
+    val text = if (startsSentence) phrase.replaceFirstChar { it.uppercaseChar() } else phrase
+    val separator = if (startsFresh || caption.last().isWhitespace()) "" else " "
+    return caption + separator + text
+}
+
+private val SentenceEnders = setOf('.', '!', '?')
+
 /** Adds [snippet] on its own line at the end of [caption], without doubling blank lines. */
 fun appendSnippet(caption: String, snippet: String): String {
     val addition = snippet.trim()

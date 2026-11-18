@@ -51,6 +51,8 @@ fun SettingsScreen(
     /** A recent photo to try the look and logo on, when there is one. */
     previewUri: String?,
     previewSize: PixelSize?,
+    /** Whether dictation stays on the phone; null when the phone cannot dictate at all. */
+    dictationOnDevice: Boolean?,
     onPickLogo: (() -> Unit)?,
     onBack: () -> Unit,
 ) {
@@ -247,7 +249,7 @@ fun SettingsScreen(
             }
 
             Text(
-                "ShotQuill prepares photos on this phone. Nothing is generated and nothing is uploaded.",
+                privacyNote(dictationOnDevice),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -272,6 +274,17 @@ private fun SettingsGroup(
             )
         }
         content()
+    }
+}
+
+internal fun privacyNote(dictationOnDevice: Boolean?): String {
+    val base = "ShotQuill prepares photos on this phone. Nothing is generated, and the app itself never " +
+        "connects to the internet."
+    return when (dictationOnDevice) {
+        true -> "$base Dictation is recognised on this phone too."
+        false -> "$base Dictation uses your phone's speech service, which may send your voice to its " +
+            "provider to recognise it."
+        null -> base
     }
 }
 

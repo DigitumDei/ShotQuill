@@ -118,6 +118,13 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun privacyNoteSaysWhereDictationHappens() {
+        assertTrue(privacyNote(dictationOnDevice = true).contains("recognised on this phone"))
+        assertTrue(privacyNote(dictationOnDevice = false).contains("may send your voice"))
+        assertFalse(privacyNote(dictationOnDevice = null).contains("Dictation"))
+    }
+
+    @Test
     fun worksWithoutARenderer() {
         repository.saveSettings(LocalAppSettings(logo = LogoSettings(uri = "file:///brand/logo.png")))
         val vm = SettingsViewModel(repository, renderer = null)

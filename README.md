@@ -5,7 +5,7 @@ Prepare a photo for Instagram without doing the work in Instagram.
 ShotQuill takes a photo you shot or picked, crops it to an Instagram shape,
 applies your one consistent look (a fixed set of light and colour adjustments),
 stamps your logo in a corner, and hands the finished image to the share sheet
-with your caption on the clipboard.
+with your caption on the clipboard. The caption can be typed or dictated.
 
 What it deliberately does not do:
 
@@ -13,6 +13,9 @@ What it deliberately does not do:
   ordinary crop and colour arithmetic on the phone; the words are the ones you
   type. There is no AI model in the app.
 - It does not use the network. The app requests no internet permission.
+  Dictation is done by the phone's own speech recogniser: on the device where
+  the phone supports that, otherwise through the phone's default speech
+  service, which may process audio on its provider's servers.
 - It does not post, schedule or reply for you. Sharing ends at the system
   share sheet.
 

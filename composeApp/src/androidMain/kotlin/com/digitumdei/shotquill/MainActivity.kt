@@ -26,6 +26,7 @@ import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
 import com.digitumdei.shotquill.share.AndroidPostShareLauncher
+import com.digitumdei.shotquill.speech.rememberDictationController
 import com.digitumdei.shotquill.shared.post.AndroidPhotoTreatmentStore
 import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
@@ -102,6 +103,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val dictation = rememberDictationController(this@MainActivity)
+
             App(
                 settingsRepository = settingsRepository,
                 postDraftRepository = postDraftRepository,
@@ -128,6 +131,7 @@ class MainActivity : ComponentActivity() {
                 },
                 clipboardWriter = clipboardWriter,
                 postShareLauncher = postShareLauncher,
+                dictation = dictation,
             )
         }
     }

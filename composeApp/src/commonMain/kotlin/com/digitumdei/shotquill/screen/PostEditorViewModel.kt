@@ -18,6 +18,7 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.domain.appendDictation
 import com.digitumdei.shotquill.shared.domain.appendSnippet
 import com.digitumdei.shotquill.shared.domain.captionStats
 import com.digitumdei.shotquill.shared.domain.panZoomed
@@ -99,6 +100,12 @@ class PostEditorViewModel(
     fun addSnippet(snippet: CaptionSnippet) {
         if (!state.isLoaded) return
         state = state.copy(caption = appendSnippet(state.caption, snippet.text))
+    }
+
+    /** Adds a phrase that was spoken rather than typed. */
+    fun addDictation(spoken: String) {
+        if (!state.isLoaded) return
+        state = state.copy(caption = appendDictation(state.caption, spoken))
     }
 
     fun persistCaption() {

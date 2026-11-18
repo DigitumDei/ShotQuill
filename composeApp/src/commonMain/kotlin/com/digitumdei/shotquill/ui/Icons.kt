@@ -122,6 +122,32 @@ object ShotQuillIcons {
         }
     }
 
+    val Mic: ImageVector by lazy {
+        lineIcon("Mic") {
+            moveTo(9f, 6f)
+            arcTo(3f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 15f, y1 = 6f)
+            lineTo(15f, 11f)
+            arcTo(3f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 9f, y1 = 11f)
+            close()
+            moveTo(5.5f, 11f)
+            arcTo(6.5f, 6.5f, 0f, isMoreThanHalf = false, isPositiveArc = false, x1 = 18.5f, y1 = 11f)
+            moveTo(12f, 17.5f)
+            lineTo(12f, 21f)
+            moveTo(8.5f, 21f)
+            lineTo(15.5f, 21f)
+        }
+    }
+
+    val Stop: ImageVector by lazy {
+        lineIcon("Stop") {
+            moveTo(7f, 7f)
+            lineTo(17f, 7f)
+            lineTo(17f, 17f)
+            lineTo(7f, 17f)
+            close()
+        }
+    }
+
     val Check: ImageVector by lazy {
         lineIcon("Check") {
             moveTo(5f, 12.5f)

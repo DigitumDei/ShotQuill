@@ -134,6 +134,7 @@ class PostEditorViewModelTest {
 
         vm.updateCaption("Too early")
         vm.addSnippet(CaptionSnippet("x", "y"))
+        vm.addDictation("spoken too early")
         vm.selectShape(CropShape.Story)
         vm.panZoom(0.5f, 0.5f, 2f)
         vm.setLookEnabled(false)
@@ -158,6 +159,18 @@ class PostEditorViewModelTest {
 
         assertEquals("Brew day #doctrine\n\nNot for persons under the age of 18.", vm.state.caption)
         assertEquals(1, vm.state.captionStats.hashtags)
+        assertEquals(listOf(vm.state.caption), store.savedCaptions)
+    }
+
+    @Test
+    fun dictatedPhrasesJoinTheCaptionAsSpoken() {
+        val vm = loadedViewModel()
+
+        vm.addDictation("first pour of the witbier.")
+        vm.addDictation("it came out hazy")
+        vm.persistCaption()
+
+        assertEquals("First pour of the witbier. It came out hazy", vm.state.caption)
         assertEquals(listOf(vm.state.caption), store.savedCaptions)
     }
 

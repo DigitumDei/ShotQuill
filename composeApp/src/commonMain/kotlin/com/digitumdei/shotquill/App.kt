@@ -34,6 +34,7 @@ import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
+import com.digitumdei.shotquill.speech.DictationController
 import com.digitumdei.shotquill.ui.ShotQuillTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,7 @@ fun App(
     onPickLogo: ((onPicked: (String) -> Unit) -> Unit)? = null,
     clipboardWriter: ClipboardWriter? = null,
     postShareLauncher: PostShareLauncher? = null,
+    dictation: DictationController? = null,
 ) {
     val settings = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val store = remember(postDraftRepository, treatmentStore) {
@@ -169,6 +171,7 @@ fun App(
                                 renderer = photoRenderer,
                                 clipboardWriter = clipboardWriter,
                                 shareLauncher = postShareLauncher,
+                                dictation = dictation,
                                 onBack = { goBack() },
                                 onOpenSettings = { openSettings() },
                             )
@@ -185,6 +188,7 @@ fun App(
                             viewModel = viewModel,
                             previewUri = previewUri,
                             previewSize = previewSize,
+                            dictationOnDevice = dictation?.takeIf { it.isAvailable }?.isOnDevice,
                             onPickLogo = onPickLogo?.let { pick -> { pick { uri -> viewModel.setLogoUri(uri) } } },
                             onBack = { goBack() },
                         )
