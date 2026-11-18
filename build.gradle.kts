@@ -31,10 +31,12 @@ kover {
             "com.digitumdei.shotquill.media.MediaCaptureHandler*",
             "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
             "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
-            "*AndroidBrandProfileRepositoryFactory*",
-            "com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreenKt",
-            "com.digitumdei.shotquill.screen.NewPostScreenKt",
-            "com.digitumdei.shotquill.screen.FinalPostComposerScreenKt",
+            "com.digitumdei.shotquill.media.LogoImporter*",
+            "com.digitumdei.shotquill.image.AndroidPhotoRenderer*",
+            "com.digitumdei.shotquill.screen.HomeScreenKt*",
+            "com.digitumdei.shotquill.screen.PostEditorScreenKt*",
+            "com.digitumdei.shotquill.screen.SettingsScreenKt*",
+            "com.digitumdei.shotquill.ui.*",
             "com.digitumdei.shotquill.shared.db.*",
         )
 

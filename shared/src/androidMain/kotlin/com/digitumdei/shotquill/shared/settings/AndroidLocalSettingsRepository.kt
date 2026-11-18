@@ -5,6 +5,11 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
+import com.digitumdei.shotquill.shared.domain.CaptionSnippet
+import com.digitumdei.shotquill.shared.domain.CropShape
+import com.digitumdei.shotquill.shared.domain.LogoCorner
+import com.digitumdei.shotquill.shared.domain.LogoSettings
+import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
@@ -38,7 +43,38 @@ class AndroidLocalSettingsRepository(
                 ?.takeIf { it.isNotBlank() }
                 ?.let(::BrandProfileId),
             promptHistoryEnabled = regularPreferences.getBoolean(KeyPromptHistoryEnabled, true),
+            defaultCropShape = regularPreferences.enumSetting(
+                KeyDefaultCropShape,
+                CropShape.Portrait,
+                CropShape::fromWireValue,
+            ),
+            look = readLook(),
+            logo = readLogo(),
+            snippets = regularPreferences.getString(KeySnippets, null)
+                ?.let(SnippetCodec::decode)
+                ?: CaptionSnippet.Defaults,
         )
+
+    private fun readLook(): LookSettings {
+        val defaults = LookSettings()
+        return LookSettings(
+            warmth = regularPreferences.getFloat(KeyLookWarmth, defaults.warmth),
+            contrast = regularPreferences.getFloat(KeyLookContrast, defaults.contrast),
+            saturation = regularPreferences.getFloat(KeyLookSaturation, defaults.saturation),
+            fade = regularPreferences.getFloat(KeyLookFade, defaults.fade),
+        )
+    }
+
+    private fun readLogo(): LogoSettings {
+        val defaults = LogoSettings()
+        return LogoSettings(
+            uri = regularPreferences.getString(KeyLogoUri, null)?.takeIf { it.isNotBlank() },
+            widthFraction = regularPreferences.getFloat(KeyLogoWidth, defaults.widthFraction),
+            opacity = regularPreferences.getFloat(KeyLogoOpacity, defaults.opacity),
+            marginFraction = regularPreferences.getFloat(KeyLogoMargin, defaults.marginFraction),
+            corner = regularPreferences.enumSetting(KeyLogoCorner, defaults.corner, LogoCorner::fromWireValue),
+        )
+    }
 
     override fun saveSettings(settings: LocalAppSettings) {
         regularPreferences.edit()
@@ -47,6 +83,17 @@ class AndroidLocalSettingsRepository(
             .putString(KeyDefaultRealismLevel, settings.defaultRealismLevel.wireValue)
             .putString(KeyActiveBrandProfileId, settings.activeBrandProfileId?.value)
             .putBoolean(KeyPromptHistoryEnabled, settings.promptHistoryEnabled)
+            .putString(KeyDefaultCropShape, settings.defaultCropShape.wireValue)
+            .putFloat(KeyLookWarmth, settings.look.warmth)
+            .putFloat(KeyLookContrast, settings.look.contrast)
+            .putFloat(KeyLookSaturation, settings.look.saturation)
+            .putFloat(KeyLookFade, settings.look.fade)
+            .putString(KeyLogoUri, settings.logo.uri)
+            .putFloat(KeyLogoWidth, settings.logo.widthFraction)
+            .putFloat(KeyLogoOpacity, settings.logo.opacity)
+            .putFloat(KeyLogoMargin, settings.logo.marginFraction)
+            .putString(KeyLogoCorner, settings.logo.corner.wireValue)
+            .putString(KeySnippets, SnippetCodec.encode(settings.snippets))
             .apply()
     }
 
@@ -107,5 +154,16 @@ class AndroidLocalSettingsRepository(
         const val KeyActiveBrandProfileId = "active_brand_profile_id"
         const val KeyPromptHistoryEnabled = "prompt_history_enabled"
         const val KeyOpenAiApiKey = "openai_api_key"
+        const val KeyDefaultCropShape = "default_crop_shape"
+        const val KeyLookWarmth = "look_warmth"
+        const val KeyLookContrast = "look_contrast"
+        const val KeyLookSaturation = "look_saturation"
+        const val KeyLookFade = "look_fade"
+        const val KeyLogoUri = "logo_uri"
+        const val KeyLogoWidth = "logo_width_fraction"
+        const val KeyLogoOpacity = "logo_opacity"
+        const val KeyLogoMargin = "logo_margin_fraction"
+        const val KeyLogoCorner = "logo_corner"
+        const val KeySnippets = "caption_snippets"
     }
 }

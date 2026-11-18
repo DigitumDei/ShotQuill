@@ -6,51 +6,27 @@ import kotlin.test.assertEquals
 class AppNavigationStateTest {
     @Test
     fun restoresKnownScreenName() {
-        assertEquals(AppScreen.DraftWorkspace, appScreenFromSaveable("DraftWorkspace"))
+        assertEquals(AppScreen.Editor, appScreenFromSaveable("Editor"))
     }
 
     @Test
-    fun fallsBackToNewPostForUnknownScreenName() {
-        assertEquals(AppScreen.NewPost, appScreenFromSaveable("RenamedScreen"))
+    fun fallsBackToHomeForUnknownScreenName() {
+        assertEquals(AppScreen.Home, appScreenFromSaveable("DraftWorkspace"))
     }
 
     @Test
-    fun reportsTheMissingFinalComposerDependency() {
-        assertEquals(
-            "Draft repository not available",
-            finalComposerUnavailableMessage(
-                hasManualWorkflowRepository = false,
-                hasDraftId = true,
-                hasClipboardWriter = true,
-                hasPostShareLauncher = true,
-            ),
-        )
-        assertEquals(
-            "Draft ID not available",
-            finalComposerUnavailableMessage(
-                hasManualWorkflowRepository = true,
-                hasDraftId = false,
-                hasClipboardWriter = true,
-                hasPostShareLauncher = true,
-            ),
-        )
-        assertEquals(
-            "Clipboard writer not available",
-            finalComposerUnavailableMessage(
-                hasManualWorkflowRepository = true,
-                hasDraftId = true,
-                hasClipboardWriter = false,
-                hasPostShareLauncher = true,
-            ),
-        )
-        assertEquals(
-            "Share launcher not available",
-            finalComposerUnavailableMessage(
-                hasManualWorkflowRepository = true,
-                hasDraftId = true,
-                hasClipboardWriter = true,
-                hasPostShareLauncher = false,
-            ),
-        )
+    fun backFromTheEditorLeadsHome() {
+        assertEquals(AppScreen.Home, screenBehind(AppScreen.Editor, settingsOpenedFrom = AppScreen.Home))
+    }
+
+    @Test
+    fun backFromSettingsReturnsToWhereItWasOpened() {
+        assertEquals(AppScreen.Editor, screenBehind(AppScreen.Settings, settingsOpenedFrom = AppScreen.Editor))
+        assertEquals(AppScreen.Home, screenBehind(AppScreen.Settings, settingsOpenedFrom = AppScreen.Home))
+    }
+
+    @Test
+    fun homeHasNothingBehindIt() {
+        assertEquals(AppScreen.Home, screenBehind(AppScreen.Home, settingsOpenedFrom = AppScreen.Editor))
     }
 }

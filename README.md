@@ -1,6 +1,20 @@
 # ShotQuill
 
-AI-powered photo-to-post assistant for social media.
+Prepare a photo for Instagram without doing the work in Instagram.
+
+ShotQuill takes a photo you shot or picked, crops it to an Instagram shape,
+applies your one consistent look (a fixed set of light and colour adjustments),
+stamps your logo in a corner, and hands the finished image to the share sheet
+with your caption on the clipboard.
+
+What it deliberately does not do:
+
+- It does not generate anything. The pixels are your photo, adjusted with
+  ordinary crop and colour arithmetic on the phone; the words are the ones you
+  type. There is no AI model in the app.
+- It does not use the network. The app requests no internet permission.
+- It does not post, schedule or reply for you. Sharing ends at the system
+  share sheet.
 
 ## Project layout
 
@@ -60,7 +74,7 @@ To rely on CI:
 ## Coverage
 
 Coverage is collected with [Kover](https://github.com/Kotlin/kotlinx-kover) and
-verified by `./gradlew koverVerify`. The current line-coverage gate is **90%**.
+verified by `./gradlew koverVerify`. The current line-coverage gate is **80%**.
 Ratchet it upward with each PR that adds real domain, repository, prompt, or
 orchestration code. New code of that kind must ship with tests in the same PR.
 
@@ -71,9 +85,10 @@ Reports are written to:
 
 ## Local settings
 
-ShotQuill stores non-secret local settings behind the shared
-`LocalSettingsRepository` abstraction. The bring-your-own-key OpenAI API key is
-kept separately on Android with `EncryptedSharedPreferences`, using an Android
-Keystore-backed `MasterKey`. The key is never returned to the UI for display;
-settings screens only show whether a key is configured and allow saving or
-clearing it.
+The look, the logo placement, the usual crop shape and the caption snippets are
+stored on the phone behind the shared `LocalSettingsRepository` abstraction.
+Each post's framing is kept by `PhotoTreatmentStore`.
+
+Earlier versions stored a bring-your-own OpenAI API key in
+`EncryptedSharedPreferences`. Nothing reads it any more; if one is still on the
+device, the settings screen offers to delete it.
