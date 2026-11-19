@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -349,6 +350,14 @@ class PostEditorContentTest {
 
         compose.onNodeWithText("Not yet").performClick()
         assertTrue(published.isEmpty())
+    }
+
+    @Test
+    fun aPostThatIsOnItsWayCannotBeRemoved() {
+        show(loaded(targets = listOf(bluesky.copy(isPublishing = true))))
+
+        compose.onNodeWithContentDescription("Remove post").assertIsNotEnabled()
+        compose.onNodeWithText("Posting").assertExists()
     }
 
     @Test

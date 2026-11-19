@@ -820,11 +820,21 @@ class PostEditorViewModel(
         const val MinTypedForSuggestions = 2
     }
 
-    /** Removes the post from the list and deletes the image made from it. */
+    /**
+     * Removes the post from the list and deletes the image made from it. Not
+     * while it is being shared or posted: that would finish afterwards and
+     * record the post as shared again.
+     */
     fun remove() {
+        val removing = updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing }) {
+            PostEditorState(isMissing = true)
+        }
+        if (!removing) {
+            update { if (it.isLoaded) it.copy(message = "Wait for this to finish before removing the post.") else it }
+            return
+        }
         renderedUri?.let(renderer::discard)
         renderedUri = null
         store.remove(draftId)
-        update { PostEditorState(isMissing = true) }
     }
 }

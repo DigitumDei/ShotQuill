@@ -311,7 +311,10 @@ fun PostEditorContent(
             title = if (state.shared) "Shared post" else "New post",
             onBack = onBack,
         ) {
-            IconButton(onClick = { confirmRemove = true }, enabled = state.isLoaded) {
+            IconButton(
+                onClick = { confirmRemove = true },
+                enabled = state.isLoaded && !state.isPublishing && !state.isSharing,
+            ) {
                 Icon(ShotQuillIcons.Delete, contentDescription = "Remove post")
             }
         }

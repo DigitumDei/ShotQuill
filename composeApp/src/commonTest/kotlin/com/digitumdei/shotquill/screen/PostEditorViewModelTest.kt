@@ -705,6 +705,32 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun aPostCannotBeRemovedWhileItIsOnItsWay() {
+        val vm = loadedViewModel()
+        var stateDuringPost: PostEditorState? = null
+        bluesky.whilePublishing = {
+            vm.remove()
+            stateDuringPost = vm.state
+        }
+
+        vm.publish(PublishTarget.Bluesky)
+
+        // The removal asked for mid-post was refused, with a reason.
+        assertFalse(store.removed)
+        assertTrue(assertNotNull(stateDuringPost).isLoaded)
+        assertEquals("Wait for this to finish before removing the post.", stateDuringPost?.message)
+        // The post completed normally and is still there to be removed afterwards.
+        assertEquals("Posted to Bluesky as @doctrine.bsky.social.", vm.state.message)
+        assertNotNull(store.publishedTo)
+        vm.remove()
+        assertTrue(store.removed)
+        assertTrue(vm.state.isMissing)
+        // Asking again for a post that is already gone does nothing.
+        vm.remove()
+        assertNull(vm.state.message)
+    }
+
+    @Test
     fun instagramGetsTheCaptionEvenWhenThereIsABlueskyText() {
         instagram.configured = true
         instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/")

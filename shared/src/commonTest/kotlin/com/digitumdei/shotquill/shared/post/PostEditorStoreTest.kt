@@ -93,6 +93,55 @@ class PostEditorStoreTest {
     }
 
     @Test
+    fun aShareOrPostThatFinishesAfterThePostWasRemovedDoesNotBringItBack() {
+        val id = newPost("late")
+        store.remove(id)
+
+        store.markPublished(id, PublishTarget.Bluesky, "https://bsky.app/profile/x/post/1", "file:///edited/late.jpg")
+        store.markShared(id, "file:///edited/late.jpg")
+
+        assertTrue(store.listPosts().isEmpty())
+        assertNull(store.load(id))
+        assertNull(treatments.get(id))
+        assertEquals(listOf("file:///photos/late.jpg"), store.removedPostPhotos())
+        // Nor is anything recorded for a post that never existed.
+        store.markShared(PostDraftId("never"), "file:///edited/never.jpg")
+        assertNull(treatments.get(PostDraftId("never")))
+    }
+
+    @Test
+    fun changesToOnePostFromSeveralThreadsAtOnceAllSurvive() {
+        val id = newPost("busy")
+        val rounds = 400
+        val start = java.util.concurrent.CountDownLatch(1)
+        val workers = listOf<(Int) -> Unit>(
+            { n -> store.saveBlueskyText(id, "text $n") },
+            { n -> store.saveTags(id, PublishTarget.Instagram, "#tag$n") },
+            { n -> store.saveInstagramExtras(id, listOf(PhotoTag("friend$n")), "collab$n") },
+            { n -> store.saveTreatment(id, PhotoTreatment(zoom = 1f + (n % 10) / 10f)) },
+            { n -> store.markPublished(id, PublishTarget.Bluesky, "https://example.test/$n", "file:///edited/$n.jpg") },
+        ).map { work ->
+            kotlin.concurrent.thread {
+                start.await()
+                repeat(rounds) { work(it) }
+            }
+        }
+        start.countDown()
+        workers.forEach { it.join(60_000) }
+
+        // Every thread's last write is there: none wrote back a copy another had since changed.
+        val last = rounds - 1
+        val post = assertNotNull(store.load(id))
+        assertEquals("text $last", post.blueskyText)
+        assertEquals("#tag$last", post.tags[PublishTarget.Instagram])
+        assertEquals(listOf(PhotoTag("friend$last")), post.photoTags)
+        assertEquals("collab$last", post.collaborators)
+        assertEquals("https://example.test/$last", post.published[PublishTarget.Bluesky])
+        assertEquals("file:///edited/$last.jpg", post.renderedUri)
+        assertTrue(post.shared)
+    }
+
+    @Test
     fun aNewPostOpensWithItsPhotoAndNothingElse() {
         val id = newPost("one")
 
