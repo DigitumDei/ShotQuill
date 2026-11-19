@@ -38,6 +38,8 @@ class BlueskyPublisher(
     private val transport: HttpTransport,
     private val clock: EpochClock = EpochClock.Default,
     private val languages: List<String> = listOf("en"),
+    /** Bluesky's open directory, which answers questions about accounts without a sign-in. */
+    private val publicApi: String = PublicApi,
 ) : PostPublisher {
     override val target: PublishTarget = PublishTarget.Bluesky
 
@@ -140,6 +142,38 @@ class BlueskyPublisher(
             failure.message.orEmpty()
         } catch (e: Exception) {
             redact("Bluesky could not be reached: ${e.message ?: "no connection"}", password)
+        }
+    }
+
+    /**
+     * Looks the handle up in Bluesky's open directory. No sign-in is used and
+     * only the handle is sent, so this works before the account is set up.
+     */
+    override fun findAccount(name: String): AccountLookup {
+        val handle = name.trim().removePrefix("@").lowercase()
+        if (!isFullBlueskyHandle(handle)) return AccountLookup.NotFound
+        return try {
+            val response = transport.send(
+                HttpRequest(method = "GET", url = "$publicApi/xrpc/app.bsky.actor.getProfile?actor=$handle"),
+            )
+            val reply = try {
+                json.parseToJsonElement(response.body) as? JsonObject
+            } catch (_: Exception) {
+                null
+            }
+            when {
+                response.isSuccess && reply?.text("did").orEmpty().isNotEmpty() -> AccountLookup.Found(
+                    handle = reply?.text("handle").orEmpty().ifEmpty { handle },
+                    displayName = reply?.text("displayName").orEmpty(),
+                )
+
+                // Bluesky answers 400 both for a handle nobody has and for one that is not a handle at all.
+                response.status == 400 -> AccountLookup.NotFound
+
+                else -> AccountLookup.Unreachable
+            }
+        } catch (_: Exception) {
+            AccountLookup.Unreachable
         }
     }
 
@@ -278,6 +312,7 @@ class BlueskyPublisher(
 
     private companion object {
         const val MaxAcceptedImageBytes = 1_000_000
+        const val PublicApi = "https://public.api.bsky.app"
         val json = Json { ignoreUnknownKeys = true }
     }
 }

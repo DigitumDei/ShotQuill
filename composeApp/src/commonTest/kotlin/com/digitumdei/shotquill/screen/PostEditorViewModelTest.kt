@@ -26,6 +26,8 @@ import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.post.PostSummary
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.social.AccountLookup
+import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.social.PostToPublish
 import com.digitumdei.shotquill.shared.social.PublishResult
@@ -425,6 +427,90 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun blueskyMentionsAreLookedUpOnceAndReportedAsFoundOrNot() {
+        bluesky.accounts["doctrinebrewing.co.za"] = AccountLookup.Found("doctrinebrewing.co.za", "Dion")
+        val vm = loadedViewModel()
+        vm.updateBlueskyText("Cheers @doctrinebrewing.co.za and @nobody.example.com")
+        vm.updateTags(PublishTarget.Bluesky, "#beersky @bskybeer")
+
+        assertEquals(
+            listOf(MentionStatus.Checking, MentionStatus.Checking, MentionStatus.Checking),
+            vm.mentionChecks(PublishTarget.Bluesky).map { it.status },
+        )
+
+        vm.checkMentions()
+
+        val checks = vm.mentionChecks(PublishTarget.Bluesky)
+        assertEquals(listOf("doctrinebrewing.co.za", "nobody.example.com", "bskybeer"), checks.map { it.name })
+        assertEquals(
+            listOf(MentionStatus.Found, MentionStatus.NotFound, MentionStatus.Problem),
+            checks.map { it.status },
+        )
+        assertEquals("Dion", checks[0].note)
+        assertEquals(
+            listOf("doctrinebrewing.co.za", "nobody.example.com", "bskybeer.bsky.social"),
+            bluesky.lookedUp,
+        )
+
+        vm.updateBlueskyText("Cheers @doctrinebrewing.co.za and @nobody.example.com again")
+        vm.checkMentions()
+        assertEquals(3, bluesky.lookedUp.size)
+    }
+
+    @Test
+    fun aMentionThatCouldNotBeCheckedIsTriedAgain() {
+        val vm = loadedViewModel()
+        vm.updateBlueskyText("Cheers @doctrinebrewing.co.za")
+        bluesky.lookupFailure = IllegalStateException("no connection")
+
+        vm.checkMentions()
+        assertEquals(MentionStatus.Unreachable, vm.mentionChecks(PublishTarget.Bluesky).single().status)
+
+        bluesky.lookupFailure = null
+        bluesky.accounts["doctrinebrewing.co.za"] = AccountLookup.Found("doctrinebrewing.co.za")
+        vm.checkMentions()
+        assertEquals(MentionStatus.Found, vm.mentionChecks(PublishTarget.Bluesky).single().status)
+    }
+
+    @Test
+    fun blueskyMentionsFallBackToTheCaptionAndNeedBlueskySetUp() {
+        val vm = loadedViewModel()
+        vm.updateCaption("With @doctrinebrewing.co.za")
+        vm.checkMentions()
+        assertEquals(listOf("doctrinebrewing.co.za"), bluesky.lookedUp)
+        assertEquals(MentionStatus.NotFound, vm.mentionChecks(PublishTarget.Bluesky).single().status)
+
+        bluesky.configured = false
+        bluesky.lookedUp.clear()
+        val withoutBluesky = loadedViewModel()
+        withoutBluesky.updateCaption("With @someone.example.com")
+        withoutBluesky.checkMentions()
+        assertTrue(bluesky.lookedUp.isEmpty())
+        assertTrue(withoutBluesky.mentionChecks(PublishTarget.Bluesky).isEmpty())
+
+        val unloaded = viewModel()
+        unloaded.checkMentions()
+        assertTrue(unloaded.mentionChecks(PublishTarget.Instagram).isEmpty())
+        assertTrue(bluesky.lookedUp.isEmpty())
+    }
+
+    @Test
+    fun instagramMentionsAreNeverLookedUpOnlyReadForMistakes() {
+        instagram.configured = true
+        val vm = loadedViewModel()
+        vm.updateCaption("Brewed with @some_friend")
+        vm.updateTags(PublishTarget.Instagram, "#craftbeer @craft-beer")
+
+        vm.checkMentions()
+
+        val checks = vm.mentionChecks(PublishTarget.Instagram)
+        assertEquals(listOf("some_friend", "craft-beer"), checks.map { it.name })
+        assertEquals(listOf(MentionStatus.CannotCheck, MentionStatus.Problem), checks.map { it.status })
+        assertEquals("https://www.instagram.com/some_friend/", checks[0].profileUrl)
+        assertTrue(instagram.lookedUp.isEmpty())
+    }
+
+    @Test
     fun instagramGetsTheCaptionEvenWhenThereIsABlueskyText() {
         instagram.configured = true
         instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/")
@@ -800,6 +886,9 @@ private class FakePublisher(
     var result: PublishResult = PublishResult.Success("https://bsky.app/profile/doctrine/post/new")
     var imageProblem: String? = null
     val posts = mutableListOf<PostToPublish>()
+    val accounts = mutableMapOf<String, AccountLookup>()
+    val lookedUp = mutableListOf<String>()
+    var lookupFailure: Exception? = null
 
     override val isConfigured get() = configured
     override val accountLabel get() = if (configured) account else null
@@ -808,6 +897,12 @@ private class FakePublisher(
     override fun problemWithImage(width: Int, height: Int): String? = imageProblem
 
     override fun check(): String = "checked"
+
+    override fun findAccount(name: String): AccountLookup {
+        lookedUp += name
+        lookupFailure?.let { throw it }
+        return accounts[name] ?: AccountLookup.NotFound
+    }
 
     override fun problemWith(text: String): String? = if (text.length > 300) "too long: ${text.length}" else null
 

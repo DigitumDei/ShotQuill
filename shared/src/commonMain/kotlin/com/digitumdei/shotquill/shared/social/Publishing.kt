@@ -76,6 +76,13 @@ interface PostPublisher {
      */
     fun check(): String
 
+    /**
+     * Blocking. Asks the service whether the account [name] exists, so a
+     * mention can be checked while the post is still being written. Nothing
+     * is posted, and services that offer no such lookup say so.
+     */
+    fun findAccount(name: String): AccountLookup = AccountLookup.CannotCheck
+
     /** Blocking: call off the main thread. */
     fun publish(post: PostToPublish): PublishResult
 }

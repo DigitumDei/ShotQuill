@@ -27,13 +27,18 @@ import com.digitumdei.shotquill.shared.domain.panZoomed
 import com.digitumdei.shotquill.shared.domain.withShape
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.AccountLookup
 import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.social.PostToPublish
 import com.digitumdei.shotquill.shared.social.PublishResult
 import com.digitumdei.shotquill.shared.social.PublishTarget
+import com.digitumdei.shotquill.shared.social.blueskyHandlesToLookUp
 import com.digitumdei.shotquill.shared.social.blueskyLength
+import com.digitumdei.shotquill.shared.social.blueskyMentionChecks
 import com.digitumdei.shotquill.shared.social.blueskyTextFor
+import com.digitumdei.shotquill.shared.social.instagramMentionChecks
 import com.digitumdei.shotquill.shared.social.withTags
 
 /** One service the post can be published to directly, and what has happened there so far. */
@@ -112,6 +117,11 @@ class PostEditorViewModel(
 ) {
     var state: PostEditorState by mutableStateOf(PostEditorState())
         private set
+
+    // What Bluesky has said so far about each handle mentioned, by handle. Kept
+    // apart from [state] because it is written from a background thread while
+    // typing carries on, and the two must never overwrite each other.
+    private var blueskyLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
 
     private var renderedUri: String? = null
 
@@ -205,6 +215,37 @@ class PostEditorViewModel(
             if (savedTags[target] != tags) store.saveTags(draftId, target, tags)
         }
         savedTags = state.tags
+    }
+
+    /**
+     * What is known about each account mentioned in the words going to
+     * [target]. Bluesky mentions are checked against Bluesky itself; Instagram
+     * offers no lookup, so its names are only checked for how they are written.
+     */
+    fun mentionChecks(target: PublishTarget): List<MentionCheck> = when {
+        !state.isLoaded -> emptyList()
+        target == PublishTarget.Instagram -> instagramMentionChecks(state.instagramPostText)
+        state.hasBluesky -> blueskyMentionChecks(state.blueskyPostText, blueskyLookups)
+        else -> emptyList()
+    }
+
+    /**
+     * Blocking. Asks Bluesky about every mentioned handle it has not answered
+     * for yet. Only the handle is sent, without any sign-in.
+     */
+    fun checkMentions() {
+        if (!state.isLoaded || !state.hasBluesky) return
+        val bluesky = publishers.firstOrNull { it.target == PublishTarget.Bluesky } ?: return
+        blueskyHandlesToLookUp(state.blueskyPostText).forEach { handle ->
+            val known = blueskyLookups[handle]
+            if (known != null && known != AccountLookup.Unreachable) return@forEach
+            val answer = try {
+                bluesky.findAccount(handle)
+            } catch (_: Exception) {
+                AccountLookup.Unreachable
+            }
+            blueskyLookups = blueskyLookups + (handle to answer)
+        }
     }
 
     fun updateAltText(text: String) {

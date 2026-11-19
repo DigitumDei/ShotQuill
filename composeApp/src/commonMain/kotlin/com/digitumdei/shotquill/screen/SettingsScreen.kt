@@ -661,6 +661,7 @@ internal fun privacyNote(
             add("when you ask for alt text, to send that photo and caption to the AI service you set up")
         }
         if (postingTo.isNotEmpty()) add("when you post to " + postingTo.joinToString(" or "))
+        if ("Bluesky" in postingTo) add("to ask Bluesky whether an account you @mention exists")
     }
     val network = if (occasions.isEmpty()) {
         "It does not connect to the internet unless you set up AI for alt text or a place to post to."

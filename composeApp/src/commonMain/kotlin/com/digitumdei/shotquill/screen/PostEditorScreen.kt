@@ -1,6 +1,7 @@
 package com.digitumdei.shotquill.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.image.PhotoRenderer
@@ -58,6 +65,8 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.MentionCheck
+import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.speech.DictationController
@@ -135,6 +144,15 @@ fun PostEditorScreen(
         delay(400)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTreatment() } }
     }
+    // Accounts mentioned for Bluesky are looked up once typing pauses. The
+    // lookups wait on the network, so they have a lock of their own and never
+    // hold up saving.
+    val lookupLock = remember(viewModel) { Mutex() }
+    LaunchedEffect(viewModel, state.isLoaded, state.blueskyPostText) {
+        delay(900)
+        lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.checkMentions() } }
+    }
+    val uriHandler = LocalUriHandler.current
     DisposableEffect(viewModel) {
         onDispose {
             viewModel.persistCaption()
@@ -154,6 +172,15 @@ fun PostEditorScreen(
 
     PostEditorContent(
         state = state,
+        instagramMentions = viewModel.mentionChecks(PublishTarget.Instagram),
+        blueskyMentions = viewModel.mentionChecks(PublishTarget.Bluesky),
+        onOpenLink = { address ->
+            try {
+                uriHandler.openUri(address)
+            } catch (_: Exception) {
+                // Nothing on the phone can open a web address; the name is still shown.
+            }
+        },
         onBack = onBack,
         onOpenSettings = onOpenSettings,
         dictationAvailable = dictation?.isAvailable == true,
@@ -207,6 +234,9 @@ fun PostEditorScreen(
 @Composable
 fun PostEditorContent(
     state: PostEditorState,
+    instagramMentions: List<MentionCheck>,
+    blueskyMentions: List<MentionCheck>,
+    onOpenLink: (String) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     dictationAvailable: Boolean,
@@ -406,6 +436,7 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                     shape = MaterialTheme.shapes.medium,
                 )
+                MentionLines(instagramMentions, onOpenLink)
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     FlowRow(
                         modifier = Modifier.weight(1f),
@@ -516,6 +547,7 @@ fun PostEditorContent(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
+                    MentionLines(blueskyMentions, onOpenLink)
                 }
             }
         }
@@ -596,6 +628,13 @@ fun PostEditorContent(
                             append(" It has already been posted there once, so this would make a second post.")
                         }
                         if (state.altText.isBlank()) append(" There is no alt text yet.")
+                        val doubtful = (if (target == PublishTarget.Bluesky) blueskyMentions else instagramMentions)
+                            .filter { it.needsAttention }
+                        if (doubtful.isNotEmpty()) {
+                            append(" Look at ")
+                            append(doubtful.joinToString(" and ") { "@${it.name}" })
+                            append(" first: as written it will not link to the account you mean.")
+                        }
                     },
                 )
             },
@@ -656,6 +695,53 @@ private fun ToggleRow(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/**
+ * One line for each account mentioned: whether it was found, or what is wrong
+ * with it. A line with a profile behind it opens that profile when tapped.
+ */
+@Composable
+private fun MentionLines(checks: List<MentionCheck>, onOpenLink: (String) -> Unit) {
+    if (checks.isEmpty()) return
+    Column {
+        checks.forEach { check ->
+            val nameColor = when {
+                check.needsAttention -> MaterialTheme.colorScheme.error
+                check.status == MentionStatus.Found -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+            val address = check.profileUrl
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(color = nameColor, fontWeight = FontWeight.SemiBold)) {
+                        if (check.status == MentionStatus.Found) append("\u2713 ")
+                        append("@${check.name}")
+                    }
+                    append("  \u00B7  ${check.note}")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (check.needsAttention) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.small)
+                    .then(
+                        if (address != null) {
+                            Modifier.clickable(role = Role.Button, onClickLabel = "Open the profile") {
+                                onOpenLink(address)
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(vertical = 6.dp),
+            )
+        }
     }
 }
 

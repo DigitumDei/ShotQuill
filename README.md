@@ -115,6 +115,14 @@ Bluesky are not the ones that work on Instagram. Settings holds the usual tags
 for each, which new posts start with. On Bluesky a full handle in the text or
 the tags, such as `@name.bsky.social`, becomes a real mention.
 
+Mentions are checked while you write. For Bluesky the app asks Bluesky's open
+directory whether the handle exists (only the handle is sent, with no
+sign-in) and shows the account's name, or says that nobody has that handle or
+that a bare `@name` needs its full handle. Instagram gives an app that posts
+with an Instagram sign-in no way to ask whether an account exists, so there
+the app only catches names Instagram would not accept and offers each one as
+a link to open the profile and see for yourself.
+
 ### Instagram
 
 Instagram's API only publishes to professional (Business or Creator) accounts,
