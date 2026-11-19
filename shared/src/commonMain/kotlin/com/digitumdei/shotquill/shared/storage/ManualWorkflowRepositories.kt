@@ -58,6 +58,13 @@ interface PostDraftRepository {
     fun save(postDraft: PostDraft)
     fun get(id: PostDraftId): PostDraft?
     fun listPostDrafts(): List<DraftSummary>
+
+    /**
+     * Deletes the draft and everything stored for it, for good. Returns the
+     * addresses of its media that no other draft uses, so the caller can
+     * delete those files. Returns an empty list when there is no such draft.
+     */
+    fun delete(id: PostDraftId): List<String>
     fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean
     fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean
     fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean

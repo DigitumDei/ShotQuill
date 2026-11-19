@@ -135,7 +135,7 @@ fun blueskyProfileUrl(handle: String): String = "https://bsky.app/profile/$handl
  * posts with an Instagram sign-in no way to ask whether another account
  * exists, so a well-formed name can only be offered for looking at.
  */
-fun instagramMentionChecks(text: String): List<MentionCheck> =
+fun instagramMentionChecks(text: String, lookups: Map<String, AccountLookup> = emptyMap()): List<MentionCheck> =
     AtNamePattern.findAll(text)
         .map { it.groupValues[2].trimEnd('.', '-') }
         .filter { it.isNotEmpty() }
@@ -148,8 +148,18 @@ fun instagramMentionChecks(text: String): List<MentionCheck> =
                 name.startsWith('.') -> "Instagram names cannot start with a full stop."
                 else -> null
             }
+            val found = lookups[name.lowercase()] as? AccountLookup.Found
             if (problem != null) {
                 MentionCheck(name, MentionStatus.Problem, problem)
+            } else if (found != null) {
+                // Instagram only answers for professional accounts, so a name it
+                // does not confirm is left as "cannot be checked", never "not found".
+                MentionCheck(
+                    name = name,
+                    status = MentionStatus.Found,
+                    note = found.displayName.trim().ifEmpty { "Found" },
+                    profileUrl = instagramProfileUrl(name),
+                )
             } else {
                 MentionCheck(
                     name = name,
@@ -173,3 +183,57 @@ private val AtNamePattern = Regex("(^|[\\s(])@([A-Za-z0-9._-]+)")
 private val FullHandlePattern = Regex(
     "(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?",
 )
+
+/** An account offered while a mention is being typed. */
+data class AccountSuggestion(val handle: String, val displayName: String = "")
+
+/**
+ * The name being typed when [text] ends in an unfinished mention, such as
+ * `doct` in `Cheers @doct`. Empty just after the @. Null when the text does
+ * not end in a mention.
+ */
+fun mentionBeingTyped(text: String): String? = TrailingMentionPattern.find(text)?.groupValues?.get(2)
+
+/** [text] with the mention being typed at its end replaced by [name], ready for the next word. */
+fun completeMention(text: String, name: String): String {
+    val typed = mentionBeingTyped(text) ?: return text
+    return text.dropLast(typed.length + 1) + "@" + name + " "
+}
+
+/** The accounts mentioned in [text], written the way [target] names them, for remembering who was mentioned. */
+fun mentionNamesFor(target: PublishTarget, text: String): List<String> = when (target) {
+    PublishTarget.Bluesky -> blueskyMentionNames(text).filter(::isFullBlueskyHandle)
+    PublishTarget.Instagram -> instagramMentionChecks(text)
+        .filter { it.status != MentionStatus.Problem }
+        .map { it.name.lowercase() }
+}
+
+/** [history] with [used] moved to the front, most recent first, each name once, at most [limit]. */
+fun rememberMentions(history: List<String>, used: List<String>, limit: Int = 60): List<String> =
+    (used + history).distinctBy { it.lowercase() }.take(limit)
+
+/**
+ * What to offer for a mention being typed: names used before that match,
+ * those starting with what was typed first, then what the service itself
+ * suggested. A name already typed in full is not offered.
+ */
+fun suggestMentions(
+    typed: String,
+    usedBefore: List<String>,
+    fromService: List<AccountSuggestion> = emptyList(),
+    limit: Int = 6,
+): List<AccountSuggestion> {
+    val wanted = typed.lowercase()
+    val known = usedBefore
+        .filter { wanted in it.lowercase() }
+        .sortedBy { !it.lowercase().startsWith(wanted) }
+        .map { name ->
+            fromService.firstOrNull { it.handle.equals(name, ignoreCase = true) } ?: AccountSuggestion(name)
+        }
+    return (known + fromService)
+        .distinctBy { it.handle.lowercase() }
+        .filter { it.handle.lowercase() != wanted }
+        .take(limit)
+}
+
+private val TrailingMentionPattern = Regex("(^|[\\s(])@([A-Za-z0-9._-]*)$")

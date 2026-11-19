@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.image.PhotoRenderer
 import com.digitumdei.shotquill.shared.ai.AiOperation
 import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
@@ -9,7 +10,9 @@ import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
+import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
@@ -304,6 +307,73 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun aProblemWithSecureStorageIsPassedOnAndSavingASecretSaysWhy() {
+        val broken = object : LocalSettingsRepository by repository {
+            override val secretStorageNotice = "Secure storage could not be opened."
+            override fun saveSecret(name: String, value: String): Unit = throw IllegalStateException("Secure storage could not be opened.")
+            override fun getSecret(name: String): String? = null
+        }
+        val vm = SettingsViewModel(broken, renderer, clock)
+
+        assertEquals("Secure storage could not be opened.", vm.state.secretStorageNotice)
+        vm.saveInstagramToken("EAAunified-abcdef-123456")
+        assertFalse(vm.state.instagramTokenSaved)
+        assertTrue(vm.state.instagramMessage.orEmpty().contains("Secure storage could not be opened."))
+        assertFalse(vm.state.instagramMessage.orEmpty().contains("EAAunified"))
+
+        assertNull(viewModel().state.secretStorageNotice)
+    }
+
+    @Test
+    fun removedPostsAreCountedWithTheirSizeAndClearedOnRequest() {
+        val store = object : PostEditorStore by FakeStore() {
+            var removed = listOf("file:///photos/a.jpg", "file:///photos/b.jpg")
+            override fun removedPostPhotos(): List<String> = removed
+            override fun clearRemovedPosts(): List<String> = removed.also { removed = emptyList() }
+        }
+        val sizes = mapOf("file:///photos/a.jpg" to 1_400_000L, "file:///photos/b.jpg" to 600_000L)
+        val sized = object : PhotoRenderer by renderer {
+            override fun storedBytes(uri: String): Long = if (uri in renderer.discarded) 0L else sizes[uri] ?: 0L
+        }
+        val vm = SettingsViewModel(repository, sized, clock, posts = store)
+
+        assertEquals(2, vm.state.removedPostCount)
+        assertEquals(2_000_000L, vm.state.removedPostBytes)
+
+        vm.clearRemovedPosts()
+
+        assertEquals(0, vm.state.removedPostCount)
+        assertEquals(0L, vm.state.removedPostBytes)
+        assertEquals("Cleared 2 removed posts, freeing 2.0 MB.", vm.state.storageMessage)
+        assertEquals(listOf("file:///photos/a.jpg", "file:///photos/b.jpg"), renderer.discarded)
+
+        // Without a post store there is nothing to count or clear.
+        val bare = viewModel()
+        assertEquals(0, bare.state.removedPostCount)
+        bare.clearRemovedPosts()
+        assertNull(bare.state.storageMessage)
+
+        assertEquals("1 removed post", postsWord(1))
+        assertEquals("512 bytes", formatBytes(512))
+        assertEquals("2 KB", formatBytes(1_500))
+        assertEquals("1.4 MB", formatBytes(1_449_000))
+    }
+
+    @Test
+    fun theLogoShadowIsSavedAndKeptBetweenNoneAndFull() {
+        val vm = viewModel()
+        assertEquals(0f, vm.state.settings.logo.shadow)
+
+        vm.setLogoShadow(0.6f)
+        assertEquals(0.6f, repository.readSettings().logo.shadow)
+        vm.setLogoShadow(4f)
+        assertEquals(1f, repository.readSettings().logo.shadow)
+        vm.setLogoShadow(-1f)
+        assertEquals(0f, vm.state.settings.logo.shadow)
+        assertEquals(0f, viewModel().state.settings.logo.shadow)
+    }
+
+    @Test
     fun privacyNoteSaysWhatLeavesThePhone() {
         val offline = privacyNote(dictationOnDevice = null, aiConfigured = false)
         assertTrue(offline.contains("does not connect to the internet"))
@@ -318,10 +388,8 @@ class SettingsViewModelTest {
         val everything = privacyNote(dictationOnDevice = null, aiConfigured = true, postingTo = listOf("Instagram", "Bluesky"))
         assertTrue(everything.contains("alt text"))
         assertTrue(everything.contains("and when you post to Instagram or Bluesky"))
-        assertTrue(everything.contains("and to ask Bluesky whether an account you @mention exists."))
-        assertFalse(
-            privacyNote(dictationOnDevice = null, aiConfigured = false, postingTo = listOf("Instagram")).contains("@mention"),
-        )
+        assertTrue(everything.contains("and to look up the accounts you @mention there, sending only the name."))
+        assertFalse(privacyNote(dictationOnDevice = null, aiConfigured = true).contains("@mention"))
         assertTrue(
             privacyNote(dictationOnDevice = null, aiConfigured = false, postingTo = listOf("Bluesky"))
                 .contains("only when you post to Bluesky"),

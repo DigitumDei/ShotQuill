@@ -38,11 +38,18 @@ class PostToPublish(
     val altText: String,
     val imageWidth: Int,
     val imageHeight: Int,
+    /** People tagged on the photo. Only Instagram takes these. */
+    val userTags: List<PhotoTag> = emptyList(),
+    /** Accounts invited to share the post as collaborators. Only Instagram takes these. */
+    val collaborators: List<String> = emptyList(),
 )
 
 sealed interface PublishResult {
-    /** [url] opens the published post in a browser or the service's own app. */
-    data class Success(val url: String) : PublishResult
+    /**
+     * [url] opens the published post in a browser or the service's own app.
+     * [note] is set when the post went out but the service left part of it off.
+     */
+    data class Success(val url: String, val note: String? = null) : PublishResult
 
     /** [message] is written for the person using the app and never contains a password or token. */
     data class Failure(val message: String) : PublishResult
@@ -82,6 +89,18 @@ interface PostPublisher {
      * is posted, and services that offer no such lookup say so.
      */
     fun findAccount(name: String): AccountLookup = AccountLookup.CannotCheck
+
+    /**
+     * Blocking. Accounts the service offers for a name that is still being
+     * typed. Empty when it has none or offers no such lookup.
+     */
+    fun suggestAccounts(typed: String): List<AccountSuggestion> = emptyList()
+
+    /**
+     * Blocking. Accounts this account has mentioned in its own earlier posts,
+     * as far as the service will say. Empty when it will not.
+     */
+    fun pastMentions(): List<String> = emptyList()
 
     /** Blocking: call off the main thread. */
     fun publish(post: PostToPublish): PublishResult

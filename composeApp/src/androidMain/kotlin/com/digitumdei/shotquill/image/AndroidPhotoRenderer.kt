@@ -2,7 +2,9 @@ package com.digitumdei.shotquill.image
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
@@ -10,12 +12,14 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import androidx.exifinterface.media.ExifInterface
+import com.digitumdei.shotquill.shared.domain.LogoShadow
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelRect
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.domain.cropRect
 import com.digitumdei.shotquill.shared.domain.exportSize
 import com.digitumdei.shotquill.shared.domain.logoPlacement
+import com.digitumdei.shotquill.shared.domain.logoShadow
 import com.digitumdei.shotquill.shared.domain.toColorMatrix
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -176,6 +180,9 @@ class AndroidPhotoRenderer(
             ((crop.top + crop.height) * decodeScale).roundToInt().coerceIn(1, photo.height),
         )
 
+    override fun storedBytes(uri: String): Long =
+        uri.toFilePath()?.let { runCatching { File(it).length() }.getOrDefault(0L) } ?: 0L
+
     override fun discard(uri: String) {
         val path = uri.toFilePath() ?: return
         runCatching { File(path).delete() }
@@ -205,7 +212,14 @@ class AndroidPhotoRenderer(
             // A vector logo is drawn at exactly the size it will appear.
             val svgLogo = SvgLogo.load(File(logoPath)) ?: return
             val bounds = boundsFor(svgLogo.size.width.toFloat() / svgLogo.size.height)
-            svgLogo.draw(canvas, bounds, request.logo.opacity)
+            val shadow = logoShadow(request.logo, bounds.width())
+            if (shadow == null) {
+                svgLogo.draw(canvas, bounds, request.logo.opacity)
+            } else {
+                drawWithShadow(canvas, bounds, request.logo.opacity, shadow) { layer, within ->
+                    svgLogo.draw(layer, within, 1f)
+                }
+            }
             return
         }
 
@@ -215,13 +229,73 @@ class AndroidPhotoRenderer(
             val bounds = boundsFor(logoBitmap.width.toFloat() / logoBitmap.height)
             val nearSize = halveTowards(logoBitmap, bounds.width())
             reduced = nearSize
-            val logoPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
-                alpha = (request.logo.opacity.coerceIn(0f, 1f) * 255).roundToInt()
+            val shadow = logoShadow(request.logo, bounds.width())
+            if (shadow == null) {
+                val logoPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+                    alpha = (request.logo.opacity.coerceIn(0f, 1f) * 255).roundToInt()
+                }
+                canvas.drawBitmap(nearSize, null, bounds, logoPaint)
+            } else {
+                drawWithShadow(canvas, bounds, request.logo.opacity, shadow) { layer, within ->
+                    layer.drawBitmap(nearSize, null, within, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+                }
             }
-            canvas.drawBitmap(nearSize, null, bounds, logoPaint)
         } finally {
             if (reduced != null && reduced !== logoBitmap) reduced.recycle()
             logoBitmap.recycle()
+        }
+    }
+
+    /**
+     * Draws the logo with a soft shadow beneath it. The logo is first drawn on
+     * its own at the size it will appear, so the shadow can be made from its
+     * exact outline: a blurred copy of the outline, in black, set down and to
+     * the right. That works the same for a vector logo and a picture.
+     */
+    private fun drawWithShadow(
+        canvas: Canvas,
+        bounds: RectF,
+        opacity: Float,
+        shadow: LogoShadow,
+        drawLogo: (layer: Canvas, within: RectF) -> Unit,
+    ) {
+        val layer = Bitmap.createBitmap(
+            kotlin.math.ceil(bounds.width()).toInt().coerceAtLeast(1),
+            kotlin.math.ceil(bounds.height()).toInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        var outline: Bitmap? = null
+        try {
+            drawLogo(Canvas(layer), RectF(0f, 0f, bounds.width(), bounds.height()))
+            // The blurred outline is larger than the logo; `shift` says where
+            // its corner sits relative to the logo's.
+            val shift = IntArray(2)
+            outline = layer.extractAlpha(
+                Paint().apply { maskFilter = BlurMaskFilter(shadow.blurRadius, BlurMaskFilter.Blur.NORMAL) },
+                shift,
+            )
+            val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                color = Color.BLACK
+                alpha = (shadow.alpha.coerceIn(0f, 1f) * 255).roundToInt()
+            }
+            val shadowLeft = bounds.left + shift[0] + shadow.offsetX
+            val shadowTop = bounds.top + shift[1] + shadow.offsetY
+            // The logo goes over its shadow at full strength, and the pair is
+            // then faded as one. Fading them separately would let the shadow
+            // show through a logo that is slightly see-through and grey it.
+            val together = RectF(bounds).apply {
+                union(shadowLeft, shadowTop, shadowLeft + outline.width, shadowTop + outline.height)
+            }
+            val checkpoint = canvas.saveLayerAlpha(together, (opacity.coerceIn(0f, 1f) * 255).roundToInt())
+            try {
+                canvas.drawBitmap(outline, shadowLeft, shadowTop, shadowPaint)
+                canvas.drawBitmap(layer, bounds.left, bounds.top, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            } finally {
+                canvas.restoreToCount(checkpoint)
+            }
+        } finally {
+            outline?.recycle()
+            layer.recycle()
         }
     }
 

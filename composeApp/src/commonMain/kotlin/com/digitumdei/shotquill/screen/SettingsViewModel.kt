@@ -11,6 +11,7 @@ import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PixelSize
+import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
@@ -37,6 +38,12 @@ data class SettingsState(
     val instagramMessage: String? = null,
     val firebasePasswordSaved: Boolean = false,
     val firebaseMessage: String? = null,
+    /** Set when keys, passwords and tokens cannot be kept on this phone, or were lost. */
+    val secretStorageNotice: String? = null,
+    /** Posts removed from the list whose photos are still stored, and the room they take. */
+    val removedPostCount: Int = 0,
+    val removedPostBytes: Long = 0L,
+    val storageMessage: String? = null,
 ) {
     val blueskyConfigured: Boolean
         get() = blueskyPasswordSaved && settings.bluesky.cleanHandle.isNotEmpty()
@@ -55,6 +62,7 @@ class SettingsViewModel(
     private val repository: LocalSettingsRepository,
     private val renderer: PhotoRenderer?,
     private val clock: EpochClock = EpochClock.Default,
+    private val posts: PostEditorStore? = null,
 ) {
     var state: SettingsState by mutableStateOf(readState())
         private set
@@ -100,6 +108,9 @@ class SettingsViewModel(
 
     fun setLogoCorner(corner: LogoCorner) = update { it.copy(logo = it.logo.copy(corner = corner)) }
 
+    /** How dark the shadow under the logo is; 0 switches it off. */
+    fun setLogoShadow(darkness: Float) = update { it.copy(logo = it.logo.copy(shadow = darkness.coerceIn(0f, 1f))) }
+
     fun addSnippet() = update { it.copy(snippets = it.snippets + CaptionSnippet(name = "", text = "")) }
 
     fun updateSnippet(index: Int, snippet: CaptionSnippet) = update { settings ->
@@ -128,7 +139,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveOpenAiApiKey(trimmed)
-            state.copy(apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed), apiKeyMessage = "Key saved.")
+            state.copy(
+                apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed),
+                apiKeyMessage = "Key saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 apiKeyMessage = SecretRedactor.redactKnownSecrets(
@@ -148,7 +163,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveSecret(BlueskySettings.AppPasswordSecret, trimmed)
-            state.copy(blueskyPasswordSaved = true, blueskyMessage = "App password saved.")
+            state.copy(
+                blueskyPasswordSaved = true,
+                blueskyMessage = "App password saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 blueskyMessage = SecretRedactor.redactKnownSecrets(
@@ -189,7 +208,11 @@ class SettingsViewModel(
                     ),
                 )
             }
-            state = state.copy(instagramTokenSaved = true, instagramMessage = "Token saved. Use the check below to try it.")
+            state = state.copy(
+                instagramTokenSaved = true,
+                instagramMessage = "Token saved. Use the check below to try it.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state = state.copy(
                 instagramMessage = SecretRedactor.redactKnownSecrets(
@@ -237,7 +260,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveSecret(FirebaseHostSettings.UploadPasswordSecret, trimmed)
-            state.copy(firebasePasswordSaved = true, firebaseMessage = "Upload password saved.")
+            state.copy(
+                firebasePasswordSaved = true,
+                firebaseMessage = "Upload password saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 firebaseMessage = SecretRedactor.redactKnownSecrets(
@@ -277,8 +304,35 @@ class SettingsViewModel(
         const val LongLivedTokenMillis = 60L * 24 * 60 * 60 * 1000
     }
 
+    /**
+     * Blocking. Deletes the photos and records of every post that was removed
+     * from the list. This cannot be undone.
+     */
+    fun clearRemovedPosts() {
+        val store = posts ?: return
+        val count = state.removedPostCount
+        val freed = try {
+            val photos = store.clearRemovedPosts()
+            val bytes = photos.sumOf { renderer?.storedBytes(it) ?: 0L }
+            photos.forEach { renderer?.discard(it) }
+            bytes
+        } catch (e: Exception) {
+            state = state.copy(storageMessage = "The removed posts could not be cleared: ${e.message ?: "unknown error"}")
+            return
+        }
+        val remaining = runCatching { store.removedPostPhotos() }.getOrDefault(emptyList())
+        state = state.copy(
+            removedPostCount = remaining.size,
+            removedPostBytes = remaining.sumOf { renderer?.storedBytes(it) ?: 0L },
+            storageMessage = "Cleared ${postsWord(count)}, freeing ${formatBytes(freed)}.",
+        )
+    }
+
+    private fun currentSecretNotice(): String? = runCatching { repository.secretStorageNotice }.getOrNull()
+
     private fun readState(): SettingsState {
         val settings = repository.readSettings()
+        val removedPhotos = runCatching { posts?.removedPostPhotos() }.getOrNull().orEmpty()
         return SettingsState(
             settings = settings,
             logoSize = settings.logo.uri?.let { renderer?.orientedSize(it) },
@@ -290,6 +344,21 @@ class SettingsViewModel(
                 .getOrNull() != null,
             firebasePasswordSaved = runCatching { repository.getSecret(FirebaseHostSettings.UploadPasswordSecret) }
                 .getOrNull() != null,
+            secretStorageNotice = runCatching { repository.secretStorageNotice }.getOrNull(),
+            removedPostCount = removedPhotos.size,
+            removedPostBytes = removedPhotos.sumOf { renderer?.storedBytes(it) ?: 0L },
         )
     }
+}
+
+internal fun postsWord(count: Int): String = if (count == 1) "1 removed post" else "$count removed posts"
+
+/** A size in the units a person would use: bytes become KB or MB once there are enough of them. */
+internal fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000L -> {
+        val tenths = (bytes + 50_000L) / 100_000L
+        "${tenths / 10}.${tenths % 10} MB"
+    }
+    bytes >= 1_000L -> "${(bytes + 500L) / 1_000L} KB"
+    else -> "$bytes bytes"
 }

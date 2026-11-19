@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,15 +32,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +62,7 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.domain.cropRect
+import com.digitumdei.shotquill.shared.domain.logoShadow
 import com.digitumdei.shotquill.shared.domain.logoPlacement
 import com.digitumdei.shotquill.shared.domain.toColorMatrix
 import kotlin.math.roundToInt
@@ -215,6 +222,10 @@ fun PhotoStage(
     modifier: Modifier = Modifier,
     heightLimit: Dp = 440.dp,
     onPanZoom: ((panXFraction: Float, panYFraction: Float, zoomChange: Float) -> Unit)? = null,
+    /** Labels drawn over the photo, such as people tagged on it. */
+    markers: List<PhotoMarker> = emptyList(),
+    /** A tap on the photo, as fractions of the visible frame from its top-left corner. */
+    onTap: ((xFraction: Float, yFraction: Float) -> Unit)? = null,
 ) {
     val crop = remember(treatment.cropShape, treatment.zoom, treatment.centerX, treatment.centerY, imageSize) {
         treatment.cropRect(imageSize.width, imageSize.height)
@@ -228,6 +239,7 @@ fun PhotoStage(
         }
     }
     val currentOnPanZoom by rememberUpdatedState(onPanZoom)
+    val currentOnTap by rememberUpdatedState(onTap)
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val stageWidth = min(maxWidth, heightLimit * aspect)
@@ -252,7 +264,16 @@ fun PhotoStage(
                 .size(stageWidth, stageHeight)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                .then(gesture),
+                .then(gesture)
+                .then(
+                    if (onTap != null) {
+                        Modifier.testTag(PhotoStageTag).pointerInput(Unit) {
+                            detectTapGestures { at -> currentOnTap?.invoke(at.x / size.width, at.y / size.height) }
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             Layout(
                 content = {
@@ -285,22 +306,90 @@ fun PhotoStage(
                     logo = logo,
                     corner = treatment.logoCorner ?: logo.corner,
                 )
-                AsyncImage(
-                    model = logoUri,
-                    contentDescription = "Logo",
-                    contentScale = ContentScale.FillBounds,
-                    alpha = logo.opacity,
+                val logoModifier = Modifier
+                    .offset { IntOffset(placement.left.roundToInt(), placement.top.roundToInt()) }
+                    .size(
+                        width = with(density) { placement.width.toDp() },
+                        height = with(density) { placement.height.toDp() },
+                    )
+                val shadow = logoShadow(logo, placement.width)
+                if (shadow == null) {
+                    AsyncImage(
+                        model = logoUri,
+                        contentDescription = "Logo",
+                        contentScale = ContentScale.FillBounds,
+                        alpha = logo.opacity,
+                        modifier = logoModifier,
+                    )
+                } else {
+                    // The same shadow the finished image gets: the logo again in
+                    // black, blurred, set down and to the right, with the logo
+                    // over it. The pair is faded as one layer, so the shadow
+                    // never shows through the logo.
+                    Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = logo.opacity.coerceIn(0f, 1f) }) {
+                        AsyncImage(
+                            model = logoUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.FillBounds,
+                            colorFilter = ColorFilter.tint(Color.Black),
+                            alpha = shadow.alpha,
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        (placement.left + shadow.offsetX).roundToInt(),
+                                        (placement.top + shadow.offsetY).roundToInt(),
+                                    )
+                                }
+                                .size(
+                                    width = with(density) { placement.width.toDp() },
+                                    height = with(density) { placement.height.toDp() },
+                                )
+                                .blur(with(density) { shadow.blurRadius.toDp() }, BlurredEdgeTreatment.Unbounded),
+                        )
+                        AsyncImage(
+                            model = logoUri,
+                            contentDescription = "Logo",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = logoModifier,
+                        )
+                    }
+                }
+            }
+            markers.forEach { marker ->
+                Text(
+                    text = marker.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (marker.selected) MaterialTheme.colorScheme.onPrimary else Color.White,
                     modifier = Modifier
-                        .offset { IntOffset(placement.left.roundToInt(), placement.top.roundToInt()) }
-                        .size(
-                            width = with(density) { placement.width.toDp() },
-                            height = with(density) { placement.height.toDp() },
-                        ),
+                        .offset {
+                            IntOffset(
+                                (marker.x.coerceIn(0f, 1f) * stageWidthPx).roundToInt(),
+                                (marker.y.coerceIn(0f, 1f) * stageHeightPx).roundToInt(),
+                            )
+                        }
+                        // Slides the label back by the same share of its own size, so
+                        // it starts at the point on the left edge, ends at it on the
+                        // right edge, and is never cut off by the frame.
+                        .graphicsLayer {
+                            translationX = -size.width * marker.x.coerceIn(0f, 1f)
+                            translationY = -size.height * marker.y.coerceIn(0f, 1f)
+                        }
+                        .background(
+                            color = if (marker.selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),
+                            shape = MaterialTheme.shapes.small,
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
     }
 }
+
+/** A label over the photo at [x], [y], fractions of the frame from its top-left corner. */
+data class PhotoMarker(val label: String, val x: Float, val y: Float, val selected: Boolean = false)
+
+/** Finds the photo in tests. */
+const val PhotoStageTag = "photo-stage"
 
 /** A quiet panel used to group related controls. */
 @Composable

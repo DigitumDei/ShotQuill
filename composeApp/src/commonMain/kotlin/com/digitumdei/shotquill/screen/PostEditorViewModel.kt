@@ -39,7 +39,20 @@ import com.digitumdei.shotquill.shared.social.blueskyLength
 import com.digitumdei.shotquill.shared.social.blueskyMentionChecks
 import com.digitumdei.shotquill.shared.social.blueskyTextFor
 import com.digitumdei.shotquill.shared.social.instagramMentionChecks
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
+import com.digitumdei.shotquill.shared.social.MentionStatus
+import com.digitumdei.shotquill.shared.social.completeMention
+import com.digitumdei.shotquill.shared.social.mentionBeingTyped
+import com.digitumdei.shotquill.shared.social.mentionNamesFor
+import com.digitumdei.shotquill.shared.social.rememberMentions
+import com.digitumdei.shotquill.shared.social.suggestMentions
+import com.digitumdei.shotquill.shared.social.InstagramPhotoTagLimit
+import com.digitumdei.shotquill.shared.social.PhotoTag
+import com.digitumdei.shotquill.shared.social.collaboratorsProblem
+import com.digitumdei.shotquill.shared.social.instagramNameOrNull
+import com.digitumdei.shotquill.shared.social.parseCollaborators
 import com.digitumdei.shotquill.shared.social.withTags
+import kotlin.concurrent.Volatile
 
 /** One service the post can be published to directly, and what has happened there so far. */
 data class PublishTargetState(
@@ -50,6 +63,14 @@ data class PublishTargetState(
     val postedUrl: String? = null,
     val isPublishing: Boolean = false,
 )
+
+/** The boxes in the editor where a mention can be typed, and the service each one is written for. */
+enum class MentionField(val target: PublishTarget) {
+    Caption(PublishTarget.Instagram),
+    InstagramTags(PublishTarget.Instagram),
+    BlueskyText(PublishTarget.Bluesky),
+    BlueskyTags(PublishTarget.Bluesky),
+}
 
 data class PostEditorState(
     val isLoaded: Boolean = false,
@@ -76,8 +97,19 @@ data class PostEditorState(
     val blueskyText: String = "",
     /** The hashtags for this post on each service, as typed. */
     val tags: Map<PublishTarget, String> = emptyMap(),
+    /** People tagged on the photo, for Instagram. */
+    val photoTags: List<PhotoTag> = emptyList(),
+    /** The tag that the next tap on the photo will move, if any. */
+    val placingTag: String? = null,
+    /** The Instagram collaborators box, as typed. */
+    val collaborators: String = "",
 ) {
     fun tagsFor(target: PublishTarget): String = tags[target].orEmpty()
+
+    val hasInstagram: Boolean get() = targets.any { it.target == PublishTarget.Instagram }
+
+    /** Why the collaborators as typed cannot be sent, or null when they can. */
+    val collaboratorsProblem: String? get() = collaboratorsProblem(collaborators)
 
     /** The caption with Instagram's hashtags: what is shared or posted to Instagram. */
     val instagramPostText: String get() = withTags(caption, tagsFor(PublishTarget.Instagram))
@@ -118,29 +150,66 @@ class PostEditorViewModel(
     var state: PostEditorState by mutableStateOf(PostEditorState())
         private set
 
+    // Typing arrives on the main thread while loading, saving, sharing and
+    // posting run on background threads, and every change has the shape "take
+    // the state, alter one part, put it back". Making each of those one step
+    // under a lock means no change can be overwritten by another that started
+    // from an older copy, whichever thread it came from.
+    private val stateLock = Any()
+
+    private inline fun update(change: (PostEditorState) -> PostEditorState) {
+        synchronized(stateLock) { state = change(state) }
+    }
+
+    /** Makes [change] only if [allowed] still holds at that moment, and says whether it did. */
+    private inline fun updateIf(
+        allowed: (PostEditorState) -> Boolean,
+        change: (PostEditorState) -> PostEditorState,
+    ): Boolean = synchronized(stateLock) {
+        val current = state
+        if (allowed(current)) {
+            state = change(current)
+            true
+        } else {
+            false
+        }
+    }
+
     // What Bluesky has said so far about each handle mentioned, by handle. Kept
     // apart from [state] because it is written from a background thread while
     // typing carries on, and the two must never overwrite each other.
     private var blueskyLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
 
+    // The same for Instagram names, where Meta will answer at all.
+    private var instagramLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
+
+    // What Bluesky suggested for each unfinished name asked about so far.
+    private var liveSuggestions: Map<String, List<AccountSuggestion>> by mutableStateOf(emptyMap())
+
+    // Accounts mentioned in earlier posts on each service, most recent first.
+    private var usedBefore: Map<PublishTarget, List<String>> by mutableStateOf(emptyMap())
+    private val mentionLock = Any()
+
+    @Volatile
     private var renderedUri: String? = null
 
     // What the store holds, or would fall back to, for each service's tags.
     // Tags are only written once they differ, so a post whose tags were never
     // touched keeps following the usual tags in settings.
     private var savedTags: Map<PublishTarget, String> = emptyMap()
+    private val tagSaveLock = Any()
 
     fun load() {
         val post = store.load(draftId)
         if (post == null) {
-            state = PostEditorState(isMissing = true, message = "This post could not be found.")
+            update { PostEditorState(isMissing = true, message = "This post could not be found.") }
             return
         }
         val settings = settingsRepository.readSettings()
         val logo = settings.logo
         val imageSize = renderer.orientedSize(post.originalUri)
         renderedUri = post.renderedUri
-        state = PostEditorState(
+        val loaded = PostEditorState(
             isLoaded = true,
             originalUri = post.originalUri,
             imageSize = imageSize,
@@ -168,25 +237,31 @@ class PostEditorViewModel(
             tags = PublishTarget.entries.associateWith { target ->
                 post.tags[target] ?: settings.usualTagsFor(target)
             },
+            photoTags = post.photoTags,
+            collaborators = post.collaborators,
             message = if (imageSize == null) "The photo could not be read." else null,
         )
-        savedTags = state.tags
+        update { loaded }
+        savedTags = loaded.tags
+        synchronized(mentionLock) {
+            usedBefore = PublishTarget.entries.associateWith { settings.mentionHistoryFor(it) }
+        }
     }
 
     fun updateCaption(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(caption = text)
+        update { it.copy(caption = text) }
     }
 
     fun addSnippet(snippet: CaptionSnippet) {
         if (!state.isLoaded) return
-        state = state.copy(caption = appendSnippet(state.caption, snippet.text))
+        update { it.copy(caption = appendSnippet(it.caption, snippet.text)) }
     }
 
     /** Adds a phrase that was spoken rather than typed. */
     fun addDictation(spoken: String) {
         if (!state.isLoaded) return
-        state = state.copy(caption = appendDictation(state.caption, spoken))
+        update { it.copy(caption = appendDictation(it.caption, spoken)) }
     }
 
     fun persistCaption() {
@@ -196,7 +271,7 @@ class PostEditorViewModel(
 
     fun updateBlueskyText(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(blueskyText = text)
+        update { it.copy(blueskyText = text) }
     }
 
     fun persistBlueskyText() {
@@ -206,7 +281,7 @@ class PostEditorViewModel(
 
     fun updateTags(target: PublishTarget, tags: String) {
         if (!state.isLoaded) return
-        state = state.copy(tags = state.tags + (target to tags))
+        update { it.copy(tags = it.tags + (target to tags)) }
     }
 
     fun persistTags() {
@@ -214,11 +289,97 @@ class PostEditorViewModel(
         // One reading of the tags serves both the writing and the record of
         // what was written. Typing can carry on while this runs, and anything
         // typed meanwhile must still count as unsaved.
-        val tags = state.tags
-        tags.forEach { (target, text) ->
-            if (savedTags[target] != text) store.saveTags(draftId, target, text)
+        // An autosave and a post can both get here at once; the record of what
+        // has been written must not be updated by two of them together.
+        synchronized(tagSaveLock) {
+            val tags = state.tags
+            tags.forEach { (target, text) ->
+                if (savedTags[target] != text) store.saveTags(draftId, target, text)
+            }
+            savedTags = tags
         }
-        savedTags = tags
+    }
+
+    /**
+     * Tags [typed] on the photo, in the middle to begin with, and makes it the
+     * tag the next tap on the photo will move. Returns false when [typed] is
+     * not an Instagram name.
+     */
+    fun addPhotoTag(typed: String): Boolean {
+        if (!state.isLoaded) return false
+        val name = instagramNameOrNull(typed)
+        if (name == null) {
+            update { it.copy(message = "That is not an Instagram name.") }
+            return false
+        }
+        update { current ->
+            when {
+                current.photoTags.any { it.username == name } -> current.copy(placingTag = name)
+                current.photoTags.size >= InstagramPhotoTagLimit ->
+                    current.copy(message = "Instagram allows up to $InstagramPhotoTagLimit people on a photo.")
+
+                else -> current.copy(photoTags = current.photoTags + PhotoTag(name), placingTag = name)
+            }
+        }
+        return true
+    }
+
+    fun removePhotoTag(username: String) {
+        update { current ->
+            current.copy(
+                photoTags = current.photoTags.filterNot { it.username == username },
+                placingTag = current.placingTag.takeIf { it != username },
+            )
+        }
+    }
+
+    /** Chooses which tag the next tap on the photo moves; choosing it again lets go of it. */
+    fun selectPhotoTag(username: String) {
+        update { current ->
+            if (current.photoTags.none { it.username == username }) {
+                current
+            } else {
+                current.copy(placingTag = if (current.placingTag == username) null else username)
+            }
+        }
+    }
+
+    /** A tap on the photo: the chosen tag moves there. Without a chosen tag nothing happens. */
+    fun placePhotoTag(xFraction: Float, yFraction: Float) {
+        update { current ->
+            val name = current.placingTag
+            if (name == null) {
+                current
+            } else {
+                current.copy(
+                    photoTags = current.photoTags.map {
+                        if (it.username == name) it.copy(x = xFraction.coerceIn(0f, 1f), y = yFraction.coerceIn(0f, 1f)) else it
+                    },
+                    placingTag = null,
+                )
+            }
+        }
+    }
+
+    fun updateCollaborators(text: String) {
+        if (!state.isLoaded) return
+        update { it.copy(collaborators = text) }
+    }
+
+    fun persistInstagramExtras() {
+        if (!state.isLoaded) return
+        val current = state
+        store.saveInstagramExtras(draftId, current.photoTags, current.collaborators)
+    }
+
+    /** Blocking. Writes everything typed or dragged that may not have been saved yet. */
+    fun persistAll() {
+        persistInstagramExtras()
+        persistCaption()
+        persistAltText()
+        persistBlueskyText()
+        persistTags()
+        persistTreatment()
     }
 
     /**
@@ -228,7 +389,7 @@ class PostEditorViewModel(
      */
     fun mentionChecks(target: PublishTarget): List<MentionCheck> = when {
         !state.isLoaded -> emptyList()
-        target == PublishTarget.Instagram -> instagramMentionChecks(state.instagramPostText)
+        target == PublishTarget.Instagram -> instagramMentionChecks(state.instagramPostText, instagramLookups)
         state.hasBluesky -> blueskyMentionChecks(state.blueskyPostText, blueskyLookups)
         else -> emptyList()
     }
@@ -238,7 +399,9 @@ class PostEditorViewModel(
      * for yet. Only the handle is sent, without any sign-in.
      */
     fun checkMentions() {
-        if (!state.isLoaded || !state.hasBluesky) return
+        if (!state.isLoaded) return
+        checkInstagramMentions()
+        if (!state.hasBluesky) return
         val bluesky = publishers.firstOrNull { it.target == PublishTarget.Bluesky } ?: return
         blueskyHandlesToLookUp(state.blueskyPostText).forEach { handle ->
             val known = blueskyLookups[handle]
@@ -252,9 +415,122 @@ class PostEditorViewModel(
         }
     }
 
+    /**
+     * Asks Instagram about each mentioned name it has not been asked about,
+     * when Instagram is set up. It can only ever confirm a name; one it does
+     * not confirm stays as it was.
+     */
+    private fun checkInstagramMentions() {
+        if (state.targets.none { it.target == PublishTarget.Instagram }) return
+        val instagram = publishers.firstOrNull { it.target == PublishTarget.Instagram } ?: return
+        instagramMentionChecks(state.instagramPostText)
+            .filter { it.status == MentionStatus.CannotCheck }
+            .map { it.name.lowercase() }
+            .filter { it !in instagramLookups }
+            .forEach { name ->
+                val answer = try {
+                    instagram.findAccount(name)
+                } catch (_: Exception) {
+                    AccountLookup.CannotCheck
+                }
+                instagramLookups = instagramLookups + (name to answer)
+            }
+    }
+
+    private fun textOf(field: MentionField): String = when (field) {
+        MentionField.Caption -> state.caption
+        MentionField.InstagramTags -> state.tagsFor(PublishTarget.Instagram)
+        MentionField.BlueskyText -> state.blueskyText
+        MentionField.BlueskyTags -> state.tagsFor(PublishTarget.Bluesky)
+    }
+
+    /**
+     * Accounts to offer for the mention being typed at the end of [field]:
+     * ones mentioned before, and for Bluesky what Bluesky itself suggests.
+     * Empty when the box does not end in an unfinished mention.
+     */
+    fun suggestionsFor(field: MentionField): List<AccountSuggestion> {
+        if (!state.isLoaded) return emptyList()
+        if (field.target == PublishTarget.Bluesky && !state.hasBluesky) return emptyList()
+        val typed = mentionBeingTyped(textOf(field)) ?: return emptyList()
+        val fromService = if (field.target == PublishTarget.Bluesky) {
+            liveSuggestions[typed.lowercase()].orEmpty()
+        } else {
+            emptyList()
+        }
+        return suggestMentions(typed, usedBefore[field.target].orEmpty(), fromService)
+    }
+
+    /** Finishes the mention being typed in [field] with [suggestion]. */
+    fun applySuggestion(field: MentionField, suggestion: AccountSuggestion) {
+        if (!state.isLoaded) return
+        when (field) {
+            MentionField.Caption -> update { it.copy(caption = completeMention(it.caption, suggestion.handle)) }
+            MentionField.BlueskyText -> update { it.copy(blueskyText = completeMention(it.blueskyText, suggestion.handle)) }
+            MentionField.InstagramTags, MentionField.BlueskyTags -> update {
+                val tags = completeMention(it.tagsFor(field.target), suggestion.handle)
+                it.copy(tags = it.tags + (field.target to tags))
+            }
+        }
+    }
+
+    /**
+     * Blocking. Asks Bluesky for accounts matching each unfinished mention in
+     * the Bluesky boxes. Only what was typed after the @ is sent.
+     */
+    fun fetchSuggestions() {
+        if (!state.isLoaded || !state.hasBluesky) return
+        val bluesky = publishers.firstOrNull { it.target == PublishTarget.Bluesky } ?: return
+        listOf(MentionField.BlueskyText, MentionField.BlueskyTags)
+            .mapNotNull { mentionBeingTyped(textOf(it))?.lowercase() }
+            .filter { it.length >= MinTypedForSuggestions && it !in liveSuggestions }
+            .distinct()
+            .forEach { typed ->
+                val found = try {
+                    bluesky.suggestAccounts(typed)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                liveSuggestions = liveSuggestions + (typed to found)
+            }
+    }
+
+    /**
+     * Blocking. Adds the accounts each service says this account has
+     * mentioned before to the ones remembered on the phone.
+     */
+    fun loadMentionHistory() {
+        if (!state.isLoaded) return
+        publishers.filter { it.isConfigured }.forEach { publisher ->
+            val names = try {
+                publisher.pastMentions()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (names.isNotEmpty()) {
+                synchronized(mentionLock) {
+                    val known = usedBefore[publisher.target].orEmpty()
+                    usedBefore = usedBefore + (publisher.target to (known + names).distinctBy { it.lowercase() })
+                }
+            }
+        }
+    }
+
+    /** Remembers who was mentioned in [text], so they are offered next time. */
+    private fun rememberMentionsUsed(target: PublishTarget, text: String) {
+        val names = mentionNamesFor(target, text)
+        if (names.isEmpty()) return
+        runCatching {
+            settingsRepository.saveSettings(settingsRepository.readSettings().withMentionsUsed(target, names))
+        }
+        synchronized(mentionLock) {
+            usedBefore = usedBefore + (target to rememberMentions(usedBefore[target].orEmpty(), names))
+        }
+    }
+
     fun updateAltText(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(altText = text)
+        update { it.copy(altText = text) }
     }
 
     fun persistAltText() {
@@ -264,7 +540,7 @@ class PostEditorViewModel(
 
     fun selectAltTextModel(model: String) {
         if (!state.isLoaded || model !in state.altTextModels) return
-        state = state.copy(altTextModel = model)
+        update { it.copy(altTextModel = model) }
     }
 
     /**
@@ -276,68 +552,93 @@ class PostEditorViewModel(
         val current = state
         val writer = altTextWriter
         val sourceUri = current.originalUri
-        if (!current.canWriteAltText || writer == null || sourceUri == null) return
-        state = current.copy(isWritingAltText = true, message = null)
+        if (writer == null || sourceUri == null) return
+        if (!updateIf({ it.canWriteAltText }) { it.copy(isWritingAltText = true, message = null) }) return
         val jpeg = renderer.encodeForDescription(sourceUri, current.treatment)
         if (jpeg == null) {
-            state = state.copy(isWritingAltText = false, message = "The photo could not be prepared for describing.")
+            update { it.copy(isWritingAltText = false, message = "The photo could not be prepared for describing.") }
             return
         }
         when (val result = writer.write(jpeg, current.caption, current.altTextModel)) {
             is AiResult.Success -> {
-                state = state.copy(isWritingAltText = false, altText = result.text)
-                store.saveAltText(draftId, result.text)
+                // Only if the post is still open: it may have been removed while the description was on its way.
+                val stillOpen = updateIf({ it.isLoaded }) { it.copy(isWritingAltText = false, altText = result.text) }
+                if (stillOpen) store.saveAltText(draftId, result.text)
             }
 
             is AiResult.Failure -> {
-                state = state.copy(isWritingAltText = false, message = result.message)
+                updateIf({ it.isLoaded }) { it.copy(isWritingAltText = false, message = result.message) }
             }
         }
+    }
+
+    /**
+     * Puts the caption on the clipboard exactly as typed, without any
+     * service's hashtags: the starting point for a version edited by hand,
+     * such as the Bluesky text.
+     */
+    fun copyCaption() {
+        val text = state.caption.trim()
+        if (text.isEmpty()) return
+        val message = try {
+            clipboardWriter.copy("caption", text)
+            "Caption copied."
+        } catch (_: Exception) {
+            "The caption could not be copied."
+        }
+        update { it.copy(message = message) }
     }
 
     fun copyAltText() {
         val text = state.altText.trim()
         if (text.isEmpty()) return
-        state = try {
+        val message = try {
             clipboardWriter.copy("alt text", text)
-            state.copy(message = "Alt text copied.")
+            "Alt text copied."
         } catch (_: Exception) {
-            state.copy(message = "The alt text could not be copied.")
+            "The alt text could not be copied."
         }
+        update { it.copy(message = message) }
+    }
+
+    /**
+     * Changes how the photo is framed or treated. Not while it is being shared
+     * or posted: the image going out was made from the framing as it was, and
+     * that image is what gets recorded for the post.
+     */
+    private inline fun changeTreatment(change: (PhotoTreatment) -> PhotoTreatment) {
+        updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing }) { it.copy(treatment = change(it.treatment)) }
     }
 
     fun selectShape(shape: CropShape) {
         if (!state.isLoaded || state.treatment.cropShape == shape) return
-        state = state.copy(treatment = state.treatment.withShape(shape))
+        changeTreatment { it.withShape(shape) }
     }
 
     /** A drag and pinch on the photo, in fractions of the visible crop. */
     fun panZoom(panXFraction: Float, panYFraction: Float, zoomChange: Float) {
         val size = state.imageSize ?: return
-        state = state.copy(
-            treatment = state.treatment.panZoomed(
+        changeTreatment {
+            it.panZoomed(
                 panXFraction = panXFraction,
                 panYFraction = panYFraction,
                 zoomChange = zoomChange,
                 imageWidth = size.width,
                 imageHeight = size.height,
-            ),
-        )
+            )
+        }
     }
 
     fun setLookEnabled(enabled: Boolean) {
-        if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(lookEnabled = enabled))
+        changeTreatment { it.copy(lookEnabled = enabled) }
     }
 
     fun setLogoEnabled(enabled: Boolean) {
-        if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(logoEnabled = enabled))
+        changeTreatment { it.copy(logoEnabled = enabled) }
     }
 
     fun setLogoCorner(corner: LogoCorner) {
-        if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(logoCorner = corner))
+        changeTreatment { it.copy(logoCorner = corner) }
     }
 
     fun persistTreatment() {
@@ -346,7 +647,7 @@ class PostEditorViewModel(
     }
 
     fun dismissMessage() {
-        state = state.copy(message = null)
+        update { it.copy(message = null) }
     }
 
     /**
@@ -356,8 +657,8 @@ class PostEditorViewModel(
     fun share() {
         val current = state
         val sourceUri = current.originalUri
-        if (!current.canShare || sourceUri == null) return
-        state = current.copy(isSharing = true, message = null)
+        if (sourceUri == null) return
+        if (!updateIf({ it.canShare }) { it.copy(isSharing = true, message = null) }) return
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         persistTags()
@@ -374,7 +675,7 @@ class PostEditorViewModel(
         )
         when (outcome) {
             is RenderOutcome.Failure -> {
-                state = state.copy(isSharing = false, message = outcome.message)
+                update { it.copy(isSharing = false, message = outcome.message) }
             }
 
             is RenderOutcome.Success -> {
@@ -408,15 +709,18 @@ class PostEditorViewModel(
                 if (result.success) {
                     val previous = renderedUri
                     store.markShared(draftId, outcome.uri)
+                    rememberMentionsUsed(PublishTarget.Instagram, caption)
                     renderedUri = outcome.uri
                     if (previous != null && previous != outcome.uri) renderer.discard(previous)
-                    state = state.copy(isSharing = false, shared = true, message = "Image ready.$clipboardNote")
+                    update { it.copy(isSharing = false, shared = true, message = "Image ready.$clipboardNote") }
                 } else {
                     renderer.discard(outcome.uri)
-                    state = state.copy(
-                        isSharing = false,
-                        message = result.errorMessage ?: "The share sheet could not be opened.",
-                    )
+                    update {
+                        it.copy(
+                            isSharing = false,
+                            message = result.errorMessage ?: "The share sheet could not be opened.",
+                        )
+                    }
                 }
             }
         }
@@ -437,20 +741,34 @@ class PostEditorViewModel(
             PublishTarget.Bluesky -> current.blueskyPostText
         }
         publisher.problemWith(text)?.let { problem ->
-            state = current.copy(message = problem)
+            update { it.copy(message = problem) }
             return
         }
-        state = current.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
+        val forInstagram = target == PublishTarget.Instagram
+        if (forInstagram) {
+            current.collaboratorsProblem?.let { problem ->
+                update { it.copy(message = problem) }
+                return
+            }
+        }
+        // Only one post or share runs at a time; a second tap that slipped in is dropped here.
+        val started = updateIf({ it.canShare }) { latest ->
+            latest.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
+        }
+        if (!started) return
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         store.saveBlueskyText(draftId, current.blueskyText)
+        store.saveInstagramExtras(draftId, current.photoTags, current.collaborators)
         persistTags()
         store.saveTreatment(draftId, current.treatment)
 
         fun finish(message: String, postedUrl: String? = null) {
-            state = state.withTarget(target) {
-                it.copy(isPublishing = false, postedUrl = postedUrl ?: it.postedUrl)
-            }.copy(message = message, shared = state.shared || postedUrl != null)
+            update { latest ->
+                latest.withTarget(target) {
+                    it.copy(isPublishing = false, postedUrl = postedUrl ?: it.postedUrl)
+                }.copy(message = message, shared = latest.shared || postedUrl != null)
+            }
         }
 
         val outcome = renderer.render(
@@ -484,15 +802,26 @@ class PostEditorViewModel(
                         altText = current.altText.trim(),
                         imageWidth = outcome.size.width,
                         imageHeight = outcome.size.height,
+                        userTags = if (forInstagram) current.photoTags else emptyList(),
+                        collaborators = if (forInstagram) {
+                            parseCollaborators(current.collaborators).mapNotNull(::instagramNameOrNull)
+                        } else {
+                            emptyList()
+                        },
                     ),
                 )
                 when (result) {
                     is PublishResult.Success -> {
                         val previous = renderedUri
                         store.markPublished(draftId, target, result.url, outcome.uri)
+                        rememberMentionsUsed(target, text)
                         renderedUri = outcome.uri
                         if (previous != null && previous != outcome.uri) renderer.discard(previous)
-                        finish("Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}.", result.url)
+                        finish(
+                            "Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}." +
+                                result.note?.let { " $it" }.orEmpty(),
+                            result.url,
+                        )
                     }
 
                     is PublishResult.Failure -> {
@@ -509,11 +838,25 @@ class PostEditorViewModel(
         change: (PublishTargetState) -> PublishTargetState,
     ): PostEditorState = copy(targets = targets.map { if (it.target == target) change(it) else it })
 
-    /** Removes the post from the list and deletes the image made from it. */
+    private companion object {
+        const val MinTypedForSuggestions = 2
+    }
+
+    /**
+     * Removes the post from the list and deletes the image made from it. Not
+     * while it is being shared, posted or described: that would finish
+     * afterwards and write to a post that is gone.
+     */
     fun remove() {
+        val removing = updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing && !it.isWritingAltText }) {
+            PostEditorState(isMissing = true)
+        }
+        if (!removing) {
+            update { if (it.isLoaded) it.copy(message = "Wait for this to finish before removing the post.") else it }
+            return
+        }
         renderedUri?.let(renderer::discard)
         renderedUri = null
         store.remove(draftId)
-        state = PostEditorState(isMissing = true)
     }
 }

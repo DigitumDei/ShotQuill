@@ -32,6 +32,8 @@ class NewPostCreatorTest {
 
         override fun get(id: PostDraftId): PostDraft? = savedDrafts[id]
 
+        override fun delete(id: PostDraftId): List<String> = emptyList()
+
         override fun listPostDrafts(): List<com.digitumdei.shotquill.shared.domain.DraftSummary> = emptyList()
 
         override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: kotlinx.datetime.Instant): Boolean =
@@ -201,6 +203,8 @@ class NewPostCreatorTest {
             }
 
             override fun get(id: PostDraftId): PostDraft? = null
+
+            override fun delete(id: PostDraftId): List<String> = emptyList()
 
             override fun listPostDrafts(): List<com.digitumdei.shotquill.shared.domain.DraftSummary> = emptyList()
 

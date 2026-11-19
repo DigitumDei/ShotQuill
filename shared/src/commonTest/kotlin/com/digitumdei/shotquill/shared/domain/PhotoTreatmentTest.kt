@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -282,5 +283,42 @@ class PhotoTreatmentTest {
 
     private fun assertClose(expected: Float, actual: Float, tolerance: Float = 0.01f) {
         assertTrue(abs(expected - actual) <= tolerance, "expected $expected but was $actual")
+    }
+
+    @Test
+    fun theLogoShadowIsOffByDefaultAndFollowsTheLogosSize() {
+        assertEquals(0f, LogoSettings().shadow)
+        assertNull(logoShadow(LogoSettings(), logoWidth = 400f))
+        assertNull(logoShadow(LogoSettings(shadow = -1f), logoWidth = 400f))
+        assertNull(logoShadow(LogoSettings(shadow = 1f), logoWidth = 0f))
+
+        // On a logo 400 wide: a blur of about 2.5 and an offset of 2, as a drawing program's drop shadow.
+        val shadow = assertNotNull(logoShadow(LogoSettings(shadow = 1f, opacity = 1f), logoWidth = 400f))
+        assertEquals(2.6f, shadow.blurSigma, 0.01f)
+        assertEquals(2f, shadow.offsetX, 0.01f)
+        assertEquals(2f, shadow.offsetY, 0.01f)
+        assertEquals(1f, shadow.alpha, 0.001f)
+
+        // Twice the logo, twice the shadow: it looks the same at any size.
+        val doubled = assertNotNull(logoShadow(LogoSettings(shadow = 1f, opacity = 1f), logoWidth = 800f))
+        assertEquals(shadow.blurSigma * 2, doubled.blurSigma, 0.01f)
+        assertEquals(shadow.offsetX * 2, doubled.offsetX, 0.01f)
+    }
+
+    @Test
+    fun theSliderSetsHowDarkTheShadowIs() {
+        assertEquals(0.5f, assertNotNull(logoShadow(LogoSettings(shadow = 0.5f, opacity = 1f), 400f)).alpha, 0.001f)
+        // The logo's own strength is applied to logo and shadow together when they are drawn, not here.
+        assertEquals(0.5f, assertNotNull(logoShadow(LogoSettings(shadow = 0.5f, opacity = 0.6f), 400f)).alpha, 0.001f)
+        assertEquals(1f, assertNotNull(logoShadow(LogoSettings(shadow = 7f, opacity = 3f), 400f)).alpha, 0.001f)
+    }
+
+    @Test
+    fun theBlurIsHandedOverInTheFormAndroidAndComposeExpect() {
+        // They take a "radius" and turn it into the blur's spread as 0.57735 * radius + 0.5.
+        val shadow = assertNotNull(logoShadow(LogoSettings(shadow = 1f), logoWidth = 400f))
+        assertEquals(shadow.blurSigma, 0.57735f * shadow.blurRadius + 0.5f, 0.001f)
+        // A logo so small that its shadow would need less than no blur still gets a valid one.
+        assertTrue(assertNotNull(logoShadow(LogoSettings(shadow = 1f), logoWidth = 10f)).blurRadius > 0f)
     }
 }

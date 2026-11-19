@@ -29,6 +29,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -47,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +67,9 @@ import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.InstagramCollaboratorLimit
 import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PostPublisher
@@ -74,17 +79,29 @@ import com.digitumdei.shotquill.speech.DictationState
 import com.digitumdei.shotquill.ui.CornerPicker
 import com.digitumdei.shotquill.ui.Panel
 import com.digitumdei.shotquill.ui.PanelDivider
+import com.digitumdei.shotquill.ui.PhotoMarker
 import com.digitumdei.shotquill.ui.PhotoStage
 import com.digitumdei.shotquill.ui.ScreenHeader
 import com.digitumdei.shotquill.ui.SectionLabel
 import com.digitumdei.shotquill.ui.ShapeChips
 import com.digitumdei.shotquill.ui.ShotQuillIcons
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+/**
+ * Serialises reading and writing of posts across editor screens and the post
+ * list. Network calls never hold it.
+ */
+internal val editorStorageLock = Mutex()
+
+/** Outlives any one editor screen, for the save that happens as a screen is left. */
+private val editorFlushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @Composable
 fun PostEditorScreen(
@@ -116,7 +133,9 @@ fun PostEditorScreen(
     }
     val state = viewModel.state
     val scope = rememberCoroutineScope()
-    val writeLock = remember(viewModel) { Mutex() }
+    // One lock for every editor, so a post that is reopened waits for the
+    // last screen's saving to finish before it reads.
+    val writeLock = editorStorageLock
 
     LaunchedEffect(viewModel) {
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.load() } }
@@ -136,6 +155,10 @@ fun PostEditorScreen(
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistBlueskyText() } }
     }
+    LaunchedEffect(viewModel, state.photoTags, state.collaborators) {
+        delay(600)
+        writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistInstagramExtras() } }
+    }
     LaunchedEffect(viewModel, state.tags) {
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTags() } }
@@ -148,18 +171,26 @@ fun PostEditorScreen(
     // lookups wait on the network, so they have a lock of their own and never
     // hold up saving.
     val lookupLock = remember(viewModel) { Mutex() }
-    LaunchedEffect(viewModel, state.isLoaded, state.blueskyPostText) {
+    LaunchedEffect(viewModel, state.isLoaded, state.blueskyPostText, state.instagramPostText) {
         delay(900)
         lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.checkMentions() } }
+    }
+    // Suggestions for a name still being typed are wanted sooner than a check
+    // of a finished one.
+    LaunchedEffect(viewModel, state.isLoaded, state.blueskyText, state.tagsFor(PublishTarget.Bluesky)) {
+        delay(350)
+        lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.fetchSuggestions() } }
+    }
+    LaunchedEffect(viewModel, state.isLoaded) {
+        if (state.isLoaded) lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.loadMentionHistory() } }
     }
     val uriHandler = LocalUriHandler.current
     DisposableEffect(viewModel) {
         onDispose {
-            viewModel.persistCaption()
-            viewModel.persistAltText()
-            viewModel.persistBlueskyText()
-            viewModel.persistTags()
-            viewModel.persistTreatment()
+            // Whatever was typed in the last moment is still saved, but not on
+            // the main thread and not by this screen's own scope, which ends
+            // with the screen.
+            editorFlushScope.launch { editorStorageLock.withLock { viewModel.persistAll() } }
         }
     }
     DisposableEffect(dictation) {
@@ -174,6 +205,8 @@ fun PostEditorScreen(
         state = state,
         instagramMentions = viewModel.mentionChecks(PublishTarget.Instagram),
         blueskyMentions = viewModel.mentionChecks(PublishTarget.Bluesky),
+        suggestionsFor = viewModel::suggestionsFor,
+        onApplySuggestion = viewModel::applySuggestion,
         onOpenLink = { address ->
             try {
                 uriHandler.openUri(address)
@@ -199,16 +232,15 @@ fun PostEditorScreen(
         onBlueskyTextChange = viewModel::updateBlueskyText,
         onTagsChange = viewModel::updateTags,
         onPublish = { target ->
-            scope.launch {
-                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.publish(target) } }
-            }
+            // Posting waits on the network, so it does not hold the storage
+            // lock: saving carries on while a post is on its way.
+            scope.launch { withContext(Dispatchers.IO) { viewModel.publish(target) } }
         },
         onSelectAltTextModel = viewModel::selectAltTextModel,
+        onCopyCaption = viewModel::copyCaption,
         onCopyAltText = viewModel::copyAltText,
         onWriteAltText = {
-            scope.launch {
-                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
-            }
+            scope.launch { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
         },
         onAddSnippet = viewModel::addSnippet,
         onSelectShape = viewModel::selectShape,
@@ -216,6 +248,11 @@ fun PostEditorScreen(
         onLookEnabled = viewModel::setLookEnabled,
         onLogoEnabled = viewModel::setLogoEnabled,
         onLogoCorner = viewModel::setLogoCorner,
+        onAddPhotoTag = viewModel::addPhotoTag,
+        onRemovePhotoTag = viewModel::removePhotoTag,
+        onSelectPhotoTag = viewModel::selectPhotoTag,
+        onPlacePhotoTag = viewModel::placePhotoTag,
+        onCollaboratorsChange = viewModel::updateCollaborators,
         onDismissMessage = viewModel::dismissMessage,
         onShare = {
             scope.launch {
@@ -236,6 +273,9 @@ fun PostEditorContent(
     state: PostEditorState,
     instagramMentions: List<MentionCheck>,
     blueskyMentions: List<MentionCheck>,
+    /** Accounts to offer under a box while a mention is being typed in it. */
+    suggestionsFor: (MentionField) -> List<AccountSuggestion>,
+    onApplySuggestion: (MentionField, AccountSuggestion) -> Unit,
     onOpenLink: (String) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -248,6 +288,7 @@ fun PostEditorContent(
     onTagsChange: (PublishTarget, String) -> Unit,
     onPublish: (PublishTarget) -> Unit,
     onSelectAltTextModel: (String) -> Unit,
+    onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
     onWriteAltText: () -> Unit,
     onAddSnippet: (CaptionSnippet) -> Unit,
@@ -256,6 +297,12 @@ fun PostEditorContent(
     onLookEnabled: (Boolean) -> Unit,
     onLogoEnabled: (Boolean) -> Unit,
     onLogoCorner: (LogoCorner) -> Unit,
+    /** Tags a name on the photo; false when it is not an Instagram name. */
+    onAddPhotoTag: (String) -> Boolean,
+    onRemovePhotoTag: (String) -> Unit,
+    onSelectPhotoTag: (String) -> Unit,
+    onPlacePhotoTag: (xFraction: Float, yFraction: Float) -> Unit,
+    onCollaboratorsChange: (String) -> Unit,
     onDismissMessage: () -> Unit,
     onShare: () -> Unit,
     onRemove: () -> Unit,
@@ -268,7 +315,10 @@ fun PostEditorContent(
             title = if (state.shared) "Shared post" else "New post",
             onBack = onBack,
         ) {
-            IconButton(onClick = { confirmRemove = true }, enabled = state.isLoaded) {
+            IconButton(
+                onClick = { confirmRemove = true },
+                enabled = state.isLoaded && !state.isPublishing && !state.isSharing && !state.isWritingAltText,
+            ) {
                 Icon(ShotQuillIcons.Delete, contentDescription = "Remove post")
             }
         }
@@ -291,7 +341,13 @@ fun PostEditorContent(
                     look = state.look,
                     logo = state.logo,
                     logoSize = state.logoSize,
-                    onPanZoom = onPanZoom,
+                    // While a tag is being placed, a touch on the photo places it: a
+                    // finger that slips a little must not drag the framing instead.
+                    onPanZoom = if (state.placingTag == null && !state.isPublishing && !state.isSharing) onPanZoom else null,
+                    markers = state.photoTags.map {
+                        PhotoMarker("@${it.username}", it.x, it.y, selected = it.username == state.placingTag)
+                    },
+                    onTap = if (state.placingTag != null) onPlacePhotoTag else null,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     ShapeChips(selected = state.treatment.cropShape, onSelect = onSelectShape)
@@ -375,7 +431,13 @@ fun PostEditorContent(
                 val listening = dictationState is DictationState.Listening
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("Caption", modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = onCopyCaption,
+                        enabled = state.caption.isNotBlank(),
+                        modifier = Modifier.semantics { contentDescription = "Copy caption" },
+                    ) { Text("Copy") }
                     if (dictationAvailable) {
+                        Spacer(Modifier.width(4.dp))
                         FilledTonalButton(
                             onClick = onToggleDictation,
                             enabled = state.isLoaded,
@@ -427,6 +489,7 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     shape = MaterialTheme.shapes.medium,
                 )
+                MentionSuggestions(suggestionsFor(MentionField.Caption)) { onApplySuggestion(MentionField.Caption, it) }
                 OutlinedTextField(
                     value = state.tagsFor(PublishTarget.Instagram),
                     onValueChange = { onTagsChange(PublishTarget.Instagram, it) },
@@ -436,7 +499,19 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                     shape = MaterialTheme.shapes.medium,
                 )
+                MentionSuggestions(suggestionsFor(MentionField.InstagramTags)) {
+                    onApplySuggestion(MentionField.InstagramTags, it)
+                }
                 MentionLines(instagramMentions, onOpenLink)
+                if (state.hasInstagram) {
+                    InstagramExtras(
+                        state = state,
+                        onAddPhotoTag = onAddPhotoTag,
+                        onRemovePhotoTag = onRemovePhotoTag,
+                        onSelectPhotoTag = onSelectPhotoTag,
+                        onCollaboratorsChange = onCollaboratorsChange,
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     FlowRow(
                         modifier = Modifier.weight(1f),
@@ -511,7 +586,11 @@ fun PostEditorContent(
                         }
                         Spacer(Modifier.weight(1f))
                     }
-                    TextButton(onClick = onCopyAltText, enabled = state.altText.isNotBlank()) { Text("Copy") }
+                    TextButton(
+                        onClick = onCopyAltText,
+                        enabled = state.altText.isNotBlank(),
+                        modifier = Modifier.semantics { contentDescription = "Copy alt text" },
+                    ) { Text("Copy") }
                 }
             }
 
@@ -528,6 +607,9 @@ fun PostEditorContent(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         shape = MaterialTheme.shapes.medium,
                     )
+                    MentionSuggestions(suggestionsFor(MentionField.BlueskyText)) {
+                        onApplySuggestion(MentionField.BlueskyText, it)
+                    }
                     OutlinedTextField(
                         value = state.tagsFor(PublishTarget.Bluesky),
                         onValueChange = { onTagsChange(PublishTarget.Bluesky, it) },
@@ -537,6 +619,9 @@ fun PostEditorContent(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         shape = MaterialTheme.shapes.medium,
                     )
+                    MentionSuggestions(suggestionsFor(MentionField.BlueskyTags)) {
+                        onApplySuggestion(MentionField.BlueskyTags, it)
+                    }
                     Text(
                         text = "${state.blueskyLength} / $BlueskyTextLimit" +
                             if (state.blueskyText.isBlank()) "  ·  using the caption" else "",
@@ -656,7 +741,8 @@ fun PostEditorContent(
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove this post?") },
-            text = { Text("It disappears from your list. The original photo stays in the app's storage.") },
+            text = { Text("It disappears from your list. Its original photo stays on the phone until you clear " +
+                        "removed posts in Settings.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -695,6 +781,111 @@ private fun ToggleRow(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/**
+ * What only a post made straight to Instagram can carry: people tagged on the
+ * photo, and accounts invited to share the post as collaborators.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun InstagramExtras(
+    state: PostEditorState,
+    onAddPhotoTag: (String) -> Boolean,
+    onRemovePhotoTag: (String) -> Unit,
+    onSelectPhotoTag: (String) -> Unit,
+    onCollaboratorsChange: (String) -> Unit,
+) {
+    var newTag by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = newTag,
+            onValueChange = { newTag = it },
+            modifier = Modifier.weight(1f),
+            enabled = state.isLoaded && !state.isPublishing,
+            singleLine = true,
+            label = { Text("Tag someone on the photo") },
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+            shape = MaterialTheme.shapes.medium,
+        )
+        TextButton(
+            onClick = { if (onAddPhotoTag(newTag)) newTag = "" },
+            enabled = newTag.isNotBlank() && state.isLoaded && !state.isPublishing,
+        ) { Text("Tag") }
+    }
+    if (state.photoTags.isNotEmpty()) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.photoTags.forEach { tag ->
+                InputChip(
+                    selected = tag.username == state.placingTag,
+                    onClick = { onSelectPhotoTag(tag.username) },
+                    label = { Text("@${tag.username}") },
+                    trailingIcon = {
+                        IconButton(onClick = { onRemovePhotoTag(tag.username) }, modifier = Modifier.size(20.dp)) {
+                            Icon(
+                                ShotQuillIcons.Close,
+                                contentDescription = "Remove tag ${tag.username}",
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        Text(
+            text = if (state.placingTag != null) {
+                "Tap the photo where @${state.placingTag} is."
+            } else {
+                "Tap a name, then the photo, to move its tag. Tags go out only when you post to Instagram here, " +
+                    "not through Share."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.placingTag != null) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
+    OutlinedTextField(
+        value = state.collaborators,
+        onValueChange = onCollaboratorsChange,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = state.isLoaded && !state.isPublishing,
+        singleLine = true,
+        isError = state.collaboratorsProblem != null,
+        label = { Text("Collaborators, up to $InstagramCollaboratorLimit") },
+        supportingText = {
+            Text(
+                state.collaboratorsProblem
+                    ?: "Each gets an invitation to share the post on their own profile once it is out.",
+            )
+        },
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+        shape = MaterialTheme.shapes.medium,
+    )
+}
+
+/** Accounts offered while a mention is being typed. Tapping one finishes the mention with it. */
+@Composable
+private fun MentionSuggestions(suggestions: List<AccountSuggestion>, onPick: (AccountSuggestion) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        suggestions.forEach { suggestion ->
+            AssistChip(
+                onClick = { onPick(suggestion) },
+                label = {
+                    Text(
+                        "@${suggestion.handle}" +
+                            suggestion.displayName.trim().let { if (it.isEmpty()) "" else "  \u00B7  $it" },
+                    )
+                },
+            )
+        }
     }
 }
 

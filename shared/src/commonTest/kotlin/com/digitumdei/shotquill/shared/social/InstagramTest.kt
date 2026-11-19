@@ -316,6 +316,178 @@ class InstagramTest {
         assertFalse(InstagramSettings.isInstagramLoginToken("EAAexample"))
     }
 
+    private fun unified() {
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAunified-abcdef-123456")
+        transport.on("/me/assigned_instagram_accounts", """{"data":[{"id":"1784","username":"doctrinebrewing"}]}""")
+    }
+
+    @Test
+    fun aNameMetaKnowsIsConfirmedAndOneItDoesNotKnowIsLeftUnchecked() {
+        unified()
+        transport.on(
+            "business_discovery.username(some_friend)",
+            """{"business_discovery":{"username":"some_friend","name":"Some Friend Brewing","id":"99"},"id":"1784"}""",
+        )
+        transport.on(
+            "business_discovery.username(personal_one)",
+            """{"error":{"message":"Invalid user id","code":110,"error_subcode":2207013}}""",
+            status = 400,
+        )
+
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount(" @Some_Friend "))
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("personal_one"))
+        // An answer about one name does not stop the next being asked about.
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount("some_friend"))
+
+        val lookups = transport.requests.filter { it.url.contains("business_discovery") }
+        assertEquals(
+            "https://graph.facebook.com/v27.0/1784?fields=business_discovery.username(some_friend){username,name}",
+            lookups.first().url,
+        )
+        assertEquals("Bearer EAAunified-abcdef-123456", lookups.first().headers["Authorization"])
+        // The account is asked for once, not before every name.
+        assertEquals(1, transport.requests.count { it.url.contains("assigned_instagram_accounts") })
+        // A name that could not be an Instagram name is never sent.
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("bad name&x=1"))
+        assertEquals(3, transport.requests.count { it.url.contains("business_discovery") })
+    }
+
+    @Test
+    fun whenMetaRefusesLookupsAltogetherTheAppStopsAsking() {
+        unified()
+        transport.on(
+            "business_discovery",
+            """{"error":{"message":"(#10) Application does not have permission for this action","code":10}}""",
+            status = 400,
+        )
+
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("another_friend"))
+        assertEquals(1, transport.requests.count { it.url.contains("business_discovery") })
+    }
+
+    @Test
+    fun whatWasLearnedWithOneTokenIsNotCarriedOverToAnother() {
+        unified()
+        transport.on(
+            "business_discovery",
+            """{"error":{"message":"(#10) Application does not have permission for this action","code":10}}""",
+            status = 400,
+        )
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertEquals(1, transport.requests.count { it.url.contains("business_discovery") })
+
+        // A new token, for another account, with the permission the first lacked.
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAsecond-abcdef-654321")
+        transport.on("/me/assigned_instagram_accounts", """{"data":[{"id":"2222","username":"second_account"}]}""")
+        transport.on(
+            "business_discovery",
+            """{"business_discovery":{"username":"some_friend","name":"Some Friend Brewing"},"id":"2222"}""",
+        )
+
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount("some_friend"))
+        val lookup = transport.requests.last { it.url.contains("business_discovery") }
+        assertTrue(lookup.url.startsWith("https://graph.facebook.com/v27.0/2222?"), lookup.url)
+        assertEquals("Bearer EAAsecond-abcdef-654321", lookup.headers["Authorization"])
+    }
+
+    @Test
+    fun namesAreNotLookedUpWithAnInstagramLoginTokenOrWithoutAToken() {
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        settings.clearSecret(InstagramSettings.AccessTokenSecret)
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertTrue(publisher.pastMentions().isEmpty())
+        assertTrue(transport.requests.isEmpty())
+    }
+
+    @Test
+    fun earlierCaptionsAreReadForTheNamesMentionedInThem() {
+        unified()
+        transport.on(
+            "/1784/media?fields=caption",
+            """{"data":[{"caption":"Brewed with @Some_Friend for the festival","id":"1"},{"id":"2"},{"caption":"Thanks @another.one and @some_friend!","id":"3"}]}""",
+        )
+
+        assertEquals(listOf("some_friend", "another.one"), publisher.pastMentions())
+        assertEquals(
+            "https://graph.facebook.com/v27.0/1784/media?fields=caption&limit=50",
+            transport.requests.last().url,
+        )
+
+        transport.on("/1784/media?fields=caption", """{"error":{"message":"caption is not available","code":100}}""", status = 400)
+        assertTrue(publisher.pastMentions().isEmpty())
+    }
+
+    private fun taggedPost() = PostToPublish(
+        text = "Brewed together.",
+        jpeg = byteArrayOf(1, 2, 3),
+        altText = "",
+        imageWidth = 1080,
+        imageHeight = 1350,
+        userTags = listOf(PhotoTag("some_friend", 0.25f, 0.75f), PhotoTag("another.one", 7f, -1f)),
+        collaborators = listOf("some_friend", "another.one"),
+    )
+
+    @Test
+    fun peopleTaggedOnThePhotoAndCollaboratorsGoWithThePost() {
+        happyPath()
+
+        assertEquals(PublishResult.Success("https://www.instagram.com/p/ABC123/"), publisher.publish(taggedPost()))
+
+        val body = Json.parseToJsonElement(
+            transport.requests.first { it.url.endsWith("/1789/media") }.body!!.decodeToString(),
+        ).jsonObject
+        assertEquals(
+            """[{"username":"some_friend","x":0.25,"y":0.75},{"username":"another.one","x":1.0,"y":0.0}]""",
+            body["user_tags"].toString(),
+        )
+        assertEquals("""["some_friend","another.one"]""", body["collaborators"].toString())
+
+        // A plain post carries neither.
+        publisher.publish(post())
+        val plain = Json.parseToJsonElement(
+            transport.requests.last { it.url.endsWith("/1789/media") }.body!!.decodeToString(),
+        ).jsonObject
+        assertNull(plain["user_tags"])
+        assertNull(plain["collaborators"])
+    }
+
+    @Test
+    fun instagramSayingItLeftPartOfThePostOffIsPassedOn() {
+        happyPath()
+        transport.on("/1789/media_publish", """{"id":"media-55","config_issue":"USER_TAGGING_FAILURE"}""")
+        assertEquals(
+            PublishResult.Success("https://www.instagram.com/p/ABC123/", note = "Instagram left the photo tags off."),
+            publisher.publish(taggedPost()),
+        )
+
+        transport.on("/1789/media_publish", """{"id":"media-55","config_issue":"CAPTION_NOT_ATTACHED"}""")
+        assertEquals("Instagram left the caption off.", (publisher.publish(taggedPost()) as PublishResult.Success).note)
+
+        transport.on("/1789/media_publish", """{"id":"media-55","config_issue":"SOMETHING_NEW"}""")
+        assertTrue((publisher.publish(taggedPost()) as PublishResult.Success).note.orEmpty().contains("SOMETHING_NEW"))
+    }
+
+    @Test
+    fun aRefusalOfATaggedPostPointsAtTheNamesAndLeavesNothingBehind() {
+        happyPath()
+        transport.on("/1789/media", """{"error":{"message":"Invalid user tag","code":100}}""", status = 400)
+
+        val refused = (publisher.publish(taggedPost()) as PublishResult.Failure).message
+        assertTrue(refused.contains("Invalid user tag"))
+        assertTrue(refused.contains("check the name"))
+        assertTrue(transport.requests.none { it.url.endsWith("/media_publish") })
+        assertEquals(host.uploaded, host.deleted)
+
+        // The same refusal of a plain post does not talk about names.
+        assertFalse((publisher.publish(post()) as PublishResult.Failure).message.contains("check the name"))
+
+        val tooMany = PostToPublish("x", byteArrayOf(1), "", 1080, 1080, collaborators = listOf("a", "b", "c", "d"))
+        assertTrue((publisher.publish(tooMany) as PublishResult.Failure).message.contains("up to 3 collaborators"))
+        val crowd = PostToPublish("x", byteArrayOf(1), "", 1080, 1080, userTags = (1..21).map { PhotoTag("user$it") })
+        assertTrue((publisher.publish(crowd) as PublishResult.Failure).message.contains("up to 20 people"))
+    }
+
     @Test
     fun checkingTriesTheTokenAndTheHostingWithoutPosting() {
         happyPath()

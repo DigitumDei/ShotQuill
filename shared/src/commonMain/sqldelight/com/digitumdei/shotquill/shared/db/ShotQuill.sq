@@ -333,6 +333,23 @@ ORDER BY platform ASC;
 deletePostDraftMediaItems:
 DELETE FROM post_draft_media_items WHERE draft_id = ?;
 
+selectPostDraftMediaAssetIds:
+SELECT media_asset_id FROM post_draft_media_items WHERE draft_id = ?;
+
+deletePostDraftById:
+DELETE FROM post_drafts WHERE id = ?;
+
+deleteFinalPostContentByDraftId:
+DELETE FROM final_post_content WHERE draft_id = ?;
+
+deleteMediaAssetIfUnused:
+DELETE FROM media_assets
+WHERE id = :id
+  AND NOT EXISTS (SELECT 1 FROM post_draft_media_items WHERE media_asset_id = :id)
+  AND NOT EXISTS (SELECT 1 FROM brand_image_assets WHERE media_asset_id = :id)
+  AND NOT EXISTS (SELECT 1 FROM photo_edit_results WHERE edited_media_asset_id = :id)
+  AND NOT EXISTS (SELECT 1 FROM photo_edit_requests WHERE source_media_asset_id = :id);
+
 insertPostDraftMediaItem:
 INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order)
 VALUES (?, ?, ?);

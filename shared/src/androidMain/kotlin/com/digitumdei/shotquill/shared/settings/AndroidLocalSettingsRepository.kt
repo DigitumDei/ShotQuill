@@ -2,20 +2,18 @@ package com.digitumdei.shotquill.shared.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.concurrent.Volatile
+import java.io.File
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.digitumdei.shotquill.shared.ai.AiOperation
 import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.ai.parseModelList
-import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
-import com.digitumdei.shotquill.shared.domain.QualityTier
-import com.digitumdei.shotquill.shared.domain.RealismLevel
-import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
@@ -23,33 +21,26 @@ import com.digitumdei.shotquill.shared.social.PublishTarget
 
 class AndroidLocalSettingsRepository(
     context: Context,
+    /**
+     * Opens the encrypted store for keys, passwords and tokens. It is a
+     * parameter so tests can stand in for the Android Keystore, which is not
+     * there to use outside a real phone.
+     */
+    private val openSecretPreferences: (Context) -> SharedPreferences = ::encryptedSecretPreferences,
 ) : LocalSettingsRepository {
     private val applicationContext = context.applicationContext
     private val regularPreferences: SharedPreferences =
         applicationContext.getSharedPreferences(SettingsPreferencesName, Context.MODE_PRIVATE)
-    private val secretPreferences: SharedPreferences by lazy { createSecretPreferences(applicationContext) }
+    private val secretStore: SecretStore by lazy { openSecretStore() }
+
+    override val secretStorageNotice: String?
+        get() = when (val store = secretStore) {
+            is SecretStore.Unavailable -> SecretsUnavailableMessage
+            is SecretStore.Available -> if (store.wasReset) SecretsResetMessage else null
+        }
 
     override fun readSettings(): LocalAppSettings =
         LocalAppSettings(
-            defaultTargetPlatform = regularPreferences.enumSetting(
-                KeyDefaultTargetPlatform,
-                TargetPlatform.InstagramFeedSquare,
-                TargetPlatform::fromWireValue,
-            ),
-            defaultQualityTier = regularPreferences.enumSetting(
-                KeyDefaultQualityTier,
-                QualityTier.Standard,
-                QualityTier::fromWireValue,
-            ),
-            defaultRealismLevel = regularPreferences.enumSetting(
-                KeyDefaultRealismLevel,
-                RealismLevel.Photoreal,
-                RealismLevel::fromWireValue,
-            ),
-            activeBrandProfileId = regularPreferences.getString(KeyActiveBrandProfileId, null)
-                ?.takeIf { it.isNotBlank() }
-                ?.let(::BrandProfileId),
-            promptHistoryEnabled = regularPreferences.getBoolean(KeyPromptHistoryEnabled, true),
             defaultCropShape = regularPreferences.enumSetting(
                 KeyDefaultCropShape,
                 CropShape.Portrait,
@@ -81,6 +72,13 @@ class AndroidLocalSettingsRepository(
             usualTags = PublishTarget.entries.mapNotNull { target ->
                 regularPreferences.getString(KeyUsualTagsPrefix + target.wireValue, null)
                     ?.takeIf { it.isNotBlank() }
+                    ?.let { target to it }
+            }.toMap(),
+            mentionHistory = PublishTarget.entries.mapNotNull { target ->
+                regularPreferences.getString(KeyMentionHistoryPrefix + target.wireValue, null)
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() }
+                    ?.takeIf { it.isNotEmpty() }
                     ?.let { target to it }
             }.toMap(),
         )
@@ -115,16 +113,18 @@ class AndroidLocalSettingsRepository(
             opacity = regularPreferences.getFloat(KeyLogoOpacity, defaults.opacity),
             marginFraction = regularPreferences.getFloat(KeyLogoMargin, defaults.marginFraction),
             corner = regularPreferences.enumSetting(KeyLogoCorner, defaults.corner, LogoCorner::fromWireValue),
+            shadow = regularPreferences.getFloat(KeyLogoShadow, defaults.shadow),
         )
     }
 
     override fun saveSettings(settings: LocalAppSettings) {
         regularPreferences.edit()
-            .putString(KeyDefaultTargetPlatform, settings.defaultTargetPlatform.wireValue)
-            .putString(KeyDefaultQualityTier, settings.defaultQualityTier.wireValue)
-            .putString(KeyDefaultRealismLevel, settings.defaultRealismLevel.wireValue)
-            .putString(KeyActiveBrandProfileId, settings.activeBrandProfileId?.value)
-            .putBoolean(KeyPromptHistoryEnabled, settings.promptHistoryEnabled)
+            // Left behind by the removed AI flow; nothing reads them any more.
+            .remove("default_target_platform")
+            .remove("default_quality_tier")
+            .remove("default_realism_level")
+            .remove("active_brand_profile_id")
+            .remove("prompt_history_enabled")
             .putString(KeyDefaultCropShape, settings.defaultCropShape.wireValue)
             .putFloat(KeyLookWarmth, settings.look.warmth)
             .putFloat(KeyLookContrast, settings.look.contrast)
@@ -135,6 +135,7 @@ class AndroidLocalSettingsRepository(
             .putFloat(KeyLogoOpacity, settings.logo.opacity)
             .putFloat(KeyLogoMargin, settings.logo.marginFraction)
             .putString(KeyLogoCorner, settings.logo.corner.wireValue)
+            .putFloat(KeyLogoShadow, settings.logo.shadow)
             .putString(KeySnippets, SnippetCodec.encode(settings.snippets))
             .putString(KeyAiBaseUrl, settings.ai.baseUrl)
             .putString(KeyBlueskyHandle, settings.bluesky.handle)
@@ -155,6 +156,12 @@ class AndroidLocalSettingsRepository(
                     } else {
                         editor.putString(KeyUsualTagsPrefix + target.wireValue, tags)
                     }
+                    val mentioned = settings.mentionHistory[target].orEmpty().filter { it.isNotBlank() }
+                    if (mentioned.isEmpty()) {
+                        editor.remove(KeyMentionHistoryPrefix + target.wireValue)
+                    } else {
+                        editor.putString(KeyMentionHistoryPrefix + target.wireValue, mentioned.joinToString("\n"))
+                    }
                 }
             }
             .also { editor ->
@@ -170,32 +177,30 @@ class AndroidLocalSettingsRepository(
             .apply()
     }
 
-    override fun getOpenAiApiKey(): String? =
-        secretPreferences.getString(KeyOpenAiApiKey, null)?.takeIf { it.isNotBlank() }
+    override fun getOpenAiApiKey(): String? = readSecret(KeyOpenAiApiKey)
 
     override fun saveOpenAiApiKey(apiKey: String) {
         val trimmed = apiKey.trim()
         require(trimmed.isNotEmpty()) { "OpenAI API key cannot be blank" }
-        secretPreferences.edit().putString(KeyOpenAiApiKey, trimmed).apply()
+        writableSecrets().edit().putString(KeyOpenAiApiKey, trimmed).apply()
     }
 
     override fun hasOpenAiApiKey(): Boolean = !getOpenAiApiKey().isNullOrBlank()
 
     override fun clearOpenAiApiKey() {
-        secretPreferences.edit().remove(KeyOpenAiApiKey).apply()
+        removeSecret(KeyOpenAiApiKey)
     }
 
-    override fun getSecret(name: String): String? =
-        secretPreferences.getString(SecretPrefix + name, null)?.takeIf { it.isNotBlank() }
+    override fun getSecret(name: String): String? = readSecret(SecretPrefix + name)
 
     override fun saveSecret(name: String, value: String) {
         val trimmed = value.trim()
         require(trimmed.isNotEmpty()) { "A secret cannot be blank" }
-        secretPreferences.edit().putString(SecretPrefix + name, trimmed).apply()
+        writableSecrets().edit().putString(SecretPrefix + name, trimmed).apply()
     }
 
     override fun clearSecret(name: String) {
-        secretPreferences.edit().remove(SecretPrefix + name).apply()
+        removeSecret(SecretPrefix + name)
     }
 
     private fun <T> SharedPreferences.enumSetting(
@@ -204,41 +209,81 @@ class AndroidLocalSettingsRepository(
         fromWireValue: (String) -> T?,
     ): T = getString(key, null)?.let(fromWireValue) ?: defaultValue
 
-    private fun createSecretPreferences(context: Context): SharedPreferences =
+    private sealed interface SecretStore {
+        /** [wasReset] is true when what was saved before could not be read and had to be cleared. */
+        class Available(val preferences: SharedPreferences, @Volatile var wasReset: Boolean) : SecretStore
+        data object Unavailable : SecretStore
+    }
+
+    /**
+     * Opens the encrypted store. A store that cannot be read, for example
+     * after its key was lost, is cleared and opened afresh, and that is
+     * reported through [secretStorageNotice] rather than passed over. When
+     * encryption is not available at all, secrets are not stored: they are
+     * never written without it.
+     */
+    private fun openSecretStore(): SecretStore =
         try {
-            createEncryptedSecretPreferences(context)
+            SecretStore.Available(openSecretPreferences(applicationContext), wasReset = false)
         } catch (firstFailure: Exception) {
-            context.deleteSharedPreferences(SecretPreferencesName)
+            val hadSavedSecrets = secretFile().let { it.isFile && it.length() > 0 }
+            applicationContext.deleteSharedPreferences(SecretPreferencesName)
             try {
-                createEncryptedSecretPreferences(context)
-            } catch (fallbackFailure: Exception) {
-                context.getSharedPreferences(SecretPreferencesName, Context.MODE_PRIVATE)
+                SecretStore.Available(openSecretPreferences(applicationContext), wasReset = hadSavedSecrets)
+            } catch (secondFailure: Exception) {
+                SecretStore.Unavailable
             }
         }
 
-    private fun createEncryptedSecretPreferences(context: Context): SharedPreferences {
-        // BYOK secrets are encrypted through AndroidX Security Crypto, backed by
-        // a MasterKey stored in the Android Keystore.
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            SecretPreferencesName,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private fun secretFile(): File =
+        File(File(applicationContext.applicationInfo.dataDir, "shared_prefs"), "$SecretPreferencesName.xml")
+
+    private fun readSecret(key: String): String? =
+        when (val store = secretStore) {
+            is SecretStore.Available ->
+                // A single value that will not decrypt is treated as not saved.
+                runCatching { store.preferences.getString(key, null) }.getOrNull()?.takeIf { it.isNotBlank() }
+
+            is SecretStore.Unavailable -> null
+        }
+
+    private fun writableSecrets(): SharedPreferences =
+        when (val store = secretStore) {
+            // Entering a secret again is the answer to "they were cleared", so the notice has done its job.
+            is SecretStore.Available -> store.preferences.also { store.wasReset = false }
+            is SecretStore.Unavailable -> throw IllegalStateException(SecretsUnavailableMessage)
+        }
+
+    private fun removeSecret(key: String) {
+        val store = secretStore
+        if (store is SecretStore.Available) store.preferences.edit().remove(key).apply()
     }
 
-    private companion object {
-        const val SettingsPreferencesName = "shotquill_local_settings"
+    companion object {
+        const val SecretsUnavailableMessage =
+            "This phone's secure storage could not be opened, so keys, passwords and tokens cannot be saved here."
+        const val SecretsResetMessage =
+            "The saved keys, passwords and tokens could not be read and have been cleared. Enter them again."
+
+        /**
+         * Secrets are encrypted through AndroidX Security Crypto, with a key
+         * held in the Android Keystore that never leaves the phone.
+         */
+        fun encryptedSecretPreferences(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                SecretPreferencesName,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+
+        private const val SettingsPreferencesName = "shotquill_local_settings"
         const val SecretPreferencesName = "shotquill_secret_settings"
-        const val KeyDefaultTargetPlatform = "default_target_platform"
-        const val KeyDefaultQualityTier = "default_quality_tier"
-        const val KeyDefaultRealismLevel = "default_realism_level"
-        const val KeyActiveBrandProfileId = "active_brand_profile_id"
-        const val KeyPromptHistoryEnabled = "prompt_history_enabled"
         const val KeyOpenAiApiKey = "openai_api_key"
         const val KeyDefaultCropShape = "default_crop_shape"
         const val KeyLookWarmth = "look_warmth"
@@ -250,6 +295,7 @@ class AndroidLocalSettingsRepository(
         const val KeyLogoOpacity = "logo_opacity"
         const val KeyLogoMargin = "logo_margin_fraction"
         const val KeyLogoCorner = "logo_corner"
+        const val KeyLogoShadow = "logo_shadow"
         const val KeySnippets = "caption_snippets"
         const val KeyAiBaseUrl = "ai_base_url"
         const val KeyAiModelsPrefix = "ai_models_"
@@ -264,6 +310,7 @@ class AndroidLocalSettingsRepository(
         const val KeyFirebaseBucket = "firebase_storage_bucket"
         const val KeyFirebaseEmail = "firebase_upload_email"
         const val KeyUsualTagsPrefix = "usual_tags_"
+        const val KeyMentionHistoryPrefix = "mention_history_"
         const val SecretPrefix = "secret_"
     }
 }

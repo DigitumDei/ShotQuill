@@ -17,6 +17,7 @@ import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
 import kotlinx.datetime.Instant
+import com.digitumdei.shotquill.shared.social.PhotoTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -42,6 +43,141 @@ class PostEditorStoreTest {
             heightPx = 3000,
         )
         return draftId
+    }
+
+    @Test
+    fun removedPostsKeepTheirPhotosUntilTheyAreCleared() {
+        val kept = newPost("kept")
+        val gone = newPost("gone")
+        val alsoGone = newPost("also-gone")
+        store.markShared(alsoGone, "file:///edited/also-gone.jpg")
+        assertTrue(store.removedPostPhotos().isEmpty())
+
+        store.remove(gone)
+        store.remove(alsoGone)
+
+        assertEquals(setOf("file:///photos/gone.jpg", "file:///photos/also-gone.jpg"), store.removedPostPhotos().toSet())
+        assertEquals(listOf(kept), store.listPosts().map { it.id })
+        // Removing a post is still only hiding it.
+        assertNotNull(drafts.get(gone))
+
+        val cleared = store.clearRemovedPosts()
+
+        assertEquals(setOf("file:///photos/gone.jpg", "file:///photos/also-gone.jpg"), cleared.toSet())
+        assertNull(drafts.get(gone))
+        assertNull(drafts.get(alsoGone))
+        assertNotNull(store.load(kept))
+        assertTrue(store.removedPostPhotos().isEmpty())
+        assertTrue(store.clearRemovedPosts().isEmpty())
+    }
+
+    @Test
+    fun peopleTaggedOnThePhotoAndCollaboratorsAreKeptWithThePost() {
+        val id = newPost("tagged")
+        store.saveBlueskyText(id, "Short one")
+        val tags = listOf(PhotoTag("some_friend", 0.2f, 0.8f), PhotoTag("another.one"))
+
+        store.saveInstagramExtras(id, tags, "@some_friend another.one")
+
+        val post = assertNotNull(store.load(id))
+        assertEquals(tags, post.photoTags)
+        assertEquals("@some_friend another.one", post.collaborators)
+        // Nothing else stored beside the post is disturbed.
+        assertEquals("Short one", post.blueskyText)
+
+        store.saveInstagramExtras(id, emptyList(), "")
+        val cleared = assertNotNull(store.load(id))
+        assertTrue(cleared.photoTags.isEmpty())
+        assertEquals("", cleared.collaborators)
+        assertTrue(assertNotNull(store.load(newPost("plain"))).photoTags.isEmpty())
+    }
+
+    @Test
+    fun aShareOrPostThatFinishesAfterThePostWasRemovedDoesNotBringItBack() {
+        val id = newPost("late")
+        store.remove(id)
+
+        store.markPublished(id, PublishTarget.Bluesky, "https://bsky.app/profile/x/post/1", "file:///edited/late.jpg")
+        store.markShared(id, "file:///edited/late.jpg")
+
+        assertTrue(store.listPosts().isEmpty())
+        assertNull(store.load(id))
+        assertNull(treatments.get(id))
+        assertEquals(listOf("file:///photos/late.jpg"), store.removedPostPhotos())
+        // Nor is anything recorded for a post that never existed.
+        store.markShared(PostDraftId("never"), "file:///edited/never.jpg")
+        assertNull(treatments.get(PostDraftId("never")))
+    }
+
+    @Test
+    fun changesToOnePostFromSeveralThreadsAtOnceAllSurvive() {
+        val id = newPost("busy")
+        val rounds = 400
+        val start = java.util.concurrent.CountDownLatch(1)
+        val workers = listOf<(Int) -> Unit>(
+            { n -> store.saveBlueskyText(id, "text $n") },
+            { n -> store.saveTags(id, PublishTarget.Instagram, "#tag$n") },
+            { n -> store.saveInstagramExtras(id, listOf(PhotoTag("friend$n")), "collab$n") },
+            { n -> store.saveTreatment(id, PhotoTreatment(zoom = 1f + (n % 10) / 10f)) },
+            { n -> store.markPublished(id, PublishTarget.Bluesky, "https://example.test/$n", "file:///edited/$n.jpg") },
+        ).map { work ->
+            kotlin.concurrent.thread {
+                start.await()
+                repeat(rounds) { work(it) }
+            }
+        }
+        start.countDown()
+        workers.forEach { it.join(60_000) }
+
+        // Every thread's last write is there: none wrote back a copy another had since changed.
+        val last = rounds - 1
+        val post = assertNotNull(store.load(id))
+        assertEquals("text $last", post.blueskyText)
+        assertEquals("#tag$last", post.tags[PublishTarget.Instagram])
+        assertEquals(listOf(PhotoTag("friend$last")), post.photoTags)
+        assertEquals("collab$last", post.collaborators)
+        assertEquals("https://example.test/$last", post.published[PublishTarget.Bluesky])
+        assertEquals("file:///edited/$last.jpg", post.renderedUri)
+        assertTrue(post.shared)
+    }
+
+    @Test
+    fun savesThatArriveAfterAPostWasRemovedAreDropped() {
+        val id = newPost("gone")
+        store.saveCaption(id, "Written before")
+        store.remove(id)
+        val savesBefore = drafts.saveCount
+
+        store.saveCaption(id, "Written after")
+        store.saveAltText(id, "Described after")
+        store.saveTreatment(id, PhotoTreatment(zoom = 2f))
+        store.saveBlueskyText(id, "After")
+        store.saveTags(id, PublishTarget.Bluesky, "#after")
+        store.saveInstagramExtras(id, listOf(PhotoTag("after")), "after")
+
+        assertEquals(savesBefore, drafts.saveCount)
+        assertNull(treatments.get(id))
+        assertEquals("Written before", drafts.get(id)?.caption?.text)
+        // And nothing is created for a post that never existed.
+        store.saveTreatment(PostDraftId("never"), PhotoTreatment())
+        assertNull(treatments.get(PostDraftId("never")))
+    }
+
+    @Test
+    fun whatIsCountedAsRemovedIsWhatClearingWouldFree() {
+        val listed = newPost("listed", uri = "file:///photos/shared.jpg")
+        val removedSharingAPhoto = newPost("twin", uri = "file:///photos/shared.jpg")
+        val removed = newPost("removed")
+        store.remove(removedSharingAPhoto)
+        store.remove(removed)
+        // An image left beside a removed post by some other route is counted, since clearing deletes it too.
+        treatments.save(removed, StoredTreatment(PhotoTreatment(), renderedUri = "file:///edited/removed.jpg"))
+
+        assertEquals(
+            setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"),
+            store.removedPostPhotos().toSet(),
+        )
+        assertNotNull(store.load(listed))
     }
 
     @Test
@@ -321,6 +457,9 @@ private class InMemoryPostDraftRepository : PostDraftRepository {
     }
 
     override fun get(id: PostDraftId): PostDraft? = drafts[id]
+
+    override fun delete(id: PostDraftId): List<String> =
+        drafts.remove(id)?.mediaItems?.map { it.mediaAsset.uri }.orEmpty()
 
     override fun listPostDrafts(): List<DraftSummary> =
         drafts.values

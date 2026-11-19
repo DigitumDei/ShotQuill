@@ -225,6 +225,13 @@ data class LogoSettings(
     val opacity: Float = 0.9f,
     val marginFraction: Float = 0.04f,
     val corner: LogoCorner = LogoCorner.BottomEnd,
+    /**
+     * How dark the soft shadow under the logo is, from 0 (no shadow) to 1.
+     * Drawn by the app, so it is the same on every post and works for any
+     * logo: a shadow drawn into an SVG as a filter is not something the app
+     * can render.
+     */
+    val shadow: Float = 0f,
 ) {
     companion object {
         const val MinWidthFraction = 0.08f
@@ -232,6 +239,55 @@ data class LogoSettings(
         const val MinOpacity = 0.2f
     }
 }
+
+/**
+ * The shadow to draw under a logo, in pixels of whatever the logo is being
+ * drawn on. The same numbers serve the preview and the finished image.
+ */
+data class LogoShadow(
+    /** How far the shadow is spread, as the standard deviation of the blur. */
+    val blurSigma: Float,
+    val offsetX: Float,
+    val offsetY: Float,
+    /**
+     * How dark, from 0 to 1. The logo's own strength is not included: logo and
+     * shadow are put together first and then faded as one, so the shadow never
+     * shows through a logo that is slightly see-through.
+     */
+    val alpha: Float,
+) {
+    /**
+     * The same spread in the "radius" that Android's and Compose's blurs are
+     * given, which they turn back into a standard deviation the opposite way.
+     */
+    val blurRadius: Float get() = ((blurSigma - 0.5f) / RadiusToSigma).coerceAtLeast(MinBlurRadius)
+
+    private companion object {
+        const val RadiusToSigma = 0.57735f
+        const val MinBlurRadius = 0.1f
+    }
+}
+
+/**
+ * The shadow for a logo drawn [logoWidth] pixels wide, or null when the shadow
+ * is switched off. Its size follows the logo's, so it looks the same at any
+ * size: a small soft shadow down and to the right, in the proportions of a
+ * drop shadow as a drawing program makes one.
+ */
+fun logoShadow(logo: LogoSettings, logoWidth: Float): LogoShadow? {
+    val darkness = logo.shadow.coerceIn(0f, 1f)
+    if (darkness <= 0f || logoWidth <= 0f) return null
+    return LogoShadow(
+        blurSigma = logoWidth * ShadowBlurFraction,
+        offsetX = logoWidth * ShadowOffsetFraction,
+        offsetY = logoWidth * ShadowOffsetFraction,
+        alpha = darkness,
+    )
+}
+
+// A blur of 2.5 and an offset of 2 on a logo about 400 wide.
+private const val ShadowBlurFraction = 0.0065f
+private const val ShadowOffsetFraction = 0.005f
 
 fun logoPlacement(
     canvasWidth: Float,

@@ -27,7 +27,9 @@ import com.digitumdei.shotquill.shared.post.PostSummary
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.social.AccountLookup
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.MentionStatus
+import com.digitumdei.shotquill.shared.social.PhotoTag
 import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.social.PostToPublish
 import com.digitumdei.shotquill.shared.social.PublishResult
@@ -331,6 +333,31 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun theCaptionIsCopiedAsTypedWithoutAnyHashtags() {
+        val vm = loadedViewModel()
+        vm.copyCaption()
+        assertTrue(clipboard.copies.isEmpty(), "an empty caption is not copied")
+
+        vm.updateCaption("  Say hello to Lager Thing!\n")
+        vm.updateTags(PublishTarget.Instagram, "#craftbeer")
+        vm.copyCaption()
+
+        assertEquals(listOf("caption" to "Say hello to Lager Thing!"), clipboard.copies)
+        assertEquals("Caption copied.", vm.state.message)
+    }
+
+    @Test
+    fun aFailedCaptionCopyIsReported() {
+        val vm = loadedViewModel()
+        vm.updateCaption("First pour.")
+        clipboard.failure = IllegalStateException("clipboard busy")
+
+        vm.copyCaption()
+
+        assertEquals("The caption could not be copied.", vm.state.message)
+    }
+
+    @Test
     fun aFailedAltTextCopyIsReported() {
         val vm = loadedViewModel()
         vm.updateAltText("A glass of beer.")
@@ -513,8 +540,7 @@ class PostEditorViewModelTest {
     }
 
     @Test
-    fun instagramMentionsAreNeverLookedUpOnlyReadForMistakes() {
-        instagram.configured = true
+    fun instagramNamesAreNotLookedUpUntilInstagramIsSetUp() {
         val vm = loadedViewModel()
         vm.updateCaption("Brewed with @some_friend")
         vm.updateTags(PublishTarget.Instagram, "#craftbeer @craft-beer")
@@ -526,6 +552,248 @@ class PostEditorViewModelTest {
         assertEquals(listOf(MentionStatus.CannotCheck, MentionStatus.Problem), checks.map { it.status })
         assertEquals("https://www.instagram.com/some_friend/", checks[0].profileUrl)
         assertTrue(instagram.lookedUp.isEmpty())
+    }
+
+    @Test
+    fun aMentionBeingTypedIsOfferedNamesUsedBeforeAndBlueskysOwnSuggestions() {
+        settings.saveSettings(
+            settings.readSettings().copy(
+                mentionHistory = mapOf(
+                    PublishTarget.Bluesky to listOf("doctrinebrewing.co.za"),
+                    PublishTarget.Instagram to listOf("some_friend", "doctrine_fan"),
+                ),
+            ),
+        )
+        bluesky.suggestions["doc"] = listOf(AccountSuggestion("doctor.bsky.social", "A Doctor"))
+        val vm = loadedViewModel()
+        assertTrue(MentionField.entries.all { vm.suggestionsFor(it).isEmpty() })
+
+        vm.updateBlueskyText("Cheers @Doc")
+        // Names used before are there at once; Bluesky's own arrive after it has been asked.
+        assertEquals(listOf("doctrinebrewing.co.za"), vm.suggestionsFor(MentionField.BlueskyText).map { it.handle })
+        vm.fetchSuggestions()
+        vm.fetchSuggestions()
+        assertEquals(listOf("doc"), bluesky.suggestedFor)
+        assertEquals(
+            listOf(AccountSuggestion("doctrinebrewing.co.za"), AccountSuggestion("doctor.bsky.social", "A Doctor")),
+            vm.suggestionsFor(MentionField.BlueskyText),
+        )
+
+        vm.applySuggestion(MentionField.BlueskyText, AccountSuggestion("doctor.bsky.social", "A Doctor"))
+        assertEquals("Cheers @doctor.bsky.social ", vm.state.blueskyText)
+        assertTrue(vm.suggestionsFor(MentionField.BlueskyText).isEmpty())
+
+        // Instagram's boxes are offered Instagram names, and nothing is asked of any service for them.
+        vm.updateCaption("With @doc")
+        vm.fetchSuggestions()
+        assertEquals(listOf("doctrine_fan"), vm.suggestionsFor(MentionField.Caption).map { it.handle })
+        vm.applySuggestion(MentionField.Caption, AccountSuggestion("doctrine_fan"))
+        assertEquals("With @doctrine_fan ", vm.state.caption)
+        assertEquals(listOf("doc"), bluesky.suggestedFor)
+
+        vm.updateTags(PublishTarget.Instagram, "#craftbeer @")
+        assertEquals(listOf("some_friend", "doctrine_fan"), vm.suggestionsFor(MentionField.InstagramTags).map { it.handle })
+        vm.applySuggestion(MentionField.InstagramTags, AccountSuggestion("some_friend"))
+        assertEquals("#craftbeer @some_friend ", vm.state.tagsFor(PublishTarget.Instagram))
+        vm.updateTags(PublishTarget.Bluesky, "@doctr")
+        vm.applySuggestion(MentionField.BlueskyTags, AccountSuggestion("doctrinebrewing.co.za"))
+        assertEquals("@doctrinebrewing.co.za ", vm.state.tagsFor(PublishTarget.Bluesky))
+    }
+
+    @Test
+    fun whoWasMentionedInAPostIsRememberedForNextTime() {
+        instagram.configured = true
+        instagram.past = listOf("from_old_captions", "some_friend")
+        val vm = loadedViewModel()
+        vm.loadMentionHistory()
+        vm.updateCaption("Brewed with @Some_Friend")
+        vm.updateBlueskyText("Brewed with @friend.bsky.social and @bare")
+
+        vm.publish(PublishTarget.Bluesky)
+        vm.share()
+
+        val saved = settings.readSettings()
+        assertEquals(listOf("friend.bsky.social"), saved.mentionHistoryFor(PublishTarget.Bluesky))
+        assertEquals(listOf("some_friend"), saved.mentionHistoryFor(PublishTarget.Instagram))
+        // Offered next time: what was just used first, then what Instagram's old captions held.
+        vm.updateTags(PublishTarget.Instagram, "@")
+        assertEquals(
+            listOf("some_friend", "from_old_captions"),
+            vm.suggestionsFor(MentionField.InstagramTags).map { it.handle },
+        )
+        val reopened = loadedViewModel()
+        reopened.updateBlueskyText("@fri")
+        assertEquals(listOf("friend.bsky.social"), reopened.suggestionsFor(MentionField.BlueskyText).map { it.handle })
+    }
+
+    @Test
+    fun anInstagramNameIsConfirmedWhenInstagramWillSay() {
+        instagram.configured = true
+        instagram.accounts["some_friend"] = AccountLookup.Found("some_friend", "Some Friend Brewing")
+        val vm = loadedViewModel()
+        vm.updateCaption("With @Some_Friend and @someone_else")
+
+        vm.checkMentions()
+        vm.checkMentions()
+
+        val checks = vm.mentionChecks(PublishTarget.Instagram)
+        assertEquals(listOf(MentionStatus.Found, MentionStatus.CannotCheck), checks.map { it.status })
+        assertEquals("Some Friend Brewing", checks[0].note)
+        assertEquals(listOf("some_friend", "someone_else"), instagram.lookedUp)
+    }
+
+    @Test
+    fun peopleAreTaggedOnThePhotoMovedByATapAndRemoved() {
+        instagram.configured = true
+        val vm = loadedViewModel()
+        assertTrue(vm.state.hasInstagram)
+
+        assertFalse(vm.addPhotoTag("craft-beer"))
+        assertEquals("That is not an Instagram name.", vm.state.message)
+        assertTrue(vm.addPhotoTag(" @Some_Friend "))
+        assertTrue(vm.addPhotoTag("another.one"))
+
+        // A new tag starts in the middle and is the one the next tap moves.
+        assertEquals(listOf(PhotoTag("some_friend"), PhotoTag("another.one")), vm.state.photoTags)
+        assertEquals("another.one", vm.state.placingTag)
+        vm.placePhotoTag(0.9f, 1.4f)
+        assertEquals(PhotoTag("another.one", 0.9f, 1f), vm.state.photoTags[1])
+        assertNull(vm.state.placingTag)
+
+        // A tap with no tag chosen moves nothing.
+        vm.placePhotoTag(0.1f, 0.1f)
+        assertEquals(PhotoTag("some_friend"), vm.state.photoTags[0])
+        vm.selectPhotoTag("some_friend")
+        vm.placePhotoTag(0.1f, 0.2f)
+        assertEquals(PhotoTag("some_friend", 0.1f, 0.2f), vm.state.photoTags[0])
+
+        // Choosing the same tag twice lets go of it; adding a name already tagged just chooses it.
+        vm.selectPhotoTag("some_friend")
+        vm.selectPhotoTag("some_friend")
+        assertNull(vm.state.placingTag)
+        vm.selectPhotoTag("nobody")
+        assertNull(vm.state.placingTag)
+        assertTrue(vm.addPhotoTag("some_friend"))
+        assertEquals(2, vm.state.photoTags.size)
+        assertEquals("some_friend", vm.state.placingTag)
+
+        vm.removePhotoTag("some_friend")
+        assertEquals(listOf("another.one"), vm.state.photoTags.map { it.username })
+        assertNull(vm.state.placingTag)
+
+        vm.persistInstagramExtras()
+        assertEquals(listOf(PhotoTag("another.one", 0.9f, 1f)) to "", store.savedExtras.last())
+    }
+
+    @Test
+    fun tagsAndCollaboratorsGoToInstagramOnlyAndAreKeptWithThePost() {
+        instagram.configured = true
+        instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/", note = "Instagram left the photo tags off.")
+        store.post = EditablePost(
+            draftId, photoUri, caption = "Brewed together", altText = "", treatment = null, renderedUri = null,
+            shared = false, photoTags = listOf(PhotoTag("some_friend", 0.3f, 0.6f)), collaborators = "@Some_Friend",
+        )
+        renderer.sizes[photoUri] = PixelSize(4000, 3000)
+        val vm = viewModel().also { it.load() }
+        assertEquals(listOf(PhotoTag("some_friend", 0.3f, 0.6f)), vm.state.photoTags)
+        assertEquals("@Some_Friend", vm.state.collaborators)
+
+        vm.updateCollaborators("a b c d")
+        assertEquals("Instagram allows up to 3 collaborators and this has 4.", vm.state.collaboratorsProblem)
+        vm.publish(PublishTarget.Instagram)
+        assertEquals("Instagram allows up to 3 collaborators and this has 4.", vm.state.message)
+        assertTrue(instagram.posts.isEmpty())
+
+        vm.updateCollaborators("@Some_Friend, another.one")
+        assertNull(vm.state.collaboratorsProblem)
+        vm.publish(PublishTarget.Instagram)
+        vm.publish(PublishTarget.Bluesky)
+
+        val toInstagram = instagram.posts.single()
+        assertEquals(listOf(PhotoTag("some_friend", 0.3f, 0.6f)), toInstagram.userTags)
+        assertEquals(listOf("some_friend", "another.one"), toInstagram.collaborators)
+        val toBluesky = bluesky.posts.single()
+        assertTrue(toBluesky.userTags.isEmpty())
+        assertTrue(toBluesky.collaborators.isEmpty())
+        assertEquals(listOf(PhotoTag("some_friend", 0.3f, 0.6f)) to "@Some_Friend, another.one", store.savedExtras.last())
+    }
+
+    @Test
+    fun whatInstagramLeftOffIsSaidAfterPosting() {
+        instagram.configured = true
+        instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/", note = "Instagram left the photo tags off.")
+        val vm = loadedViewModel()
+
+        vm.publish(PublishTarget.Instagram)
+
+        assertEquals("Posted to Instagram as @doctrinebrewing. Instagram left the photo tags off.", vm.state.message)
+    }
+
+    @Test
+    fun aPostCannotBeRemovedWhileItIsOnItsWay() {
+        val vm = loadedViewModel()
+        var stateDuringPost: PostEditorState? = null
+        bluesky.whilePublishing = {
+            vm.remove()
+            stateDuringPost = vm.state
+        }
+
+        vm.publish(PublishTarget.Bluesky)
+
+        // The removal asked for mid-post was refused, with a reason.
+        assertFalse(store.removed)
+        assertTrue(assertNotNull(stateDuringPost).isLoaded)
+        assertEquals("Wait for this to finish before removing the post.", stateDuringPost?.message)
+        // The post completed normally and is still there to be removed afterwards.
+        assertEquals("Posted to Bluesky as @doctrine.bsky.social.", vm.state.message)
+        assertNotNull(store.publishedTo)
+        vm.remove()
+        assertTrue(store.removed)
+        assertTrue(vm.state.isMissing)
+        // Asking again for a post that is already gone does nothing.
+        vm.remove()
+        assertNull(vm.state.message)
+    }
+
+    @Test
+    fun aPostCannotBeRemovedWhileItsAltTextIsBeingWritten() {
+        setUpAi()
+        val vm = loadedViewModel()
+        var removalMessage: String? = null
+        aiTransport.whileDescribing = {
+            vm.remove()
+            removalMessage = vm.state.message
+        }
+
+        vm.writeAltText()
+
+        assertEquals("Wait for this to finish before removing the post.", removalMessage)
+        assertFalse(store.removed)
+        assertEquals("A photo.", vm.state.altText)
+        assertEquals(listOf("A photo."), store.savedAltTexts)
+    }
+
+    @Test
+    fun theFramingCannotBeChangedWhileThePostIsOnItsWay() {
+        val vm = loadedViewModel()
+        val before = vm.state.treatment
+        bluesky.whilePublishing = {
+            vm.selectShape(CropShape.Story)
+            vm.panZoom(0.2f, 0.2f, 1.5f)
+            vm.setLookEnabled(!before.lookEnabled)
+            vm.setLogoEnabled(!before.logoEnabled)
+            vm.setLogoCorner(LogoCorner.TopStart)
+            // Words are a different matter: they can still be typed.
+            vm.updateCaption("Typed meanwhile")
+        }
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertEquals(before, vm.state.treatment)
+        assertEquals("Typed meanwhile", vm.state.caption)
+        // Once it is out, the framing can be changed again.
+        vm.selectShape(CropShape.Story)
+        assertEquals(CropShape.Story, vm.state.treatment.cropShape)
     }
 
     @Test
@@ -815,7 +1083,7 @@ class PostEditorViewModelTest {
     }
 }
 
-private class FakeStore : PostEditorStore {
+internal class FakeStore : PostEditorStore {
     var post: EditablePost? = null
     val savedCaptions = mutableListOf<String>()
     val savedTreatments = mutableListOf<PhotoTreatment>()
@@ -823,6 +1091,11 @@ private class FakeStore : PostEditorStore {
     val savedBlueskyTexts = mutableListOf<String>()
     val savedTags = mutableListOf<Pair<PublishTarget, String>>()
     var whileSavingTags: (() -> Unit)? = null
+    val savedExtras = mutableListOf<Pair<List<PhotoTag>, String>>()
+
+    override fun saveInstagramExtras(id: PostDraftId, photoTags: List<PhotoTag>, collaborators: String) {
+        savedExtras += photoTags to collaborators
+    }
     var publishedTo: Triple<PublishTarget, String, String>? = null
     var sharedWith: String? = null
     var removed = false
@@ -898,7 +1171,7 @@ internal class FakeRenderer : PhotoRenderer {
     }
 }
 
-private class FakePublisher(
+internal class FakePublisher(
     override val target: PublishTarget = PublishTarget.Bluesky,
     private val account: String = "@doctrine.bsky.social",
 ) : PostPublisher {
@@ -909,6 +1182,20 @@ private class FakePublisher(
     val accounts = mutableMapOf<String, AccountLookup>()
     val lookedUp = mutableListOf<String>()
     var lookupFailure: Exception? = null
+
+    val suggestions = mutableMapOf<String, List<AccountSuggestion>>()
+    val suggestedFor = mutableListOf<String>()
+    var past: List<String> = emptyList()
+
+    override fun suggestAccounts(typed: String): List<AccountSuggestion> {
+        suggestedFor += typed
+        return suggestions[typed].orEmpty()
+    }
+
+    override fun pastMentions(): List<String> = past
+
+    /** Runs while a post is "on its way", standing in for the wait on the network. */
+    var whilePublishing: (() -> Unit)? = null
 
     override val isConfigured get() = configured
     override val accountLabel get() = if (configured) account else null
@@ -928,6 +1215,7 @@ private class FakePublisher(
 
     override fun publish(post: PostToPublish): PublishResult {
         posts += post
+        whilePublishing?.invoke()
         return result
     }
 }
@@ -937,14 +1225,18 @@ private class FakeAiTransport : AiHttpTransport {
     var url: String? = null
     var body: String = ""
 
+    /** Runs while the description is "on its way". */
+    var whileDescribing: (() -> Unit)? = null
+
     override fun postJson(url: String, headers: Map<String, String>, body: String): AiHttpResponse {
+        whileDescribing?.invoke()
         this.url = url
         this.body = body
         return reply
     }
 }
 
-private class RecordingClipboard : ClipboardWriter {
+internal class RecordingClipboard : ClipboardWriter {
     val copies = mutableListOf<Pair<String, String>>()
     var failure: Exception? = null
 
@@ -954,7 +1246,7 @@ private class RecordingClipboard : ClipboardWriter {
     }
 }
 
-private class RecordingShareLauncher : PostShareLauncher {
+internal class RecordingShareLauncher : PostShareLauncher {
     val shares = mutableListOf<Pair<String?, String>>()
     var result = ShareResult(success = true)
 

@@ -46,4 +46,7 @@ interface PhotoRenderer {
 
     /** Deletes a previously rendered image. Missing files are ignored. */
     fun discard(uri: String)
+
+    /** How much room the file at [uri] takes on the phone, in bytes. Zero when it is not there. */
+    fun storedBytes(uri: String): Long = 0L
 }

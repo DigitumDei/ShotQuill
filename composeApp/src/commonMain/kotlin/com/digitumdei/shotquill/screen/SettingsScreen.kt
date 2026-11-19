@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -84,6 +85,8 @@ fun SettingsScreen(
     val logo = settings.logo
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf<PublishTarget?>(null) }
+    var confirmClearRemoved by remember { mutableStateOf(false) }
+    var clearingRemoved by remember { mutableStateOf(false) }
 
     fun check(target: PublishTarget, show: (String) -> Unit) {
         val publisher = publishers.firstOrNull { it.target == target } ?: return
@@ -95,6 +98,33 @@ fun SettingsScreen(
             checking = null
             show(outcome)
         }
+    }
+
+    if (confirmClearRemoved) {
+        AlertDialog(
+            onDismissRequest = { confirmClearRemoved = false },
+            title = { Text("Clear removed posts?") },
+            text = {
+                Text(
+                    "This deletes the photos and records of ${postsWord(state.removedPostCount)} for good. Photos " +
+                        "you picked from the gallery are still in your gallery. Photos taken with the camera in " +
+                        "ShotQuill exist nowhere else and will be gone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClearRemoved = false
+                        clearingRemoved = true
+                        scope.launch {
+                            withContext(Dispatchers.IO) { viewModel.clearRemovedPosts() }
+                            clearingRemoved = false
+                        }
+                    },
+                ) { Text("Delete them") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearRemoved = false }) { Text("Keep them") } },
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize().imePadding()) {
@@ -123,6 +153,9 @@ fun SettingsScreen(
                 .padding(top = 8.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
+            state.secretStorageNotice?.let { notice ->
+                Text(notice, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
             if (previewUri == null || previewSize == null) {
                 Text(
                     "Add a photo first and it will appear here, so you can see the look and logo as you set them.",
@@ -231,6 +264,13 @@ fun SettingsScreen(
                         valueRange = LogoSettings.MinOpacity..1f,
                         onValueChange = { viewModel.setLogoOpacity(it.snapped()) },
                         valueText = "${(logo.opacity * 100).roundToInt()}%",
+                    )
+                    LabeledSlider(
+                        label = "Shadow",
+                        value = logo.shadow,
+                        valueRange = 0f..1f,
+                        onValueChange = { viewModel.setLogoShadow(it.snapped()) },
+                        valueText = if (logo.shadow <= 0f) "Off" else "${(logo.shadow * 100).roundToInt()}%",
                     )
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -395,6 +435,28 @@ fun SettingsScreen(
                         TextButton(
                             onClick = { modelsText = settings.ai.modelsFor(operation).joinToString("\n") },
                         ) { Text("Show the starting models") }
+                    }
+                }
+            }
+
+            SettingsGroup(
+                label = "Storage",
+                detail = "Removing a post only takes it off your list. Its original photo stays on the phone " +
+                    "until you clear it here.",
+            ) {
+                Text(
+                    text = state.storageMessage ?: if (state.removedPostCount == 0) {
+                        "No removed posts are being kept."
+                    } else {
+                        "${postsWord(state.removedPostCount).replaceFirstChar { it.uppercase() }} still on the phone, " +
+                            "taking ${formatBytes(state.removedPostBytes)}."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.removedPostCount > 0) {
+                    OutlinedButton(onClick = { confirmClearRemoved = true }, enabled = !clearingRemoved) {
+                        Text(if (clearingRemoved) "Clearing" else "Clear removed posts")
                     }
                 }
             }
@@ -667,7 +729,7 @@ internal fun privacyNote(
             add("when you ask for alt text, to send that photo and caption to the AI service you set up")
         }
         if (postingTo.isNotEmpty()) add("when you post to " + postingTo.joinToString(" or "))
-        if ("Bluesky" in postingTo) add("to ask Bluesky whether an account you @mention exists")
+        if (postingTo.isNotEmpty()) add("to look up the accounts you @mention there, sending only the name")
     }
     val network = if (occasions.isEmpty()) {
         "It does not connect to the internet unless you set up AI for alt text or a place to post to."

@@ -95,6 +95,33 @@ Reports are written to:
 - `build/reports/kover/html/index.html` (human-readable)
 - `build/reports/kover/report.xml` (machine-readable, for coverage badges/tools)
 
+## Screen tests
+
+The screens are tested with Compose's UI test rule running under Robolectric,
+so they run with the other unit tests (`./gradlew test`) and need no emulator.
+They live in `composeApp/src/androidUnitTest`:
+
+- `PostEditorContentTest` draws the editor from a given state and checks what
+  is shown and what each control reports: typing, the mention lines, the
+  confirmation before posting, removing a post.
+- `PostEditorScreenTest` runs the editor with its view model against stand-in
+  storage and services: loading a post, saving once typing pauses, looking up
+  a mentioned account.
+- `SettingsScreenTest` checks that what is typed in settings is saved.
+- `AppNavigationTest` and `MainActivityRestartTest` move between screens and
+  check the open screen survives Android restarting the activity.
+
+To run only these:
+
+```bash
+./gradlew :composeApp:testDebugUnitTest --tests "*ScreenTest*" --tests "*ContentTest*" --tests "*AppNavigationTest*" --tests "*MainActivityRestartTest*"
+```
+
+They do not cover anything that belongs to Android rather than the app (the
+camera, the file chooser, the share sheet, speech recognition), real network
+calls, or how the screens look. The screen classes stay on the coverage
+exclusion list; these tests are their safety net, not part of the 80% figure.
+
 ## Posting directly
 
 Sharing through the system share sheet needs no setup. Posting straight from
@@ -108,20 +135,31 @@ Settings on the phone; none of it belongs in this repository.
    then use "Check sign-in".
 
 Posts are limited to 300 characters, hashtags included. If the caption is
-longer, write a shorter text in the post's "Bluesky text" box.
+longer, write a shorter text in the post's "Bluesky text" box. "Copy" beside
+the caption puts it on the clipboard as typed, without hashtags, so it can be
+pasted there and trimmed.
 
 Each post has its own hashtags box per service, because the tags that work on
 Bluesky are not the ones that work on Instagram. Settings holds the usual tags
 for each, which new posts start with. On Bluesky a full handle in the text or
 the tags, such as `@name.bsky.social`, becomes a real mention.
 
+While you type a mention the app offers accounts to finish it with: the ones
+you have mentioned in earlier posts, and on Bluesky also what Bluesky's own
+search suggests for the letters typed so far. Tapping one completes the
+mention. For Instagram the app also reads the captions of your recent posts,
+where Meta allows it, to collect names you have used before.
+
 Mentions are checked while you write. For Bluesky the app asks Bluesky's open
 directory whether the handle exists (only the handle is sent, with no
 sign-in) and shows the account's name, or says that nobody has that handle or
-that a bare `@name` needs its full handle. Instagram gives an app that posts
-with an Instagram sign-in no way to ask whether an account exists, so there
-the app only catches names Instagram would not accept and offers each one as
-a link to open the profile and see for yourself.
+that a bare `@name` needs its full handle. Instagram has no dependable way for an app to ask whether an account exists.
+The app tries Meta's lookup of professional accounts and shows the account's
+name when Meta confirms it; Meta documents that lookup only for another kind
+of sign-in, so it may simply never answer, and it knows nothing of personal
+accounts. A name it does not confirm is therefore never called wrong: the app
+only catches names Instagram would not accept, and offers each one as a link
+to open the profile and see for yourself.
 
 ### Instagram
 
@@ -177,6 +215,42 @@ are renewed by the app whenever you post.
 Instagram's API takes feed shapes from 4:5 to 1.91:1, so a 9:16 crop has to go
 through Share instead.
 
+A post made straight to Instagram can also carry two things Share cannot:
+
+- **People tagged on the photo.** Type a name under the Instagram hashtags and
+  choose Tag. The tag appears over the photo; tap its name and then the photo
+  to put it where the person is. Up to 20.
+- **Collaborators.** Up to three accounts, each of whom gets an invitation to
+  show the post on their own profile once it is out.
+
+Both are sent with the post as Meta's publishing API describes. Meta's own
+pages disagree about whether an app set up with Unified login may use them, so
+the first real post decides: if Instagram refuses a tagged post, nothing is
+posted and the message says to check the names or take them off, and if it
+posts but leaves the tags off, the app says so.
+
+## Logo shadow
+
+The logo can have a soft drop shadow, set with the Shadow slider under Logo in
+Settings: off at zero, darker as it goes up. The app draws it at the finished
+image's own size from the logo's exact outline, so it is the same on every
+post and works for a vector or a picture. Its size follows the logo's, in the
+proportions of a drawing program's drop shadow (a blur of 2.5 and an offset
+of 2 on a logo 400 wide).
+
+A shadow drawn into an SVG as a filter is not rendered: the library that
+draws SVGs has no filter support, and the app says so when such a file is
+chosen. Use the plain logo and the slider instead.
+
+## Removed posts
+
+Removing a post takes it off the list and deletes the image that was made from
+it, but keeps its original photo and record on the phone. Settings, Storage
+shows how many removed posts are still kept and how much room they take, and
+clears them on request. Clearing cannot be undone: photos picked from the
+gallery still exist there, but photos taken with the in-app camera do not
+exist anywhere else.
+
 ## Local settings
 
 The look, the logo placement, the usual crop shape and the caption snippets are
@@ -188,5 +262,8 @@ settings. The API key is kept separately in `EncryptedSharedPreferences`,
 backed by an Android Keystore `MasterKey`; settings only ever shows a masked
 hint of it and lets you replace or remove it. The Bluesky app password, the
 Instagram access token and the Firebase upload password are stored the same
-way. No account details live in this repository: everything is entered on the
+way. If the phone's secure storage cannot be opened, the app refuses to save
+them and says so in Settings; they are never written without encryption. If
+what was saved can no longer be read, it is cleared and Settings says that
+too. No account details live in this repository: everything is entered on the
 phone, including which Firebase project to use.

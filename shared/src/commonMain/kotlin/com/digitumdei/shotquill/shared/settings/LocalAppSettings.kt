@@ -1,25 +1,17 @@
 package com.digitumdei.shotquill.shared.settings
 
 import com.digitumdei.shotquill.shared.ai.AiSettings
-import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
-import com.digitumdei.shotquill.shared.domain.QualityTier
-import com.digitumdei.shotquill.shared.domain.RealismLevel
-import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.rememberMentions
 import com.digitumdei.shotquill.shared.social.PublishTarget
 
 data class LocalAppSettings(
-    val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
-    val defaultQualityTier: QualityTier = QualityTier.Standard,
-    val defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
-    val activeBrandProfileId: BrandProfileId? = null,
-    val promptHistoryEnabled: Boolean = true,
     val defaultCropShape: CropShape = CropShape.Portrait,
     val look: LookSettings = LookSettings(),
     val logo: LogoSettings = LogoSettings(),
@@ -30,7 +22,18 @@ data class LocalAppSettings(
     val firebaseHost: FirebaseHostSettings = FirebaseHostSettings(),
     /** The hashtags a new post starts with on each service. A service with no entry starts with none. */
     val usualTags: Map<PublishTarget, String> = emptyMap(),
+    /** The accounts mentioned in earlier posts on each service, most recent first, offered again while typing. */
+    val mentionHistory: Map<PublishTarget, List<String>> = emptyMap(),
 ) {
+    fun mentionHistoryFor(target: PublishTarget): List<String> = mentionHistory[target].orEmpty()
+
+    fun withMentionsUsed(target: PublishTarget, names: List<String>): LocalAppSettings =
+        if (names.isEmpty()) {
+            this
+        } else {
+            copy(mentionHistory = mentionHistory + (target to rememberMentions(mentionHistoryFor(target), names)))
+        }
+
     fun usualTagsFor(target: PublishTarget): String = usualTags[target].orEmpty()
 
     fun withUsualTags(target: PublishTarget, tags: String): LocalAppSettings =
@@ -47,8 +50,17 @@ interface LocalSettingsRepository {
 
     /** A stored secret such as an app password, or null when none is saved under [name]. */
     fun getSecret(name: String): String?
+
+    /** Throws, with words for the user, when secrets cannot be stored safely on this phone. */
     fun saveSecret(name: String, value: String)
     fun clearSecret(name: String)
+
+    /**
+     * Something the user should know about where keys, passwords and tokens
+     * are kept: that they cannot be stored on this phone, or that the saved
+     * ones could not be read and are gone. Null when all is well.
+     */
+    val secretStorageNotice: String? get() = null
 }
 
 /**

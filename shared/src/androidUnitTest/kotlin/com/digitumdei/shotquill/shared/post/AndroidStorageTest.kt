@@ -18,9 +18,12 @@ import com.digitumdei.shotquill.shared.social.InstagramSettings
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
@@ -47,7 +50,7 @@ class AndroidStorageTest {
 
     @Test
     fun aFreshInstallStartsWithTheDefaultSettings() {
-        assertEquals(LocalAppSettings(), AndroidLocalSettingsRepository(context).readSettings())
+        assertEquals(LocalAppSettings(), settingsRepository().readSettings())
     }
 
     @Test
@@ -61,6 +64,7 @@ class AndroidStorageTest {
                 opacity = 0.6f,
                 marginFraction = 0.02f,
                 corner = LogoCorner.TopEnd,
+                shadow = 0.6f,
             ),
             snippets = listOf(CaptionSnippet("Tags", "#doctrinebrewing\n#kzn")),
             ai = AiSettings(baseUrl = "https://api.example.test/v1")
@@ -79,61 +83,122 @@ class AndroidStorageTest {
                 email = "uploads@doctrine.example",
             ),
             usualTags = mapOf(PublishTarget.Bluesky to "#craftbeer #bskybeer", PublishTarget.Instagram to "#craftbeer"),
+            mentionHistory = mapOf(
+                PublishTarget.Bluesky to listOf("doctrinebrewing.co.za", "bsky.app"),
+                PublishTarget.Instagram to listOf("some_friend"),
+            ),
         )
 
-        AndroidLocalSettingsRepository(context).saveSettings(settings)
+        settingsRepository().saveSettings(settings)
 
-        assertEquals(settings, AndroidLocalSettingsRepository(context).readSettings())
+        assertEquals(settings, settingsRepository().readSettings())
     }
 
     @Test
     fun clearingTheModelListRestoresTheDefaults() {
-        val repository = AndroidLocalSettingsRepository(context)
+        val repository = settingsRepository()
         repository.saveSettings(
             LocalAppSettings(ai = AiSettings().withModels(AiOperation.AltText, listOf("one/model"))),
         )
 
         repository.saveSettings(LocalAppSettings(ai = AiSettings().withModels(AiOperation.AltText, emptyList())))
 
-        val ai = AndroidLocalSettingsRepository(context).readSettings().ai
+        val ai = settingsRepository().readSettings().ai
         assertEquals(AiOperation.AltText.defaultModels, ai.modelsFor(AiOperation.AltText))
         assertEquals(AiSettings.DefaultBaseUrl, ai.baseUrl)
     }
 
+    /** The repository with ordinary preferences standing in for the encrypted store. */
+    private fun settingsRepository() = AndroidLocalSettingsRepository(context) {
+        it.getSharedPreferences("stand_in_for_encrypted_secrets", android.content.Context.MODE_PRIVATE)
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun secretsAreRefusedNotStoredUnprotectedWhenEncryptionIsUnavailable() {
+        // A phone whose keystore is broken: the encrypted store cannot be opened at all.
+        val repository = AndroidLocalSettingsRepository(context) { throw IllegalStateException("no keystore") }
+
+        assertEquals(AndroidLocalSettingsRepository.SecretsUnavailableMessage, repository.secretStorageNotice)
+        assertNull(repository.getSecret(BlueskySettings.AppPasswordSecret))
+        assertNull(repository.getOpenAiApiKey())
+        assertFalse(repository.hasOpenAiApiKey())
+        val refused = kotlin.runCatching { repository.saveSecret(BlueskySettings.AppPasswordSecret, "abcd-efgh-ijkl-mnop") }
+        assertEquals(AndroidLocalSettingsRepository.SecretsUnavailableMessage, refused.exceptionOrNull()?.message)
+        assertTrue(kotlin.runCatching { repository.saveOpenAiApiKey("key-abcdef-123456") }.isFailure)
+        repository.clearSecret(BlueskySettings.AppPasswordSecret)
+        repository.clearOpenAiApiKey()
+
+        // Nothing was written anywhere it could be read back from.
+        val plain = context.getSharedPreferences(
+            AndroidLocalSettingsRepository.SecretPreferencesName,
+            android.content.Context.MODE_PRIVATE,
+        )
+        assertTrue(plain.all.isEmpty())
+        // Ordinary settings are unaffected.
+        repository.saveSettings(LocalAppSettings().withUsualTags(PublishTarget.Bluesky, "#craftbeer"))
+        assertEquals("#craftbeer", repository.readSettings().usualTagsFor(PublishTarget.Bluesky))
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun aStoreThatCannotBeReadIsClearedAndTheLossIsReported() {
+        // Something was saved earlier, in a form the store can no longer open.
+        context.getSharedPreferences(AndroidLocalSettingsRepository.SecretPreferencesName, android.content.Context.MODE_PRIVATE)
+            .edit().putString("secret_old", "unreadable").commit()
+        var attempts = 0
+        val repository = AndroidLocalSettingsRepository(context) {
+            attempts++
+            if (attempts == 1) throw IllegalStateException("key was lost")
+            it.getSharedPreferences(AndroidLocalSettingsRepository.SecretPreferencesName, android.content.Context.MODE_PRIVATE)
+        }
+
+        assertEquals(AndroidLocalSettingsRepository.SecretsResetMessage, repository.secretStorageNotice)
+        assertNull(repository.getSecret("old"))
+        repository.saveSecret("fresh", "value-1")
+        assertEquals("value-1", repository.getSecret("fresh"))
+        // Entering a secret again answers the notice, so it does not stay up for the rest of the session.
+        assertNull(repository.secretStorageNotice)
+        assertEquals(2, attempts)
+
+        // A healthy store has nothing to report.
+        assertNull(settingsRepository().secretStorageNotice)
+    }
+
     @Test
     fun secretsAreKeptSeparatelyByName() {
-        val repository = AndroidLocalSettingsRepository(context)
+        val repository = settingsRepository()
 
         repository.saveSecret(BlueskySettings.AppPasswordSecret, " abcd-efgh-ijkl-mnop ")
 
-        val reopened = AndroidLocalSettingsRepository(context)
+        val reopened = settingsRepository()
         assertEquals("abcd-efgh-ijkl-mnop", reopened.getSecret(BlueskySettings.AppPasswordSecret))
         assertNull(reopened.getSecret("something_else"))
         assertNull(reopened.getOpenAiApiKey())
 
         reopened.clearSecret(BlueskySettings.AppPasswordSecret)
-        assertNull(AndroidLocalSettingsRepository(context).getSecret(BlueskySettings.AppPasswordSecret))
+        assertNull(settingsRepository().getSecret(BlueskySettings.AppPasswordSecret))
     }
 
     @Test
     fun clearingUsualTagsRemovesThem() {
-        val repository = AndroidLocalSettingsRepository(context)
+        val repository = settingsRepository()
         repository.saveSettings(LocalAppSettings().withUsualTags(PublishTarget.Bluesky, "#craftbeer"))
-        assertEquals("#craftbeer", AndroidLocalSettingsRepository(context).readSettings().usualTagsFor(PublishTarget.Bluesky))
+        assertEquals("#craftbeer", settingsRepository().readSettings().usualTagsFor(PublishTarget.Bluesky))
 
         repository.saveSettings(repository.readSettings().withUsualTags(PublishTarget.Bluesky, "  "))
 
-        val reopened = AndroidLocalSettingsRepository(context).readSettings()
+        val reopened = settingsRepository().readSettings()
         assertEquals("", reopened.usualTagsFor(PublishTarget.Bluesky))
         assertEquals(emptyMap(), reopened.usualTags)
     }
 
     @Test
     fun removingEverySnippetIsRemembered() {
-        val repository = AndroidLocalSettingsRepository(context)
+        val repository = settingsRepository()
 
         repository.saveSettings(LocalAppSettings(snippets = emptyList()))
 
-        assertEquals(emptyList(), AndroidLocalSettingsRepository(context).readSettings().snippets)
+        assertEquals(emptyList(), settingsRepository().readSettings().snippets)
     }
 }
