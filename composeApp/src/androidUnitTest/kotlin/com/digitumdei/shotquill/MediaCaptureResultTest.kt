@@ -2,8 +2,6 @@ package com.digitumdei.shotquill
 
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
-import com.digitumdei.shotquill.screen.NewPostStep
-import com.digitumdei.shotquill.screen.deriveNewPostStep
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -181,69 +179,5 @@ class MediaCaptureResultTest {
         assertNull(restored.widthPx)
         assertNull(restored.heightPx)
         assertEquals(original.createdAtEpochMillis, restored.createdAtEpochMillis)
-    }
-}
-
-class NewPostStepTest {
-    @Test
-    fun stepDerivesChooseSourceWhenAllNull() {
-        val step = deriveNewPostStep(captureResult = null, draftCreatedMessage = null, errorMessage = null)
-        assertEquals(NewPostStep.ChooseSource, step)
-    }
-
-    @Test
-    fun stepDerivesProcessingWhenCaptureResultPresent() {
-        val step = deriveNewPostStep(
-            captureResult = MediaCaptureResult(
-                uri = "file:///test.jpg",
-                mimeType = null,
-                widthPx = null,
-                heightPx = null,
-                createdAtEpochMillis = 1L,
-            ),
-            draftCreatedMessage = null,
-            errorMessage = null,
-        )
-        assertEquals(NewPostStep.Processing, step)
-    }
-
-    @Test
-    fun stepDerivesCompleteWhenDraftCreatedMessagePresent() {
-        val step = deriveNewPostStep(
-            captureResult = null,
-            draftCreatedMessage = "Draft created!",
-            errorMessage = null,
-        )
-        assertEquals(NewPostStep.Complete, step)
-    }
-
-    @Test
-    fun stepDerivesErrorWhenErrorMessagePresent() {
-        val step = deriveNewPostStep(
-            captureResult = null,
-            draftCreatedMessage = null,
-            errorMessage = "Something went wrong",
-        )
-        assertEquals(NewPostStep.Error, step)
-    }
-
-    @Test
-    fun stepPrioritizesCompleteOverProcessing() {
-        val step = deriveNewPostStep(
-            captureResult = MediaCaptureResult("file:///uri", null, null, null, 1L),
-            draftCreatedMessage = "Done!",
-            errorMessage = null,
-        )
-        assertEquals(NewPostStep.Complete, step)
-    }
-
-    @Test
-    fun stepPrioritizesErrorOverProcessing() {
-        val step = deriveNewPostStep(
-            captureResult = MediaCaptureResult("file:///uri", null, null, null, 1L),
-            draftCreatedMessage = null,
-            errorMessage = "Error!",
-        )
-        assertEquals(NewPostStep.Error, step)
     }
 }

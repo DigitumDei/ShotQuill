@@ -25,6 +25,8 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.ui)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.coil.compose)
+            implementation(libs.coil.svg)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -33,8 +35,15 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.exifinterface)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.androidsvg)
+            // Only for temporary image hosting when posting to Instagram. The
+            // project it talks to is entered in settings, not bundled.
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.storage)
+            implementation(libs.firebase.auth)
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)

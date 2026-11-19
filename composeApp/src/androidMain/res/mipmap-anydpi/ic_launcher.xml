@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- For Android 7, which has no adaptive icons: the same drawing on a plain square. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launcher_background" />
+    <item
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:bottom="-14dp"
+        android:left="-14dp"
+        android:right="-14dp"
+        android:top="-14dp" />
+</layer-list>

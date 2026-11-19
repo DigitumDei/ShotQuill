@@ -41,7 +41,7 @@ sqldelight {
     databases {
         create("ShotQuillDatabase") {
             packageName.set("com.digitumdei.shotquill.shared.db")
-            dialect("app.cash.sqldelight:sqlite-3-24-dialect:${libs.versions.sqldelight.get()}")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:${libs.versions.sqldelight.get()}")
             schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
             verifyMigrations.set(true)
         }

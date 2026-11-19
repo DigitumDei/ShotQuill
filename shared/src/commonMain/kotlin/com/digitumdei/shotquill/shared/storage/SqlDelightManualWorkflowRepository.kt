@@ -14,6 +14,7 @@ import com.digitumdei.shotquill.shared.domain.CaptionRequestId
 import com.digitumdei.shotquill.shared.domain.CaptionResult
 import com.digitumdei.shotquill.shared.domain.CaptionResultId
 import com.digitumdei.shotquill.shared.domain.DraftStatus
+import com.digitumdei.shotquill.shared.domain.DraftSummary
 import com.digitumdei.shotquill.shared.domain.EditIntent
 import com.digitumdei.shotquill.shared.domain.ExportRecord
 import com.digitumdei.shotquill.shared.domain.ExportRecordId
@@ -209,6 +210,18 @@ class SqlDelightManualWorkflowRepository(
             updatedAt = Instant.fromEpochMilliseconds(draft.updatedAt),
         )
     }
+
+    override fun listPostDrafts(): List<DraftSummary> =
+        queries.selectAllPostDrafts { id, status, captionText, createdAt, updatedAt, primaryMediaUri ->
+            DraftSummary(
+                id = PostDraftId(id),
+                status = ManualWorkflowStorageMapper.enumFromWire(status, DraftStatus::fromWireValue),
+                captionText = captionText,
+                createdAtEpochMillis = createdAt,
+                updatedAtEpochMillis = updatedAt,
+                primaryMediaUri = primaryMediaUri,
+            )
+        }.executeAsList()
 
     override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
         val current = get(id) ?: return false

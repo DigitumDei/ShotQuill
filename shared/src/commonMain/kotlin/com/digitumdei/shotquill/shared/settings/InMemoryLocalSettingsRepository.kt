@@ -25,4 +25,18 @@ class InMemoryLocalSettingsRepository(
     override fun clearOpenAiApiKey() {
         openAiApiKey = null
     }
+
+    private val secrets = mutableMapOf<String, String>()
+
+    override fun getSecret(name: String): String? = secrets[name]
+
+    override fun saveSecret(name: String, value: String) {
+        val trimmed = value.trim()
+        require(trimmed.isNotEmpty()) { "A secret cannot be blank" }
+        secrets[name] = trimmed
+    }
+
+    override fun clearSecret(name: String) {
+        secrets.remove(name)
+    }
 }

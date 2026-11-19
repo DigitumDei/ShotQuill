@@ -1,6 +1,0 @@
-CREATE TABLE final_post_content (
-  draft_id TEXT NOT NULL PRIMARY KEY REFERENCES post_drafts(id) ON DELETE CASCADE,
-  edited_caption TEXT,
-  edited_alt_text TEXT,
-  updated_at_epoch_millis INTEGER NOT NULL
-);

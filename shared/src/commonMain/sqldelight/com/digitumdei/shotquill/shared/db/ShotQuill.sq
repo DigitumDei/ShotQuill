@@ -283,6 +283,13 @@ ON CONFLICT(id) DO UPDATE SET
 selectPostDraftById:
 SELECT id, format, status, caption_text, brand_profile_id, selected_media_asset_id, created_at_epoch_millis, updated_at_epoch_millis FROM post_drafts WHERE id = ?;
 
+selectAllPostDrafts:
+SELECT pd.id, pd.status, pd.caption_text, pd.created_at_epoch_millis, pd.updated_at_epoch_millis, ma.uri AS primary_media_uri
+FROM post_drafts pd
+LEFT JOIN post_draft_media_items pdmi ON pdmi.draft_id = pd.id AND pdmi.media_order = 0
+LEFT JOIN media_assets ma ON ma.id = pdmi.media_asset_id
+ORDER BY pd.updated_at_epoch_millis DESC;
+
 updatePostDraftStatus:
 UPDATE post_drafts
 SET status = ?, updated_at_epoch_millis = ?

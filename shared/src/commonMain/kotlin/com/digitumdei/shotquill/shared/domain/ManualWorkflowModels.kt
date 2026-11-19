@@ -2,6 +2,15 @@ package com.digitumdei.shotquill.shared.domain
 
 import kotlinx.datetime.Instant
 
+data class DraftSummary(
+    val id: PostDraftId,
+    val status: DraftStatus,
+    val captionText: String?,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val primaryMediaUri: String?,
+)
+
 data class PostDraft(
     val id: PostDraftId,
     val format: PostFormat,

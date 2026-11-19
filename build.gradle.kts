@@ -12,6 +12,17 @@ dependencies {
     kover(project(":composeApp"))
 }
 
+// Kover's verify and report tasks must not overlap. With parallel builds the
+// root task could run at the same moment as the same task in :shared and
+// :composeApp, and it then sometimes measured coverage without the exclusions
+// below: the gate reported about 55% where the real figure is over 90%. It
+// showed up on a fresh checkout, where all three have work to do, which is
+// every CI run. Making the root tasks wait for the others removes the overlap.
+val koverMeasuring = Regex("kover(Cached)?Verify.*|kover(Xml|Html|Binary|Log)Report.*")
+tasks.matching { koverMeasuring.matches(it.name) }.configureEach {
+    mustRunAfter(subprojects.map { project -> project.tasks.matching { koverMeasuring.matches(it.name) } })
+}
+
 kover {
     reports {
         // Applied to BOTH the generated reports (reports.filters) and the total/verify
@@ -31,11 +42,18 @@ kover {
             "com.digitumdei.shotquill.media.MediaCaptureHandler*",
             "com.digitumdei.shotquill.media.MediaCaptureHandlerKt*",
             "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
-            "*AndroidBrandProfileRepositoryFactory*",
-            "com.digitumdei.shotquill.screen.ManualPostDraftWorkspaceScreenKt",
-            "com.digitumdei.shotquill.screen.NewPostScreenKt",
-            "com.digitumdei.shotquill.screen.FinalPostComposerScreenKt",
+            "com.digitumdei.shotquill.media.LogoImporter*",
+            "com.digitumdei.shotquill.image.AndroidPhotoRenderer*",
+            "com.digitumdei.shotquill.image.SvgLogo*",
+            "com.digitumdei.shotquill.speech.Android*",
+            "com.digitumdei.shotquill.social.FirebaseImageHost*",
+            "com.digitumdei.shotquill.screen.HomeScreenKt*",
+            "com.digitumdei.shotquill.screen.PostEditorScreenKt*",
+            "com.digitumdei.shotquill.screen.SettingsScreenKt*",
+            "com.digitumdei.shotquill.ui.*",
             "com.digitumdei.shotquill.shared.db.*",
+            "com.digitumdei.shotquill.shared.ai.UrlConnectionAiHttpTransport*",
+            "com.digitumdei.shotquill.shared.social.UrlConnectionHttpTransport*",
         )
 
         filters {

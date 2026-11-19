@@ -6,6 +6,8 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.digitumdei.shotquill.BuildConfig
 import java.io.File
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class AndroidPostShareLauncher(
     private val context: Context,
@@ -81,6 +83,16 @@ class AndroidPostShareLauncher(
         if (rawPath.isNotBlank()) {
             val file = File(rawPath)
             if (file.exists() && file.isFile) return file
+
+            val decodedPath = try {
+                URLDecoder.decode(rawPath, StandardCharsets.UTF_8.name())
+            } catch (_: Exception) {
+                null
+            }
+            if (decodedPath != null && decodedPath != rawPath) {
+                val decodedFile = File(decodedPath)
+                if (decodedFile.exists() && decodedFile.isFile) return decodedFile
+            }
         }
 
         return null
