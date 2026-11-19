@@ -333,6 +333,31 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun theCaptionIsCopiedAsTypedWithoutAnyHashtags() {
+        val vm = loadedViewModel()
+        vm.copyCaption()
+        assertTrue(clipboard.copies.isEmpty(), "an empty caption is not copied")
+
+        vm.updateCaption("  Say hello to Lager Thing!\n")
+        vm.updateTags(PublishTarget.Instagram, "#craftbeer")
+        vm.copyCaption()
+
+        assertEquals(listOf("caption" to "Say hello to Lager Thing!"), clipboard.copies)
+        assertEquals("Caption copied.", vm.state.message)
+    }
+
+    @Test
+    fun aFailedCaptionCopyIsReported() {
+        val vm = loadedViewModel()
+        vm.updateCaption("First pour.")
+        clipboard.failure = IllegalStateException("clipboard busy")
+
+        vm.copyCaption()
+
+        assertEquals("The caption could not be copied.", vm.state.message)
+    }
+
+    @Test
     fun aFailedAltTextCopyIsReported() {
         val vm = loadedViewModel()
         vm.updateAltText("A glass of beer.")

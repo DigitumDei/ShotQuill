@@ -62,6 +62,8 @@ class PostEditorContentTest {
     private val placed = mutableListOf<Pair<Float, Float>>()
     private var removed = 0
     private var shared = 0
+    private var captionCopies = 0
+    private var altTextCopies = 0
 
     private val bluesky = PublishTargetState(PublishTarget.Bluesky, account = "@doctrinebrewing.co.za")
     private val instagram = PublishTargetState(PublishTarget.Instagram, account = "@doctrinebrewing")
@@ -120,7 +122,8 @@ class PostEditorContentTest {
                     },
                     onPublish = { published += it },
                     onSelectAltTextModel = {},
-                    onCopyAltText = {},
+                    onCopyCaption = { captionCopies++ },
+                    onCopyAltText = { altTextCopies++ },
                     onWriteAltText = {},
                     onAddSnippet = {},
                     onSelectShape = {},
@@ -175,6 +178,25 @@ class PostEditorContentTest {
 
         assertEquals(listOf("Say hello to Lager Thing!"), captions)
         assertEquals(listOf(PublishTarget.Instagram to "#craftbeer"), tagEdits)
+    }
+
+    @Test
+    fun theCaptionAndTheAltTextEachHaveTheirOwnCopyButton() {
+        show(loaded(caption = "First pour of the witbier.", altText = "A glass of beer."))
+
+        compose.onNodeWithContentDescription("Copy caption").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(1 to 0, captionCopies to altTextCopies)
+
+        compose.onNodeWithContentDescription("Copy alt text").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(1 to 1, captionCopies to altTextCopies)
+    }
+
+    @Test
+    fun thereIsNothingToCopyFromAnEmptyCaption() {
+        show(loaded(caption = "  "))
+
+        compose.onNodeWithContentDescription("Copy caption").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Copy alt text").performScrollTo().assertIsNotEnabled()
     }
 
     @Test

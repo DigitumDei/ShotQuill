@@ -135,7 +135,9 @@ Settings on the phone; none of it belongs in this repository.
    then use "Check sign-in".
 
 Posts are limited to 300 characters, hashtags included. If the caption is
-longer, write a shorter text in the post's "Bluesky text" box.
+longer, write a shorter text in the post's "Bluesky text" box. "Copy" beside
+the caption puts it on the clipboard as typed, without hashtags, so it can be
+pasted there and trimmed.
 
 Each post has its own hashtags box per service, because the tags that work on
 Bluesky are not the ones that work on Instagram. Settings holds the usual tags

@@ -48,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -235,6 +237,7 @@ fun PostEditorScreen(
             scope.launch { withContext(Dispatchers.IO) { viewModel.publish(target) } }
         },
         onSelectAltTextModel = viewModel::selectAltTextModel,
+        onCopyCaption = viewModel::copyCaption,
         onCopyAltText = viewModel::copyAltText,
         onWriteAltText = {
             scope.launch { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
@@ -285,6 +288,7 @@ fun PostEditorContent(
     onTagsChange: (PublishTarget, String) -> Unit,
     onPublish: (PublishTarget) -> Unit,
     onSelectAltTextModel: (String) -> Unit,
+    onCopyCaption: () -> Unit,
     onCopyAltText: () -> Unit,
     onWriteAltText: () -> Unit,
     onAddSnippet: (CaptionSnippet) -> Unit,
@@ -427,7 +431,13 @@ fun PostEditorContent(
                 val listening = dictationState is DictationState.Listening
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("Caption", modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = onCopyCaption,
+                        enabled = state.caption.isNotBlank(),
+                        modifier = Modifier.semantics { contentDescription = "Copy caption" },
+                    ) { Text("Copy") }
                     if (dictationAvailable) {
+                        Spacer(Modifier.width(4.dp))
                         FilledTonalButton(
                             onClick = onToggleDictation,
                             enabled = state.isLoaded,
@@ -576,7 +586,11 @@ fun PostEditorContent(
                         }
                         Spacer(Modifier.weight(1f))
                     }
-                    TextButton(onClick = onCopyAltText, enabled = state.altText.isNotBlank()) { Text("Copy") }
+                    TextButton(
+                        onClick = onCopyAltText,
+                        enabled = state.altText.isNotBlank(),
+                        modifier = Modifier.semantics { contentDescription = "Copy alt text" },
+                    ) { Text("Copy") }
                 }
             }
 

@@ -572,6 +572,23 @@ class PostEditorViewModel(
         }
     }
 
+    /**
+     * Puts the caption on the clipboard exactly as typed, without any
+     * service's hashtags: the starting point for a version edited by hand,
+     * such as the Bluesky text.
+     */
+    fun copyCaption() {
+        val text = state.caption.trim()
+        if (text.isEmpty()) return
+        val message = try {
+            clipboardWriter.copy("caption", text)
+            "Caption copied."
+        } catch (_: Exception) {
+            "The caption could not be copied."
+        }
+        update { it.copy(message = message) }
+    }
+
     fun copyAltText() {
         val text = state.altText.trim()
         if (text.isEmpty()) return
