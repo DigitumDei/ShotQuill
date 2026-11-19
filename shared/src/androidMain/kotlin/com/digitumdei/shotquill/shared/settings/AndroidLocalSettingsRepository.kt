@@ -19,6 +19,7 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.PublishTarget
 
 class AndroidLocalSettingsRepository(
     context: Context,
@@ -77,6 +78,11 @@ class AndroidLocalSettingsRepository(
                 storageBucket = regularPreferences.getString(KeyFirebaseBucket, null).orEmpty(),
                 email = regularPreferences.getString(KeyFirebaseEmail, null).orEmpty(),
             ),
+            usualTags = PublishTarget.entries.mapNotNull { target ->
+                regularPreferences.getString(KeyUsualTagsPrefix + target.wireValue, null)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { target to it }
+            }.toMap(),
         )
 
     private fun readAi(): AiSettings =
@@ -141,6 +147,16 @@ class AndroidLocalSettingsRepository(
             .putString(KeyFirebaseProjectId, settings.firebaseHost.projectId)
             .putString(KeyFirebaseBucket, settings.firebaseHost.storageBucket)
             .putString(KeyFirebaseEmail, settings.firebaseHost.email)
+            .also { editor ->
+                PublishTarget.entries.forEach { target ->
+                    val tags = settings.usualTags[target]
+                    if (tags.isNullOrBlank()) {
+                        editor.remove(KeyUsualTagsPrefix + target.wireValue)
+                    } else {
+                        editor.putString(KeyUsualTagsPrefix + target.wireValue, tags)
+                    }
+                }
+            }
             .also { editor ->
                 AiOperation.entries.forEach { operation ->
                     val models = settings.ai.models[operation]
@@ -247,6 +263,7 @@ class AndroidLocalSettingsRepository(
         const val KeyFirebaseProjectId = "firebase_project_id"
         const val KeyFirebaseBucket = "firebase_storage_bucket"
         const val KeyFirebaseEmail = "firebase_upload_email"
+        const val KeyUsualTagsPrefix = "usual_tags_"
         const val SecretPrefix = "secret_"
     }
 }

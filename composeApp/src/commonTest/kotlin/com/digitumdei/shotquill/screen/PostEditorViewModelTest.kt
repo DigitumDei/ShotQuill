@@ -170,6 +170,8 @@ class PostEditorViewModelTest {
         vm.persistAltText()
         vm.updateBlueskyText("too early")
         vm.persistBlueskyText()
+        vm.updateTags(PublishTarget.Bluesky, "#early")
+        vm.persistTags()
         vm.publish(PublishTarget.Bluesky)
         vm.selectShape(CropShape.Story)
         vm.panZoom(0.5f, 0.5f, 2f)
@@ -349,6 +351,77 @@ class PostEditorViewModelTest {
         assertTrue(vm.state.targets.isEmpty())
         assertFalse(vm.state.hasBluesky)
         assertTrue(bluesky.posts.isEmpty())
+    }
+
+    @Test
+    fun aNewPostStartsWithTheUsualTagsAndDoesNotStoreThemUntilChanged() {
+        settings.saveSettings(
+            settings.readSettings()
+                .withUsualTags(PublishTarget.Bluesky, "#craftbeer #bskybeer")
+                .withUsualTags(PublishTarget.Instagram, "#craftbeer #kznbeer"),
+        )
+        val vm = loadedViewModel()
+
+        assertEquals("#craftbeer #bskybeer", vm.state.tagsFor(PublishTarget.Bluesky))
+        assertEquals("#craftbeer #kznbeer", vm.state.tagsFor(PublishTarget.Instagram))
+        vm.persistTags()
+        assertTrue(store.savedTags.isEmpty())
+
+        vm.updateTags(PublishTarget.Bluesky, "#beersky")
+        vm.persistTags()
+        vm.persistTags()
+        assertEquals(listOf(PublishTarget.Bluesky to "#beersky"), store.savedTags)
+    }
+
+    @Test
+    fun tagsSetOnAPostWinOverTheUsualOnesEvenWhenEmpty() {
+        settings.saveSettings(settings.readSettings().withUsualTags(PublishTarget.Bluesky, "#craftbeer"))
+        store.post = EditablePost(
+            draftId, photoUri, caption = "", altText = "", treatment = null, renderedUri = null, shared = false,
+            tags = mapOf(PublishTarget.Bluesky to ""),
+        )
+        renderer.sizes[photoUri] = PixelSize(4000, 3000)
+
+        assertEquals("", viewModel().also { it.load() }.state.tagsFor(PublishTarget.Bluesky))
+    }
+
+    @Test
+    fun eachServiceGetsItsOwnTagsAfterItsOwnText() {
+        instagram.configured = true
+        val vm = loadedViewModel()
+        vm.updateCaption("Say hello to Lager Thing!")
+        vm.updateTags(PublishTarget.Instagram, "craftbeer kznbeer")
+        vm.updateTags(PublishTarget.Bluesky, "#beersky @bskybeer.bsky.social")
+
+        assertEquals("Say hello to Lager Thing!\n\n#craftbeer #kznbeer", vm.state.instagramPostText)
+        assertEquals("Say hello to Lager Thing!\n\n#beersky @bskybeer.bsky.social", vm.state.blueskyPostText)
+        assertEquals(2, vm.state.captionStats.hashtags)
+        assertEquals(vm.state.instagramPostText.length, vm.state.captionStats.characters)
+
+        vm.publish(PublishTarget.Bluesky)
+        vm.publish(PublishTarget.Instagram)
+        assertEquals(vm.state.blueskyPostText, bluesky.posts.single().text)
+        assertEquals(vm.state.instagramPostText, instagram.posts.single().text)
+        assertEquals(
+            setOf(PublishTarget.Instagram to "craftbeer kznbeer", PublishTarget.Bluesky to "#beersky @bskybeer.bsky.social"),
+            store.savedTags.toSet(),
+        )
+
+        vm.share()
+        assertEquals("post caption" to "Say hello to Lager Thing!\n\n#craftbeer #kznbeer", clipboard.copies.last())
+        assertEquals("Say hello to Lager Thing!\n\n#craftbeer #kznbeer", shareLauncher.shares.last().second)
+    }
+
+    @Test
+    fun blueskyTagsCountTowardsItsLimit() {
+        val vm = loadedViewModel()
+        vm.updateBlueskyText("a".repeat(295))
+        assertFalse(vm.state.blueskyTooLong)
+
+        vm.updateTags(PublishTarget.Bluesky, "#beersky")
+
+        assertTrue(vm.state.blueskyTooLong)
+        assertEquals(295 + 2 + 8, vm.state.blueskyLength)
     }
 
     @Test
@@ -644,6 +717,7 @@ private class FakeStore : PostEditorStore {
     val savedTreatments = mutableListOf<PhotoTreatment>()
     val savedAltTexts = mutableListOf<String>()
     val savedBlueskyTexts = mutableListOf<String>()
+    val savedTags = mutableListOf<Pair<PublishTarget, String>>()
     var publishedTo: Triple<PublishTarget, String, String>? = null
     var sharedWith: String? = null
     var removed = false
@@ -671,6 +745,10 @@ private class FakeStore : PostEditorStore {
 
     override fun saveBlueskyText(id: PostDraftId, text: String) {
         if (text.isNotEmpty() || savedBlueskyTexts.isNotEmpty()) savedBlueskyTexts += text
+    }
+
+    override fun saveTags(id: PostDraftId, target: PublishTarget, tags: String) {
+        savedTags += target to tags
     }
 
     override fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String) {

@@ -107,8 +107,13 @@ Settings on the phone; none of it belongs in this repository.
 2. In ShotQuill Settings, Bluesky: enter your handle and that app password,
    then use "Check sign-in".
 
-Posts are limited to 300 characters. If the caption is longer, write a shorter
-text in the post's "Bluesky text" box.
+Posts are limited to 300 characters, hashtags included. If the caption is
+longer, write a shorter text in the post's "Bluesky text" box.
+
+Each post has its own hashtags box per service, because the tags that work on
+Bluesky are not the ones that work on Instagram. Settings holds the usual tags
+for each, which new posts start with. On Bluesky a full handle in the text or
+the tags, such as `@name.bsky.social`, becomes a real mention.
 
 ### Instagram
 

@@ -35,6 +35,8 @@ data class EditablePost(
     val blueskyText: String = "",
     /** A link to the post on each service it was published to directly. */
     val published: Map<PublishTarget, String> = emptyMap(),
+    /** Hashtags set on this post, per service. A service that is absent uses the usual tags from settings. */
+    val tags: Map<PublishTarget, String> = emptyMap(),
 )
 
 /** The few things the app needs to keep about a post: the photo, the words and how the photo is treated. */
@@ -45,6 +47,7 @@ interface PostEditorStore {
     fun saveAltText(id: PostDraftId, altText: String)
     fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment)
     fun saveBlueskyText(id: PostDraftId, text: String)
+    fun saveTags(id: PostDraftId, target: PublishTarget, tags: String)
     fun markShared(id: PostDraftId, renderedUri: String)
 
     /** Records that the post went out to [target] and where it can be seen. */
@@ -85,6 +88,7 @@ class DraftBackedPostEditorStore(
             shared = draft.status == DraftStatus.Shared,
             blueskyText = stored?.blueskyText.orEmpty(),
             published = stored?.published.orEmpty(),
+            tags = stored?.tags.orEmpty(),
         )
     }
 
@@ -125,6 +129,12 @@ class DraftBackedPostEditorStore(
         val existing = stored(id)
         if (existing.blueskyText == text) return
         treatments.save(id, existing.copy(blueskyText = text))
+    }
+
+    override fun saveTags(id: PostDraftId, target: PublishTarget, tags: String) {
+        val existing = stored(id)
+        if (existing.tags[target] == tags) return
+        treatments.save(id, existing.copy(tags = existing.tags + (target to tags)))
     }
 
     override fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String) {

@@ -223,6 +223,60 @@ class BlueskyTest {
     }
 
     @Test
+    fun tagsAreTidiedAndGetAHashWhereOneIsMissing() {
+        assertEquals("#craftbeer #bskybeer", normalizeTags("  craftbeer,  #bskybeer \n"))
+        assertEquals("#beersky @bskybeer.bsky.social", normalizeTags("#beersky @bskybeer.bsky.social"))
+        assertEquals("", normalizeTags("  # @ , "))
+        assertEquals("", normalizeTags(""))
+    }
+
+    @Test
+    fun tagsFollowTheWordsAfterABlankLine() {
+        assertEquals("First pour.\n\n#craftbeer #kzn", withTags(" First pour. ", "craftbeer #kzn"))
+        assertEquals("First pour.", withTags("First pour.", "   "))
+        assertEquals("#craftbeer", withTags("  ", "craftbeer"))
+        assertEquals("", withTags("", ""))
+    }
+
+    @Test
+    fun fullHandlesAreFoundAsMentionsButBareNamesAreNot() {
+        val text = "Cheers @BskyBeer.bsky.social and (@doctrinebrewing.co.za) not @bskybeer or me@example.com #beersky"
+        val facets = blueskyFacets(text)
+
+        assertEquals(listOf("bskybeer.bsky.social", "doctrinebrewing.co.za"), facets.mapNotNull { it.mention })
+        assertEquals(listOf("beersky"), facets.mapNotNull { it.tag })
+        val bytes = text.encodeToByteArray()
+        assertEquals("@BskyBeer.bsky.social", bytes.copyOfRange(facets[0].byteStart, facets[0].byteEnd).decodeToString())
+    }
+
+    @Test
+    fun mentionsAreLookedUpAndOnlyTheOnesFoundAreLinked() {
+        transport.replies += HttpResponse(200, """{"accessJwt":"token-123","did":"did:plc:abc","handle":"doctrine.bsky.social"}""")
+        transport.replies += HttpResponse(200, """{"did":"did:plc:beer"}""")
+        transport.replies += HttpResponse(400, """{"error":"InvalidRequest","message":"Unable to resolve handle"}""")
+        transport.replies += HttpResponse(200, """{"blob":{"${'$'}type":"blob","ref":{"${'$'}link":"bafy"},"mimeType":"image/jpeg","size":3}}""")
+        transport.replies += HttpResponse(200, """{"uri":"at://did:plc:abc/app.bsky.feed.post/3kabc","cid":"cid1"}""")
+
+        val result = publisher.publish(post(text = "Hi @bskybeer.bsky.social and @nobody.example.com #beersky"))
+
+        assertTrue(result is PublishResult.Success)
+        assertEquals(
+            "https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=bskybeer.bsky.social",
+            transport.requests[1].url,
+        )
+        assertEquals("GET", transport.requests[1].method)
+        val facets = transport.requests[4].json()["record"]!!.jsonObject["facets"]!!.jsonArray
+        assertEquals(2, facets.size)
+        val mention = facets[0].jsonObject["features"]!!.jsonArray.single().jsonObject
+        assertEquals("app.bsky.richtext.facet#mention", mention["\$type"]?.jsonPrimitive?.content)
+        assertEquals("did:plc:beer", mention["did"]?.jsonPrimitive?.content)
+        assertEquals(
+            "beersky",
+            facets[1].jsonObject["features"]!!.jsonArray.single().jsonObject["tag"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
     fun publishTargetsRoundTripThroughTheirWireValues() {
         PublishTarget.entries.forEach { assertEquals(it, PublishTarget.fromWireValue(it.wireValue)) }
         assertNull(PublishTarget.fromWireValue("myspace"))

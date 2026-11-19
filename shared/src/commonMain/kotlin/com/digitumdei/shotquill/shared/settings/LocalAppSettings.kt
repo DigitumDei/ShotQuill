@@ -12,6 +12,7 @@ import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.PublishTarget
 
 data class LocalAppSettings(
     val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
@@ -27,7 +28,14 @@ data class LocalAppSettings(
     val bluesky: BlueskySettings = BlueskySettings(),
     val instagram: InstagramSettings = InstagramSettings(),
     val firebaseHost: FirebaseHostSettings = FirebaseHostSettings(),
-)
+    /** The hashtags a new post starts with on each service. A service with no entry starts with none. */
+    val usualTags: Map<PublishTarget, String> = emptyMap(),
+) {
+    fun usualTagsFor(target: PublishTarget): String = usualTags[target].orEmpty()
+
+    fun withUsualTags(target: PublishTarget, tags: String): LocalAppSettings =
+        copy(usualTags = if (tags.isBlank()) usualTags - target else usualTags + (target to tags))
+}
 
 interface LocalSettingsRepository {
     fun readSettings(): LocalAppSettings

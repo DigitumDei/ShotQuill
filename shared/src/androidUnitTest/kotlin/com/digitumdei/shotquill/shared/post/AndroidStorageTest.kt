@@ -15,6 +15,7 @@ import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -77,6 +78,7 @@ class AndroidStorageTest {
                 storageBucket = "doctrine-site.appspot.com",
                 email = "uploads@doctrine.example",
             ),
+            usualTags = mapOf(PublishTarget.Bluesky to "#craftbeer #bskybeer", PublishTarget.Instagram to "#craftbeer"),
         )
 
         AndroidLocalSettingsRepository(context).saveSettings(settings)
@@ -111,6 +113,19 @@ class AndroidStorageTest {
 
         reopened.clearSecret(BlueskySettings.AppPasswordSecret)
         assertNull(AndroidLocalSettingsRepository(context).getSecret(BlueskySettings.AppPasswordSecret))
+    }
+
+    @Test
+    fun clearingUsualTagsRemovesThem() {
+        val repository = AndroidLocalSettingsRepository(context)
+        repository.saveSettings(LocalAppSettings().withUsualTags(PublishTarget.Bluesky, "#craftbeer"))
+        assertEquals("#craftbeer", AndroidLocalSettingsRepository(context).readSettings().usualTagsFor(PublishTarget.Bluesky))
+
+        repository.saveSettings(repository.readSettings().withUsualTags(PublishTarget.Bluesky, "  "))
+
+        val reopened = AndroidLocalSettingsRepository(context).readSettings()
+        assertEquals("", reopened.usualTagsFor(PublishTarget.Bluesky))
+        assertEquals(emptyMap(), reopened.usualTags)
     }
 
     @Test

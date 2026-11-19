@@ -288,6 +288,26 @@ fun SettingsScreen(
             }
 
             SettingsGroup(
+                label = "Usual hashtags",
+                detail = "New posts start with these, one set per place, and you can change them on any post. " +
+                    "A word without # gets one added. On Bluesky a full handle such as @name.bsky.social " +
+                    "becomes a mention.",
+            ) {
+                PublishTarget.entries.forEach { target ->
+                    var tagsText by remember(viewModel, target) { mutableStateOf(settings.usualTagsFor(target)) }
+                    OutlinedTextField(
+                        value = tagsText,
+                        onValueChange = {
+                            tagsText = it
+                            viewModel.setUsualTags(target, it)
+                        },
+                        label = { Text(target.label) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            SettingsGroup(
                 label = "AI for alt text",
                 detail = "Optional. With a key saved, a post's alt text can be written for you: the cropped photo " +
                     "and your caption are sent to the service below, and only when you ask. Any service that " +

@@ -157,6 +157,26 @@ class PostEditorStoreTest {
     }
 
     @Test
+    fun hashtagsAreKeptPerServiceAndAnEmptySetIsRemembered() {
+        val id = newPost("one")
+        assertTrue(assertNotNull(store.load(id)).tags.isEmpty())
+
+        store.saveTags(id, PublishTarget.Bluesky, "#craftbeer #bskybeer")
+        store.saveTags(id, PublishTarget.Bluesky, "#craftbeer #bskybeer")
+        store.saveTags(id, PublishTarget.Instagram, "")
+        store.saveTreatment(id, PhotoTreatment(cropShape = CropShape.Square))
+
+        assertEquals(
+            mapOf(PublishTarget.Bluesky to "#craftbeer #bskybeer", PublishTarget.Instagram to ""),
+            store.load(id)?.tags,
+        )
+        assertEquals(
+            mapOf(PublishTarget.Bluesky to "#a\n#b"),
+            StoredTreatmentCodec.decode("tags.bluesky=#a\\n#b\ntags.myspace=#x").tags,
+        )
+    }
+
+    @Test
     fun treatmentIsKeptPerPost() {
         val first = newPost("one")
         val second = newPost("two")

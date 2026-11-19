@@ -14,6 +14,7 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -59,6 +60,19 @@ class SettingsViewModelTest {
         vm.resetLook()
         assertEquals(LookSettings(), repository.readSettings().look)
         assertEquals(LookSettings(), vm.state.settings.look)
+    }
+
+    @Test
+    fun usualTagsAreSavedPerService() {
+        val vm = viewModel()
+
+        vm.setUsualTags(PublishTarget.Bluesky, "#craftbeer #bskybeer")
+        vm.setUsualTags(PublishTarget.Instagram, "#craftbeer")
+        assertEquals("#craftbeer #bskybeer", repository.readSettings().usualTagsFor(PublishTarget.Bluesky))
+        assertEquals("#craftbeer", vm.state.settings.usualTagsFor(PublishTarget.Instagram))
+
+        vm.setUsualTags(PublishTarget.Instagram, "")
+        assertEquals(mapOf(PublishTarget.Bluesky to "#craftbeer #bskybeer"), repository.readSettings().usualTags)
     }
 
     @Test

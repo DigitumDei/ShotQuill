@@ -18,6 +18,7 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.social.parseFirebaseConfig
 
 data class SettingsState(
@@ -63,6 +64,9 @@ class SettingsViewModel(
     fun resetLook() = update { it.copy(look = LookSettings()) }
 
     fun setDefaultShape(shape: CropShape) = update { it.copy(defaultCropShape = shape) }
+
+    /** The hashtags a new post starts with on [target]. */
+    fun setUsualTags(target: PublishTarget, tags: String) = update { it.withUsualTags(target, tags) }
 
     fun setLogoUri(uri: String?) {
         val previous = state.settings.logo.uri

@@ -52,14 +52,16 @@ private fun isCombining(codePoint: Int): Boolean =
         codePoint in 0x1F3FB..0x1F3FF || // skin tone modifiers
         codePoint in 0xE0020..0xE007F // tag characters used in some flags
 
-/** A stretch of the text that Bluesky should treat as a link or a hashtag. Offsets are in UTF-8 bytes. */
+/** A stretch of the text that Bluesky should treat as a link, a hashtag or a mention. Offsets are in UTF-8 bytes. */
 data class BlueskyFacet(
     val byteStart: Int,
     val byteEnd: Int,
-    /** The address for a link; null for a hashtag. */
+    /** The address, when this is a link. */
     val link: String? = null,
-    /** The tag without its # for a hashtag; null for a link. */
+    /** The tag without its #, when this is a hashtag. */
     val tag: String? = null,
+    /** The handle without its @, when this is a mention. It still has to be looked up before posting. */
+    val mention: String? = null,
 )
 
 /**
@@ -90,6 +92,16 @@ fun blueskyFacets(text: String): List<BlueskyFacet> {
             tag = tag,
         )
     }
+    for (match in MentionPattern.findAll(text)) {
+        val mention = match.groups[2] ?: continue
+        val start = byteOffset(text, mention.range.first)
+        if (facets.any { start >= it.byteStart && start < it.byteEnd }) continue
+        facets += BlueskyFacet(
+            byteStart = start,
+            byteEnd = start + mention.value.encodeToByteArray().size,
+            mention = mention.value.removePrefix("@").lowercase(),
+        )
+    }
     return facets.sortedBy { it.byteStart }
 }
 
@@ -97,3 +109,8 @@ private fun byteOffset(text: String, charIndex: Int): Int = text.substring(0, ch
 
 private val LinkPattern = Regex("https?://[^\\s<>]+", RegexOption.IGNORE_CASE)
 private val TagPattern = Regex("(^|\\s)(#[\\p{L}\\p{N}_]+)")
+
+// A mention is a full handle, which always looks like a domain name: @name.bsky.social or @example.com.
+private val MentionPattern = Regex(
+    "(^|\\s|\\()(@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)",
+)

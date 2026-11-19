@@ -16,6 +16,12 @@ data class StoredTreatment(
     val renderedUri: String? = null,
     val blueskyText: String = "",
     val published: Map<PublishTarget, String> = emptyMap(),
+    /**
+     * The hashtags chosen for this post on each service. A service is only
+     * present once its tags have been changed on this post, an empty text
+     * meaning "none"; until then the usual tags from settings apply.
+     */
+    val tags: Map<PublishTarget, String> = emptyMap(),
 )
 
 interface PhotoTreatmentStore {
@@ -55,6 +61,7 @@ object StoredTreatmentCodec {
     private const val KeyRendered = "rendered"
     private const val KeyBlueskyText = "bluesky"
     private const val KeyPublishedPrefix = "published."
+    private const val KeyTagsPrefix = "tags."
 
     fun encode(stored: StoredTreatment): String = buildString {
         val t = stored.treatment
@@ -68,6 +75,7 @@ object StoredTreatmentCodec {
         stored.renderedUri?.let { appendLine("$KeyRendered=$it") }
         if (stored.blueskyText.isNotEmpty()) appendLine("$KeyBlueskyText=${escape(stored.blueskyText)}")
         stored.published.forEach { (target, url) -> appendLine("$KeyPublishedPrefix${target.wireValue}=$url") }
+        stored.tags.forEach { (target, tags) -> appendLine("$KeyTagsPrefix${target.wireValue}=${escape(tags)}") }
     }.trimEnd()
 
     fun decode(encoded: String): StoredTreatment {
@@ -98,6 +106,13 @@ object StoredTreatmentCodec {
                     null
                 } else {
                     PublishTarget.fromWireValue(key.removePrefix(KeyPublishedPrefix))?.let { it to url }
+                }
+            }.toMap(),
+            tags = fields.entries.mapNotNull { (key, tags) ->
+                if (!key.startsWith(KeyTagsPrefix)) {
+                    null
+                } else {
+                    PublishTarget.fromWireValue(key.removePrefix(KeyTagsPrefix))?.let { it to unescape(tags) }
                 }
             }.toMap(),
         )

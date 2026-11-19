@@ -34,6 +34,7 @@ import com.digitumdei.shotquill.shared.social.PublishResult
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.social.blueskyLength
 import com.digitumdei.shotquill.shared.social.blueskyTextFor
+import com.digitumdei.shotquill.shared.social.withTags
 
 /** One service the post can be published to directly, and what has happened there so far. */
 data class PublishTargetState(
@@ -68,16 +69,24 @@ data class PostEditorState(
     /** The services set up for direct posting. Empty when none is. */
     val targets: List<PublishTargetState> = emptyList(),
     val blueskyText: String = "",
+    /** The hashtags for this post on each service, as typed. */
+    val tags: Map<PublishTarget, String> = emptyMap(),
 ) {
+    fun tagsFor(target: PublishTarget): String = tags[target].orEmpty()
+
+    /** The caption with Instagram's hashtags: what is shared or posted to Instagram. */
+    val instagramPostText: String get() = withTags(caption, tagsFor(PublishTarget.Instagram))
+
     val isPublishing: Boolean get() = targets.any { it.isPublishing }
     val hasBluesky: Boolean get() = targets.any { it.target == PublishTarget.Bluesky }
 
     /** What would be posted to Bluesky right now, and how long Bluesky counts it as. */
-    val blueskyPostText: String get() = blueskyTextFor(caption, blueskyText)
+    val blueskyPostText: String
+        get() = withTags(blueskyTextFor(caption, blueskyText), tagsFor(PublishTarget.Bluesky))
     val blueskyLength: Int get() = blueskyLength(blueskyPostText)
     val blueskyTooLong: Boolean get() = blueskyLength > BlueskyTextLimit
 
-    val captionStats: CaptionStats get() = captionStats(caption)
+    val captionStats: CaptionStats get() = captionStats(instagramPostText)
     val hasLogo: Boolean get() = logo.uri != null
     val logoCorner: LogoCorner get() = treatment.logoCorner ?: logo.corner
     val canShare: Boolean
@@ -105,6 +114,11 @@ class PostEditorViewModel(
         private set
 
     private var renderedUri: String? = null
+
+    // What the store holds, or would fall back to, for each service's tags.
+    // Tags are only written once they differ, so a post whose tags were never
+    // touched keeps following the usual tags in settings.
+    private var savedTags: Map<PublishTarget, String> = emptyMap()
 
     fun load() {
         val post = store.load(draftId)
@@ -141,8 +155,12 @@ class PostEditorViewModel(
                 )
             },
             blueskyText = post.blueskyText,
+            tags = PublishTarget.entries.associateWith { target ->
+                post.tags[target] ?: settings.usualTagsFor(target)
+            },
             message = if (imageSize == null) "The photo could not be read." else null,
         )
+        savedTags = state.tags
     }
 
     fun updateCaption(text: String) {
@@ -174,6 +192,19 @@ class PostEditorViewModel(
     fun persistBlueskyText() {
         if (!state.isLoaded) return
         store.saveBlueskyText(draftId, state.blueskyText)
+    }
+
+    fun updateTags(target: PublishTarget, tags: String) {
+        if (!state.isLoaded) return
+        state = state.copy(tags = state.tags + (target to tags))
+    }
+
+    fun persistTags() {
+        if (!state.isLoaded) return
+        state.tags.forEach { (target, tags) ->
+            if (savedTags[target] != tags) store.saveTags(draftId, target, tags)
+        }
+        savedTags = state.tags
     }
 
     fun updateAltText(text: String) {
@@ -284,6 +315,7 @@ class PostEditorViewModel(
         state = current.copy(isSharing = true, message = null)
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
+        persistTags()
         store.saveTreatment(draftId, current.treatment)
 
         val outcome = renderer.render(
@@ -301,7 +333,7 @@ class PostEditorViewModel(
             }
 
             is RenderOutcome.Success -> {
-                val caption = current.caption.trim()
+                val caption = current.instagramPostText
                 val altText = current.altText.trim()
                 var clipboardNote = ""
                 if (caption.isNotEmpty()) {
@@ -356,7 +388,7 @@ class PostEditorViewModel(
         val sourceUri = current.originalUri
         if (!current.canShare || publisher == null || sourceUri == null) return
         val text = when (target) {
-            PublishTarget.Instagram -> current.caption.trim()
+            PublishTarget.Instagram -> current.instagramPostText
             PublishTarget.Bluesky -> current.blueskyPostText
         }
         publisher.problemWith(text)?.let { problem ->
@@ -367,6 +399,7 @@ class PostEditorViewModel(
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         store.saveBlueskyText(draftId, current.blueskyText)
+        persistTags()
         store.saveTreatment(draftId, current.treatment)
 
         fun finish(message: String, postedUrl: String? = null) {

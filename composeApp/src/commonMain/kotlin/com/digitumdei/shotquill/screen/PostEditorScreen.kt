@@ -127,6 +127,10 @@ fun PostEditorScreen(
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistBlueskyText() } }
     }
+    LaunchedEffect(viewModel, state.tags) {
+        delay(600)
+        writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTags() } }
+    }
     LaunchedEffect(viewModel, state.treatment) {
         delay(400)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTreatment() } }
@@ -136,6 +140,7 @@ fun PostEditorScreen(
             viewModel.persistCaption()
             viewModel.persistAltText()
             viewModel.persistBlueskyText()
+            viewModel.persistTags()
             viewModel.persistTreatment()
         }
     }
@@ -165,6 +170,7 @@ fun PostEditorScreen(
         onCaptionChange = viewModel::updateCaption,
         onAltTextChange = viewModel::updateAltText,
         onBlueskyTextChange = viewModel::updateBlueskyText,
+        onTagsChange = viewModel::updateTags,
         onPublish = { target ->
             scope.launch {
                 writeLock.withLock { withContext(Dispatchers.IO) { viewModel.publish(target) } }
@@ -209,6 +215,7 @@ fun PostEditorContent(
     onCaptionChange: (String) -> Unit,
     onAltTextChange: (String) -> Unit,
     onBlueskyTextChange: (String) -> Unit,
+    onTagsChange: (PublishTarget, String) -> Unit,
     onPublish: (PublishTarget) -> Unit,
     onSelectAltTextModel: (String) -> Unit,
     onCopyAltText: () -> Unit,
@@ -390,6 +397,15 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     shape = MaterialTheme.shapes.medium,
                 )
+                OutlinedTextField(
+                    value = state.tagsFor(PublishTarget.Instagram),
+                    onValueChange = { onTagsChange(PublishTarget.Instagram, it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.isLoaded,
+                    label = { Text("Instagram hashtags") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                    shape = MaterialTheme.shapes.medium,
+                )
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     FlowRow(
                         modifier = Modifier.weight(1f),
@@ -479,6 +495,15 @@ fun PostEditorContent(
                         minLines = 2,
                         placeholder = { Text("Leave empty to post the caption as it is") },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        shape = MaterialTheme.shapes.medium,
+                    )
+                    OutlinedTextField(
+                        value = state.tagsFor(PublishTarget.Bluesky),
+                        onValueChange = { onTagsChange(PublishTarget.Bluesky, it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = state.isLoaded && !state.isPublishing,
+                        label = { Text("Bluesky hashtags") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         shape = MaterialTheme.shapes.medium,
                     )
                     Text(

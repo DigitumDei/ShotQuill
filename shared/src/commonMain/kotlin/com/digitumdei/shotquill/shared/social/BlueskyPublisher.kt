@@ -83,6 +83,7 @@ class BlueskyPublisher(
                 return PublishResult.Failure("Bluesky signed in but sent an incomplete reply.")
             }
             val auth = mapOf("Authorization" to "Bearer $token")
+            val mentioned = lookUpMentions(server, post.text, password)
 
             val upload = call(
                 step = "upload the image",
@@ -108,7 +109,7 @@ class BlueskyPublisher(
                     body = buildJsonObject {
                         put("repo", did)
                         put("collection", "app.bsky.feed.post")
-                        put("record", record(post, blob))
+                        put("record", record(post, blob, mentioned))
                     }.toString().encodeToByteArray(),
                     contentType = "application/json",
                 ),
@@ -164,12 +165,34 @@ class BlueskyPublisher(
             ),
         )
 
-    private fun record(post: PostToPublish, blob: JsonObject): JsonObject = buildJsonObject {
+    /**
+     * Finds the account behind each handle mentioned in [text]. A mention only
+     * links to a profile, and notifies its owner, when the post names the
+     * account's permanent identifier. A handle that cannot be found is left
+     * as ordinary text; it never stops the post.
+     */
+    private fun lookUpMentions(server: String, text: String, password: String): Map<String, String> =
+        blueskyFacets(text).mapNotNull { it.mention }.distinct().mapNotNull { handle ->
+            try {
+                call(
+                    step = "look up @$handle",
+                    password = password,
+                    request = HttpRequest(
+                        method = "GET",
+                        url = "$server/xrpc/com.atproto.identity.resolveHandle?handle=$handle",
+                    ),
+                )?.text("did")?.takeIf { it.isNotEmpty() }?.let { handle to it }
+            } catch (_: Exception) {
+                null
+            }
+        }.toMap()
+
+    private fun record(post: PostToPublish, blob: JsonObject, mentioned: Map<String, String>): JsonObject = buildJsonObject {
         put("\$type", "app.bsky.feed.post")
         put("text", post.text)
         put("createdAt", Instant.fromEpochMilliseconds(clock.nowMillis()).toString())
         putJsonArray("langs") { languages.forEach { add(JsonPrimitive(it)) } }
-        val facets = blueskyFacets(post.text)
+        val facets = blueskyFacets(post.text).filter { it.mention == null || it.mention in mentioned }
         if (facets.isNotEmpty()) {
             putJsonArray("facets") {
                 facets.forEach { facet ->
@@ -180,12 +203,21 @@ class BlueskyPublisher(
                         }
                         putJsonArray("features") {
                             addJsonObject {
-                                if (facet.link != null) {
-                                    put("\$type", "app.bsky.richtext.facet#link")
-                                    put("uri", facet.link)
-                                } else {
-                                    put("\$type", "app.bsky.richtext.facet#tag")
-                                    put("tag", facet.tag.orEmpty())
+                                when {
+                                    facet.link != null -> {
+                                        put("\$type", "app.bsky.richtext.facet#link")
+                                        put("uri", facet.link)
+                                    }
+
+                                    facet.mention != null -> {
+                                        put("\$type", "app.bsky.richtext.facet#mention")
+                                        put("did", mentioned.getValue(facet.mention))
+                                    }
+
+                                    else -> {
+                                        put("\$type", "app.bsky.richtext.facet#tag")
+                                        put("tag", facet.tag.orEmpty())
+                                    }
                                 }
                             }
                         }
