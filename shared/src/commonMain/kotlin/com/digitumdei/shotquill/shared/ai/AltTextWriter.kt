@@ -13,7 +13,7 @@ class AltTextWriter(
 ) {
     /** True once an API key has been saved; without one nothing is ever sent. */
     val isConfigured: Boolean
-        get() = settings.hasOpenAiApiKey()
+        get() = settings.hasAiApiKey()
 
     /** The models offered for alt text, most preferred first. */
     fun models(): List<String> = settings.readSettings().ai.modelsFor(AiOperation.AltText)
@@ -23,7 +23,7 @@ class AltTextWriter(
      * shared; [caption] is passed only as context for naming what is shown.
      */
     fun write(jpeg: ByteArray, caption: String, model: String? = null): AiResult {
-        val apiKey = settings.getOpenAiApiKey()
+        val apiKey = settings.getAiApiKey()
             ?: return AiResult.Failure("Add an API key in settings to have alt text written for you.")
         val ai = settings.readSettings().ai
         return client.describeImage(

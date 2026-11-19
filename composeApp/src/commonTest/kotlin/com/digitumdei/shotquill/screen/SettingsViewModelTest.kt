@@ -167,7 +167,7 @@ class SettingsViewModelTest {
 
     @Test
     fun aSavedApiKeyIsOnlyEverShownMasked() {
-        repository.saveOpenAiApiKey("sk-or-v1-abcdefghijklmnop")
+        repository.saveAiApiKey("sk-or-v1-abcdefghijklmnop")
 
         val vm = viewModel()
 
@@ -183,16 +183,16 @@ class SettingsViewModelTest {
         assertFalse(vm.state.hasApiKey)
 
         vm.saveApiKey("  first-key-000000001111  ")
-        assertEquals("first-key-000000001111", repository.getOpenAiApiKey())
+        assertEquals("first-key-000000001111", repository.getAiApiKey())
         assertEquals("fir...1111", vm.state.apiKeyHint)
         assertEquals("Key saved.", vm.state.apiKeyMessage)
 
         vm.saveApiKey("second-key-00000002222")
-        assertEquals("second-key-00000002222", repository.getOpenAiApiKey())
+        assertEquals("second-key-00000002222", repository.getAiApiKey())
 
         vm.clearApiKey()
         assertFalse(vm.state.hasApiKey)
-        assertFalse(repository.hasOpenAiApiKey())
+        assertFalse(repository.hasAiApiKey())
         assertTrue(vm.state.apiKeyMessage.orEmpty().contains("Nothing will be sent"))
     }
 

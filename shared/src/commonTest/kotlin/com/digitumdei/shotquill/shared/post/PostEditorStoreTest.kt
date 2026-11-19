@@ -14,7 +14,6 @@ import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.settings.SnippetCodec
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
-import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
 import kotlinx.datetime.Instant
 import com.digitumdei.shotquill.shared.social.PhotoTag
@@ -157,7 +156,7 @@ class PostEditorStoreTest {
 
         assertEquals(savesBefore, drafts.saveCount)
         assertNull(treatments.get(id))
-        assertEquals("Written before", drafts.get(id)?.caption?.text)
+        assertEquals("Written before", drafts.get(id)?.caption)
         // And nothing is created for a post that never existed.
         store.saveTreatment(PostDraftId("never"), PhotoTreatment())
         assertNull(treatments.get(PostDraftId("never")))
@@ -173,11 +172,12 @@ class PostEditorStoreTest {
         // An image left beside a removed post by some other route is counted, since clearing deletes it too.
         treatments.save(removed, StoredTreatment(PhotoTreatment(), renderedUri = "file:///edited/removed.jpg"))
 
-        assertEquals(
-            setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"),
-            store.removedPostPhotos().toSet(),
-        )
-        assertNotNull(store.load(listed))
+        val counted = store.removedPostPhotos().toSet()
+        assertEquals(setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"), counted)
+
+        // Clearing hands back exactly what was counted: never the photo the listed post still uses.
+        assertEquals(counted, store.clearRemovedPosts().toSet())
+        assertEquals("file:///photos/shared.jpg", store.load(listed)?.originalUri)
     }
 
     @Test
@@ -468,22 +468,10 @@ private class InMemoryPostDraftRepository : PostDraftRepository {
                 DraftSummary(
                     id = draft.id,
                     status = draft.status,
-                    captionText = draft.caption?.text,
+                    captionText = draft.caption,
                     createdAtEpochMillis = draft.createdAt.toEpochMilliseconds(),
                     updatedAtEpochMillis = draft.updatedAt.toEpochMilliseconds(),
                     primaryMediaUri = draft.mediaItems.minByOrNull { it.order }?.mediaAsset?.uri,
                 )
             }
-
-    override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean = false
-
-    override fun updateUpdatedAt(id: PostDraftId, updatedAt: Instant): Boolean = false
-
-    override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean = false
-
-    override fun updateSelectedMediaAsset(
-        id: PostDraftId,
-        mediaAssetId: MediaAssetId?,
-        updatedAt: Instant,
-    ): UpdateSelectionResult = UpdateSelectionResult.DraftNotFound
 }

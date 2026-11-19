@@ -142,7 +142,7 @@ class AiIntegrationTest {
                     .withModels(AiOperation.AltText, listOf("first/model", "second/model")),
             ),
         )
-        settings.saveOpenAiApiKey("key-abcdef-123456")
+        settings.saveAiApiKey("key-abcdef-123456")
         val writer = AltTextWriter(settings, client)
         transport.reply = AiHttpResponse(200, """{"choices":[{"message":{"content":"Two bottles on a table."}}]}""")
 
