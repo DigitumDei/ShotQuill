@@ -27,7 +27,10 @@ fun svgCautions(svgText: String): String? {
             )
         }
         if (Filter.containsMatchIn(svgText)) {
-            add("It uses filters such as blur or shadow, which are not drawn.")
+            add(
+                "It uses filters such as blur or shadow, which are not drawn. For a drop shadow, " +
+                    "use the Shadow slider below instead.",
+            )
         }
     }
     return cautions.takeIf { it.isNotEmpty() }?.joinToString(" ")

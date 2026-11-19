@@ -64,6 +64,7 @@ class AndroidStorageTest {
                 opacity = 0.6f,
                 marginFraction = 0.02f,
                 corner = LogoCorner.TopEnd,
+                shadow = 0.6f,
             ),
             snippets = listOf(CaptionSnippet("Tags", "#doctrinebrewing\n#kzn")),
             ai = AiSettings(baseUrl = "https://api.example.test/v1")

@@ -227,6 +227,19 @@ the first real post decides: if Instagram refuses a tagged post, nothing is
 posted and the message says to check the names or take them off, and if it
 posts but leaves the tags off, the app says so.
 
+## Logo shadow
+
+The logo can have a soft drop shadow, set with the Shadow slider under Logo in
+Settings: off at zero, darker as it goes up. The app draws it at the finished
+image's own size from the logo's exact outline, so it is the same on every
+post and works for a vector or a picture. Its size follows the logo's, in the
+proportions of a drawing program's drop shadow (a blur of 2.5 and an offset
+of 2 on a logo 400 wide).
+
+A shadow drawn into an SVG as a filter is not rendered: the library that
+draws SVGs has no filter support, and the app says so when such a file is
+chosen. Use the plain logo and the slider instead.
+
 ## Removed posts
 
 Removing a post takes it off the list and deletes the image that was made from

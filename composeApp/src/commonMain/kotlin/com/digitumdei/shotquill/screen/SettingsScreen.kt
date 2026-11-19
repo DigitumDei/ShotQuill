@@ -265,6 +265,13 @@ fun SettingsScreen(
                         onValueChange = { viewModel.setLogoOpacity(it.snapped()) },
                         valueText = "${(logo.opacity * 100).roundToInt()}%",
                     )
+                    LabeledSlider(
+                        label = "Shadow",
+                        value = logo.shadow,
+                        valueRange = 0f..1f,
+                        onValueChange = { viewModel.setLogoShadow(it.snapped()) },
+                        valueText = if (logo.shadow <= 0f) "Off" else "${(logo.shadow * 100).roundToInt()}%",
+                    )
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "Usual corner",

@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -60,6 +62,7 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.domain.cropRect
+import com.digitumdei.shotquill.shared.domain.logoShadow
 import com.digitumdei.shotquill.shared.domain.logoPlacement
 import com.digitumdei.shotquill.shared.domain.toColorMatrix
 import kotlin.math.roundToInt
@@ -303,18 +306,54 @@ fun PhotoStage(
                     logo = logo,
                     corner = treatment.logoCorner ?: logo.corner,
                 )
-                AsyncImage(
-                    model = logoUri,
-                    contentDescription = "Logo",
-                    contentScale = ContentScale.FillBounds,
-                    alpha = logo.opacity,
-                    modifier = Modifier
-                        .offset { IntOffset(placement.left.roundToInt(), placement.top.roundToInt()) }
-                        .size(
-                            width = with(density) { placement.width.toDp() },
-                            height = with(density) { placement.height.toDp() },
-                        ),
-                )
+                val logoModifier = Modifier
+                    .offset { IntOffset(placement.left.roundToInt(), placement.top.roundToInt()) }
+                    .size(
+                        width = with(density) { placement.width.toDp() },
+                        height = with(density) { placement.height.toDp() },
+                    )
+                val shadow = logoShadow(logo, placement.width)
+                if (shadow == null) {
+                    AsyncImage(
+                        model = logoUri,
+                        contentDescription = "Logo",
+                        contentScale = ContentScale.FillBounds,
+                        alpha = logo.opacity,
+                        modifier = logoModifier,
+                    )
+                } else {
+                    // The same shadow the finished image gets: the logo again in
+                    // black, blurred, set down and to the right, with the logo
+                    // over it. The pair is faded as one layer, so the shadow
+                    // never shows through the logo.
+                    Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = logo.opacity.coerceIn(0f, 1f) }) {
+                        AsyncImage(
+                            model = logoUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.FillBounds,
+                            colorFilter = ColorFilter.tint(Color.Black),
+                            alpha = shadow.alpha,
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        (placement.left + shadow.offsetX).roundToInt(),
+                                        (placement.top + shadow.offsetY).roundToInt(),
+                                    )
+                                }
+                                .size(
+                                    width = with(density) { placement.width.toDp() },
+                                    height = with(density) { placement.height.toDp() },
+                                )
+                                .blur(with(density) { shadow.blurRadius.toDp() }, BlurredEdgeTreatment.Unbounded),
+                        )
+                        AsyncImage(
+                            model = logoUri,
+                            contentDescription = "Logo",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = logoModifier,
+                        )
+                    }
+                }
             }
             markers.forEach { marker ->
                 Text(

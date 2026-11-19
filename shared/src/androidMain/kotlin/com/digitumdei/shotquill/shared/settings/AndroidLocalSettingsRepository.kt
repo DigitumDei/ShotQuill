@@ -113,6 +113,7 @@ class AndroidLocalSettingsRepository(
             opacity = regularPreferences.getFloat(KeyLogoOpacity, defaults.opacity),
             marginFraction = regularPreferences.getFloat(KeyLogoMargin, defaults.marginFraction),
             corner = regularPreferences.enumSetting(KeyLogoCorner, defaults.corner, LogoCorner::fromWireValue),
+            shadow = regularPreferences.getFloat(KeyLogoShadow, defaults.shadow),
         )
     }
 
@@ -134,6 +135,7 @@ class AndroidLocalSettingsRepository(
             .putFloat(KeyLogoOpacity, settings.logo.opacity)
             .putFloat(KeyLogoMargin, settings.logo.marginFraction)
             .putString(KeyLogoCorner, settings.logo.corner.wireValue)
+            .putFloat(KeyLogoShadow, settings.logo.shadow)
             .putString(KeySnippets, SnippetCodec.encode(settings.snippets))
             .putString(KeyAiBaseUrl, settings.ai.baseUrl)
             .putString(KeyBlueskyHandle, settings.bluesky.handle)
@@ -293,6 +295,7 @@ class AndroidLocalSettingsRepository(
         const val KeyLogoOpacity = "logo_opacity"
         const val KeyLogoMargin = "logo_margin_fraction"
         const val KeyLogoCorner = "logo_corner"
+        const val KeyLogoShadow = "logo_shadow"
         const val KeySnippets = "caption_snippets"
         const val KeyAiBaseUrl = "ai_base_url"
         const val KeyAiModelsPrefix = "ai_models_"

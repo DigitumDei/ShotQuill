@@ -61,6 +61,24 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun thereIsNoShadowSliderUntilALogoIsChosen() {
+        show()
+
+        assertTrue(compose.onAllNodesWithText("Shadow").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun withALogoChosenTheShadowSliderIsThereAndSaysOff() {
+        repository.saveSettings(
+            repository.readSettings().let { it.copy(logo = it.logo.copy(uri = "file:///brand/logo.svg")) },
+        )
+        show()
+
+        compose.onNodeWithText("Shadow").performScrollTo().assertExists()
+        compose.onNodeWithText("Off").assertExists()
+    }
+
+    @Test
     fun usualHashtagsAreSavedForEachServiceAsTheyAreTyped() {
         show()
 

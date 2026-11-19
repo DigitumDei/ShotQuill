@@ -108,6 +108,9 @@ class SettingsViewModel(
 
     fun setLogoCorner(corner: LogoCorner) = update { it.copy(logo = it.logo.copy(corner = corner)) }
 
+    /** How dark the shadow under the logo is; 0 switches it off. */
+    fun setLogoShadow(darkness: Float) = update { it.copy(logo = it.logo.copy(shadow = darkness.coerceIn(0f, 1f))) }
+
     fun addSnippet() = update { it.copy(snippets = it.snippets + CaptionSnippet(name = "", text = "")) }
 
     fun updateSnippet(index: Int, snippet: CaptionSnippet) = update { settings ->

@@ -360,6 +360,20 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun theLogoShadowIsSavedAndKeptBetweenNoneAndFull() {
+        val vm = viewModel()
+        assertEquals(0f, vm.state.settings.logo.shadow)
+
+        vm.setLogoShadow(0.6f)
+        assertEquals(0.6f, repository.readSettings().logo.shadow)
+        vm.setLogoShadow(4f)
+        assertEquals(1f, repository.readSettings().logo.shadow)
+        vm.setLogoShadow(-1f)
+        assertEquals(0f, vm.state.settings.logo.shadow)
+        assertEquals(0f, viewModel().state.settings.logo.shadow)
+    }
+
+    @Test
     fun privacyNoteSaysWhatLeavesThePhone() {
         val offline = privacyNote(dictationOnDevice = null, aiConfigured = false)
         assertTrue(offline.contains("does not connect to the internet"))
