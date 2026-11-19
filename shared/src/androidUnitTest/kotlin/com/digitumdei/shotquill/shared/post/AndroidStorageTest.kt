@@ -82,6 +82,10 @@ class AndroidStorageTest {
                 email = "uploads@doctrine.example",
             ),
             usualTags = mapOf(PublishTarget.Bluesky to "#craftbeer #bskybeer", PublishTarget.Instagram to "#craftbeer"),
+            mentionHistory = mapOf(
+                PublishTarget.Bluesky to listOf("doctrinebrewing.co.za", "bsky.app"),
+                PublishTarget.Instagram to listOf("some_friend"),
+            ),
         )
 
         settingsRepository().saveSettings(settings)

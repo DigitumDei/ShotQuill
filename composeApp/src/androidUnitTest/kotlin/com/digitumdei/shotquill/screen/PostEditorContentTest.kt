@@ -4,7 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -15,6 +17,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.digitumdei.shotquill.ScreenTestActivity
 import com.digitumdei.shotquill.shared.domain.PixelSize
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PublishTarget
@@ -46,6 +49,8 @@ class PostEditorContentTest {
     private val blueskyTexts = mutableListOf<String>()
     private val published = mutableListOf<PublishTarget>()
     private val opened = mutableListOf<String>()
+    private val suggestions = mutableMapOf<MentionField, List<AccountSuggestion>>()
+    private val picked = mutableListOf<Pair<MentionField, AccountSuggestion>>()
     private var removed = 0
     private var shared = 0
 
@@ -83,6 +88,8 @@ class PostEditorContentTest {
                     state = current,
                     instagramMentions = instagramMentions,
                     blueskyMentions = blueskyMentions,
+                    suggestionsFor = { suggestions[it].orEmpty() },
+                    onApplySuggestion = { field, suggestion -> picked += field to suggestion },
                     onOpenLink = { opened += it },
                     onBack = {},
                     onOpenSettings = {},
@@ -207,6 +214,28 @@ class PostEditorContentTest {
         assertEquals(
             listOf("https://bsky.app/profile/doctrinebrewing.co.za", "https://www.instagram.com/some_friend/"),
             opened,
+        )
+    }
+
+    @Test
+    fun accountsOfferedForAMentionBeingTypedCanBePicked() {
+        suggestions[MentionField.BlueskyText] = listOf(
+            AccountSuggestion("doctrinebrewing.co.za", "Dion"),
+            AccountSuggestion("doctor.bsky.social"),
+        )
+        suggestions[MentionField.Caption] = listOf(AccountSuggestion("some_friend"))
+        show(loaded(targets = listOf(bluesky)))
+
+        compose.onNodeWithText("@doctrinebrewing.co.za  \u00B7  Dion").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("@some_friend").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("@doctor.bsky.social").assertExists()
+
+        assertEquals(
+            listOf(
+                MentionField.BlueskyText to AccountSuggestion("doctrinebrewing.co.za", "Dion"),
+                MentionField.Caption to AccountSuggestion("some_friend"),
+            ),
+            picked,
         )
     }
 

@@ -64,6 +64,7 @@ import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
 import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.MentionStatus
@@ -161,9 +162,18 @@ fun PostEditorScreen(
     // lookups wait on the network, so they have a lock of their own and never
     // hold up saving.
     val lookupLock = remember(viewModel) { Mutex() }
-    LaunchedEffect(viewModel, state.isLoaded, state.blueskyPostText) {
+    LaunchedEffect(viewModel, state.isLoaded, state.blueskyPostText, state.instagramPostText) {
         delay(900)
         lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.checkMentions() } }
+    }
+    // Suggestions for a name still being typed are wanted sooner than a check
+    // of a finished one.
+    LaunchedEffect(viewModel, state.isLoaded, state.blueskyText, state.tagsFor(PublishTarget.Bluesky)) {
+        delay(350)
+        lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.fetchSuggestions() } }
+    }
+    LaunchedEffect(viewModel, state.isLoaded) {
+        if (state.isLoaded) lookupLock.withLock { withContext(Dispatchers.IO) { viewModel.loadMentionHistory() } }
     }
     val uriHandler = LocalUriHandler.current
     DisposableEffect(viewModel) {
@@ -186,6 +196,8 @@ fun PostEditorScreen(
         state = state,
         instagramMentions = viewModel.mentionChecks(PublishTarget.Instagram),
         blueskyMentions = viewModel.mentionChecks(PublishTarget.Bluesky),
+        suggestionsFor = viewModel::suggestionsFor,
+        onApplySuggestion = viewModel::applySuggestion,
         onOpenLink = { address ->
             try {
                 uriHandler.openUri(address)
@@ -246,6 +258,9 @@ fun PostEditorContent(
     state: PostEditorState,
     instagramMentions: List<MentionCheck>,
     blueskyMentions: List<MentionCheck>,
+    /** Accounts to offer under a box while a mention is being typed in it. */
+    suggestionsFor: (MentionField) -> List<AccountSuggestion>,
+    onApplySuggestion: (MentionField, AccountSuggestion) -> Unit,
     onOpenLink: (String) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -437,6 +452,7 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     shape = MaterialTheme.shapes.medium,
                 )
+                MentionSuggestions(suggestionsFor(MentionField.Caption)) { onApplySuggestion(MentionField.Caption, it) }
                 OutlinedTextField(
                     value = state.tagsFor(PublishTarget.Instagram),
                     onValueChange = { onTagsChange(PublishTarget.Instagram, it) },
@@ -446,6 +462,9 @@ fun PostEditorContent(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                     shape = MaterialTheme.shapes.medium,
                 )
+                MentionSuggestions(suggestionsFor(MentionField.InstagramTags)) {
+                    onApplySuggestion(MentionField.InstagramTags, it)
+                }
                 MentionLines(instagramMentions, onOpenLink)
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     FlowRow(
@@ -538,6 +557,9 @@ fun PostEditorContent(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         shape = MaterialTheme.shapes.medium,
                     )
+                    MentionSuggestions(suggestionsFor(MentionField.BlueskyText)) {
+                        onApplySuggestion(MentionField.BlueskyText, it)
+                    }
                     OutlinedTextField(
                         value = state.tagsFor(PublishTarget.Bluesky),
                         onValueChange = { onTagsChange(PublishTarget.Bluesky, it) },
@@ -547,6 +569,9 @@ fun PostEditorContent(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         shape = MaterialTheme.shapes.medium,
                     )
+                    MentionSuggestions(suggestionsFor(MentionField.BlueskyTags)) {
+                        onApplySuggestion(MentionField.BlueskyTags, it)
+                    }
                     Text(
                         text = "${state.blueskyLength} / $BlueskyTextLimit" +
                             if (state.blueskyText.isBlank()) "  ·  using the caption" else "",
@@ -706,6 +731,28 @@ private fun ToggleRow(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/** Accounts offered while a mention is being typed. Tapping one finishes the mention with it. */
+@Composable
+private fun MentionSuggestions(suggestions: List<AccountSuggestion>, onPick: (AccountSuggestion) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        suggestions.forEach { suggestion ->
+            AssistChip(
+                onClick = { onPick(suggestion) },
+                label = {
+                    Text(
+                        "@${suggestion.handle}" +
+                            suggestion.displayName.trim().let { if (it.isEmpty()) "" else "  \u00B7  $it" },
+                    )
+                },
+            )
+        }
     }
 }
 

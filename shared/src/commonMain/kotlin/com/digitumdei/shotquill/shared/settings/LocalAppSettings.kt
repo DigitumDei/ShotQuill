@@ -8,6 +8,7 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.rememberMentions
 import com.digitumdei.shotquill.shared.social.PublishTarget
 
 data class LocalAppSettings(
@@ -21,7 +22,18 @@ data class LocalAppSettings(
     val firebaseHost: FirebaseHostSettings = FirebaseHostSettings(),
     /** The hashtags a new post starts with on each service. A service with no entry starts with none. */
     val usualTags: Map<PublishTarget, String> = emptyMap(),
+    /** The accounts mentioned in earlier posts on each service, most recent first, offered again while typing. */
+    val mentionHistory: Map<PublishTarget, List<String>> = emptyMap(),
 ) {
+    fun mentionHistoryFor(target: PublishTarget): List<String> = mentionHistory[target].orEmpty()
+
+    fun withMentionsUsed(target: PublishTarget, names: List<String>): LocalAppSettings =
+        if (names.isEmpty()) {
+            this
+        } else {
+            copy(mentionHistory = mentionHistory + (target to rememberMentions(mentionHistoryFor(target), names)))
+        }
+
     fun usualTagsFor(target: PublishTarget): String = usualTags[target].orEmpty()
 
     fun withUsualTags(target: PublishTarget, tags: String): LocalAppSettings =

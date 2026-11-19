@@ -5,6 +5,7 @@ import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
@@ -177,6 +178,28 @@ class BlueskyPublisher(
         }
     }
 
+    /** Bluesky's own suggest-as-you-type lookup, from its open directory: only what was typed is sent. */
+    override fun suggestAccounts(typed: String): List<AccountSuggestion> {
+        val query = typed.trim().removePrefix("@").lowercase()
+        if (!SuggestablePattern.matches(query)) return emptyList()
+        return try {
+            val response = transport.send(
+                HttpRequest(
+                    method = "GET",
+                    url = "$publicApi/xrpc/app.bsky.actor.searchActorsTypeahead?q=$query&limit=$SuggestionLimit",
+                ),
+            )
+            if (!response.isSuccess) return emptyList()
+            val actors = (json.parseToJsonElement(response.body) as? JsonObject)?.get("actors") as? JsonArray
+            actors.orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { actor ->
+                actor.text("handle").takeIf(::isFullBlueskyHandle)
+                    ?.let { AccountSuggestion(handle = it, displayName = actor.text("displayName")) }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private fun serverAddress(bluesky: BlueskySettings): String? {
         val server = bluesky.server.trim().trimEnd('/')
         val isWebAddress = server.startsWith("https://", ignoreCase = true) || server.startsWith("http://", ignoreCase = true)
@@ -313,6 +336,8 @@ class BlueskyPublisher(
     private companion object {
         const val MaxAcceptedImageBytes = 1_000_000
         const val PublicApi = "https://public.api.bsky.app"
+        const val SuggestionLimit = 6
+        val SuggestablePattern = Regex("[a-z0-9][a-z0-9.-]{1,60}")
         val json = Json { ignoreUnknownKeys = true }
     }
 }

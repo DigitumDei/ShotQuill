@@ -117,6 +117,113 @@ class MentionsTest {
     }
 
     @Test
+    fun anUnfinishedMentionAtTheEndIsNoticedAndCanBeCompleted() {
+        assertEquals("doct", mentionBeingTyped("Cheers @doct"))
+        assertEquals("", mentionBeingTyped("Cheers @"))
+        assertEquals("some_fr", mentionBeingTyped("(@some_fr"))
+        assertEquals("a.b-c", mentionBeingTyped("@a.b-c"))
+        assertNull(mentionBeingTyped("Cheers @doct "))
+        assertNull(mentionBeingTyped("mail me@exam"))
+        assertNull(mentionBeingTyped("no mention here"))
+        assertNull(mentionBeingTyped(""))
+
+        assertEquals("Cheers @doctrinebrewing.co.za ", completeMention("Cheers @doct", "doctrinebrewing.co.za"))
+        assertEquals("#craftbeer @some_friend ", completeMention("#craftbeer @", "some_friend"))
+        assertEquals("nothing to finish", completeMention("nothing to finish", "someone"))
+    }
+
+    @Test
+    fun namesAreRememberedInTheFormEachServiceUses() {
+        val text = "With @Doctrine_Brewing and @doctrinebrewing.co.za and @bare @craft-beer"
+
+        assertEquals(listOf("doctrinebrewing.co.za"), mentionNamesFor(PublishTarget.Bluesky, text))
+        assertEquals(
+            listOf("doctrine_brewing", "doctrinebrewing.co.za", "bare"),
+            mentionNamesFor(PublishTarget.Instagram, text),
+        )
+
+        assertEquals(listOf("new", "Old", "older"), rememberMentions(listOf("Old", "older", "NEW"), listOf("new")))
+        assertEquals(listOf("a", "b"), rememberMentions(listOf("b", "c"), listOf("a"), limit = 2))
+    }
+
+    @Test
+    fun suggestionsPutNamesUsedBeforeFirstThenWhatTheServiceOffers() {
+        val offers = suggestMentions(
+            typed = "doc",
+            usedBefore = listOf("brewdoc.bsky.social", "doctrinebrewing.co.za", "unrelated.example"),
+            fromService = listOf(
+                AccountSuggestion("doctrinebrewing.co.za", "Dion"),
+                AccountSuggestion("doctor.example.com", "A Doctor"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                AccountSuggestion("doctrinebrewing.co.za", "Dion"),
+                AccountSuggestion("brewdoc.bsky.social"),
+                AccountSuggestion("doctor.example.com", "A Doctor"),
+            ),
+            offers,
+        )
+        // Just after the @ every remembered name is on offer; a name typed in full is not offered again.
+        assertEquals(listOf("a", "b"), suggestMentions("", listOf("a", "b")).map { it.handle })
+        assertTrue(suggestMentions("a", listOf("A")).isEmpty())
+        assertEquals(2, suggestMentions("", (1..9).map { "name$it" }, limit = 2).size)
+    }
+
+    @Test
+    fun anInstagramNameMetaConfirmsIsShownAsFound() {
+        val checks = instagramMentionChecks(
+            "With @Some_Friend and @unknown_one",
+            mapOf(
+                "some_friend" to AccountLookup.Found("some_friend", "Some Friend Brewing"),
+                "unknown_one" to AccountLookup.CannotCheck,
+            ),
+        )
+
+        assertEquals(MentionStatus.Found, checks[0].status)
+        assertEquals("Some Friend Brewing", checks[0].note)
+        assertEquals("https://www.instagram.com/some_friend/", checks[0].profileUrl)
+        assertEquals(MentionStatus.CannotCheck, checks[1].status)
+    }
+
+    @Test
+    fun blueskySuggestsAccountsForANameBeingTyped() {
+        val urls = mutableListOf<String>()
+        var reply = HttpResponse(
+            200,
+            """{"actors":[{"did":"did:plc:a","handle":"doctrinebrewing.co.za","displayName":"Dion"},{"handle":"not a handle"},{"handle":"doctor.bsky.social"}]}""",
+        )
+        var failure: Exception? = null
+        val publisher = BlueskyPublisher(
+            settings = InMemoryLocalSettingsRepository(),
+            transport = { request ->
+                failure?.let { throw it }
+                urls += request.url
+                reply
+            },
+        )
+
+        assertEquals(
+            listOf(AccountSuggestion("doctrinebrewing.co.za", "Dion"), AccountSuggestion("doctor.bsky.social")),
+            publisher.suggestAccounts(" @Doct "),
+        )
+        assertEquals("https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead?q=doct&limit=6", urls.single())
+
+        // Too short, or something that could not be part of a handle, is never sent.
+        assertTrue(publisher.suggestAccounts("d").isEmpty())
+        assertTrue(publisher.suggestAccounts("a b&c=d").isEmpty())
+        assertEquals(1, urls.size)
+
+        reply = HttpResponse(500, "oops")
+        assertTrue(publisher.suggestAccounts("doct").isEmpty())
+        reply = HttpResponse(200, "<html>")
+        assertTrue(publisher.suggestAccounts("doct").isEmpty())
+        failure = IllegalStateException("offline")
+        assertTrue(publisher.suggestAccounts("doct").isEmpty())
+    }
+
+    @Test
     fun blueskyLooksAccountsUpInItsOpenDirectoryWithoutSigningIn() {
         val requests = mutableListOf<HttpRequest>()
         var reply = HttpResponse(200, """{"did":"did:plc:abc","handle":"doctrinebrewing.co.za","displayName":"Dion"}""")

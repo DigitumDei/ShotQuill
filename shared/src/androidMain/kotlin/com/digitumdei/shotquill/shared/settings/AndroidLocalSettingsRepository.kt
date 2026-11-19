@@ -73,6 +73,13 @@ class AndroidLocalSettingsRepository(
                     ?.takeIf { it.isNotBlank() }
                     ?.let { target to it }
             }.toMap(),
+            mentionHistory = PublishTarget.entries.mapNotNull { target ->
+                regularPreferences.getString(KeyMentionHistoryPrefix + target.wireValue, null)
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { target to it }
+            }.toMap(),
         )
 
     private fun readAi(): AiSettings =
@@ -145,6 +152,12 @@ class AndroidLocalSettingsRepository(
                         editor.remove(KeyUsualTagsPrefix + target.wireValue)
                     } else {
                         editor.putString(KeyUsualTagsPrefix + target.wireValue, tags)
+                    }
+                    val mentioned = settings.mentionHistory[target].orEmpty().filter { it.isNotBlank() }
+                    if (mentioned.isEmpty()) {
+                        editor.remove(KeyMentionHistoryPrefix + target.wireValue)
+                    } else {
+                        editor.putString(KeyMentionHistoryPrefix + target.wireValue, mentioned.joinToString("\n"))
                     }
                 }
             }
@@ -292,6 +305,7 @@ class AndroidLocalSettingsRepository(
         const val KeyFirebaseBucket = "firebase_storage_bucket"
         const val KeyFirebaseEmail = "firebase_upload_email"
         const val KeyUsualTagsPrefix = "usual_tags_"
+        const val KeyMentionHistoryPrefix = "mention_history_"
         const val SecretPrefix = "secret_"
     }
 }

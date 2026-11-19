@@ -83,6 +83,18 @@ interface PostPublisher {
      */
     fun findAccount(name: String): AccountLookup = AccountLookup.CannotCheck
 
+    /**
+     * Blocking. Accounts the service offers for a name that is still being
+     * typed. Empty when it has none or offers no such lookup.
+     */
+    fun suggestAccounts(typed: String): List<AccountSuggestion> = emptyList()
+
+    /**
+     * Blocking. Accounts this account has mentioned in its own earlier posts,
+     * as far as the service will say. Empty when it will not.
+     */
+    fun pastMentions(): List<String> = emptyList()
+
     /** Blocking: call off the main thread. */
     fun publish(post: PostToPublish): PublishResult
 }

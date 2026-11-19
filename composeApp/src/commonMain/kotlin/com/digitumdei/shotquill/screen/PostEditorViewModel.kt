@@ -39,6 +39,13 @@ import com.digitumdei.shotquill.shared.social.blueskyLength
 import com.digitumdei.shotquill.shared.social.blueskyMentionChecks
 import com.digitumdei.shotquill.shared.social.blueskyTextFor
 import com.digitumdei.shotquill.shared.social.instagramMentionChecks
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
+import com.digitumdei.shotquill.shared.social.MentionStatus
+import com.digitumdei.shotquill.shared.social.completeMention
+import com.digitumdei.shotquill.shared.social.mentionBeingTyped
+import com.digitumdei.shotquill.shared.social.mentionNamesFor
+import com.digitumdei.shotquill.shared.social.rememberMentions
+import com.digitumdei.shotquill.shared.social.suggestMentions
 import com.digitumdei.shotquill.shared.social.withTags
 import kotlin.concurrent.Volatile
 
@@ -51,6 +58,14 @@ data class PublishTargetState(
     val postedUrl: String? = null,
     val isPublishing: Boolean = false,
 )
+
+/** The boxes in the editor where a mention can be typed, and the service each one is written for. */
+enum class MentionField(val target: PublishTarget) {
+    Caption(PublishTarget.Instagram),
+    InstagramTags(PublishTarget.Instagram),
+    BlueskyText(PublishTarget.Bluesky),
+    BlueskyTags(PublishTarget.Bluesky),
+}
 
 data class PostEditorState(
     val isLoaded: Boolean = false,
@@ -149,6 +164,16 @@ class PostEditorViewModel(
     // typing carries on, and the two must never overwrite each other.
     private var blueskyLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
 
+    // The same for Instagram names, where Meta will answer at all.
+    private var instagramLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
+
+    // What Bluesky suggested for each unfinished name asked about so far.
+    private var liveSuggestions: Map<String, List<AccountSuggestion>> by mutableStateOf(emptyMap())
+
+    // Accounts mentioned in earlier posts on each service, most recent first.
+    private var usedBefore: Map<PublishTarget, List<String>> by mutableStateOf(emptyMap())
+    private val mentionLock = Any()
+
     @Volatile
     private var renderedUri: String? = null
 
@@ -200,6 +225,9 @@ class PostEditorViewModel(
         )
         update { loaded }
         savedTags = loaded.tags
+        synchronized(mentionLock) {
+            usedBefore = PublishTarget.entries.associateWith { settings.mentionHistoryFor(it) }
+        }
     }
 
     fun updateCaption(text: String) {
@@ -270,7 +298,7 @@ class PostEditorViewModel(
      */
     fun mentionChecks(target: PublishTarget): List<MentionCheck> = when {
         !state.isLoaded -> emptyList()
-        target == PublishTarget.Instagram -> instagramMentionChecks(state.instagramPostText)
+        target == PublishTarget.Instagram -> instagramMentionChecks(state.instagramPostText, instagramLookups)
         state.hasBluesky -> blueskyMentionChecks(state.blueskyPostText, blueskyLookups)
         else -> emptyList()
     }
@@ -280,7 +308,9 @@ class PostEditorViewModel(
      * for yet. Only the handle is sent, without any sign-in.
      */
     fun checkMentions() {
-        if (!state.isLoaded || !state.hasBluesky) return
+        if (!state.isLoaded) return
+        checkInstagramMentions()
+        if (!state.hasBluesky) return
         val bluesky = publishers.firstOrNull { it.target == PublishTarget.Bluesky } ?: return
         blueskyHandlesToLookUp(state.blueskyPostText).forEach { handle ->
             val known = blueskyLookups[handle]
@@ -291,6 +321,119 @@ class PostEditorViewModel(
                 AccountLookup.Unreachable
             }
             blueskyLookups = blueskyLookups + (handle to answer)
+        }
+    }
+
+    /**
+     * Asks Instagram about each mentioned name it has not been asked about,
+     * when Instagram is set up. It can only ever confirm a name; one it does
+     * not confirm stays as it was.
+     */
+    private fun checkInstagramMentions() {
+        if (state.targets.none { it.target == PublishTarget.Instagram }) return
+        val instagram = publishers.firstOrNull { it.target == PublishTarget.Instagram } ?: return
+        instagramMentionChecks(state.instagramPostText)
+            .filter { it.status == MentionStatus.CannotCheck }
+            .map { it.name.lowercase() }
+            .filter { it !in instagramLookups }
+            .forEach { name ->
+                val answer = try {
+                    instagram.findAccount(name)
+                } catch (_: Exception) {
+                    AccountLookup.CannotCheck
+                }
+                instagramLookups = instagramLookups + (name to answer)
+            }
+    }
+
+    private fun textOf(field: MentionField): String = when (field) {
+        MentionField.Caption -> state.caption
+        MentionField.InstagramTags -> state.tagsFor(PublishTarget.Instagram)
+        MentionField.BlueskyText -> state.blueskyText
+        MentionField.BlueskyTags -> state.tagsFor(PublishTarget.Bluesky)
+    }
+
+    /**
+     * Accounts to offer for the mention being typed at the end of [field]:
+     * ones mentioned before, and for Bluesky what Bluesky itself suggests.
+     * Empty when the box does not end in an unfinished mention.
+     */
+    fun suggestionsFor(field: MentionField): List<AccountSuggestion> {
+        if (!state.isLoaded) return emptyList()
+        if (field.target == PublishTarget.Bluesky && !state.hasBluesky) return emptyList()
+        val typed = mentionBeingTyped(textOf(field)) ?: return emptyList()
+        val fromService = if (field.target == PublishTarget.Bluesky) {
+            liveSuggestions[typed.lowercase()].orEmpty()
+        } else {
+            emptyList()
+        }
+        return suggestMentions(typed, usedBefore[field.target].orEmpty(), fromService)
+    }
+
+    /** Finishes the mention being typed in [field] with [suggestion]. */
+    fun applySuggestion(field: MentionField, suggestion: AccountSuggestion) {
+        if (!state.isLoaded) return
+        when (field) {
+            MentionField.Caption -> update { it.copy(caption = completeMention(it.caption, suggestion.handle)) }
+            MentionField.BlueskyText -> update { it.copy(blueskyText = completeMention(it.blueskyText, suggestion.handle)) }
+            MentionField.InstagramTags, MentionField.BlueskyTags -> update {
+                val tags = completeMention(it.tagsFor(field.target), suggestion.handle)
+                it.copy(tags = it.tags + (field.target to tags))
+            }
+        }
+    }
+
+    /**
+     * Blocking. Asks Bluesky for accounts matching each unfinished mention in
+     * the Bluesky boxes. Only what was typed after the @ is sent.
+     */
+    fun fetchSuggestions() {
+        if (!state.isLoaded || !state.hasBluesky) return
+        val bluesky = publishers.firstOrNull { it.target == PublishTarget.Bluesky } ?: return
+        listOf(MentionField.BlueskyText, MentionField.BlueskyTags)
+            .mapNotNull { mentionBeingTyped(textOf(it))?.lowercase() }
+            .filter { it.length >= MinTypedForSuggestions && it !in liveSuggestions }
+            .distinct()
+            .forEach { typed ->
+                val found = try {
+                    bluesky.suggestAccounts(typed)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                liveSuggestions = liveSuggestions + (typed to found)
+            }
+    }
+
+    /**
+     * Blocking. Adds the accounts each service says this account has
+     * mentioned before to the ones remembered on the phone.
+     */
+    fun loadMentionHistory() {
+        if (!state.isLoaded) return
+        publishers.filter { it.isConfigured }.forEach { publisher ->
+            val names = try {
+                publisher.pastMentions()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (names.isNotEmpty()) {
+                synchronized(mentionLock) {
+                    val known = usedBefore[publisher.target].orEmpty()
+                    usedBefore = usedBefore + (publisher.target to (known + names).distinctBy { it.lowercase() })
+                }
+            }
+        }
+    }
+
+    /** Remembers who was mentioned in [text], so they are offered next time. */
+    private fun rememberMentionsUsed(target: PublishTarget, text: String) {
+        val names = mentionNamesFor(target, text)
+        if (names.isEmpty()) return
+        runCatching {
+            settingsRepository.saveSettings(settingsRepository.readSettings().withMentionsUsed(target, names))
+        }
+        synchronized(mentionLock) {
+            usedBefore = usedBefore + (target to rememberMentions(usedBefore[target].orEmpty(), names))
         }
     }
 
@@ -453,6 +596,7 @@ class PostEditorViewModel(
                 if (result.success) {
                     val previous = renderedUri
                     store.markShared(draftId, outcome.uri)
+                    rememberMentionsUsed(PublishTarget.Instagram, caption)
                     renderedUri = outcome.uri
                     if (previous != null && previous != outcome.uri) renderer.discard(previous)
                     update { it.copy(isSharing = false, shared = true, message = "Image ready.$clipboardNote") }
@@ -543,6 +687,7 @@ class PostEditorViewModel(
                     is PublishResult.Success -> {
                         val previous = renderedUri
                         store.markPublished(draftId, target, result.url, outcome.uri)
+                        rememberMentionsUsed(target, text)
                         renderedUri = outcome.uri
                         if (previous != null && previous != outcome.uri) renderer.discard(previous)
                         finish("Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}.", result.url)
@@ -561,6 +706,10 @@ class PostEditorViewModel(
         target: PublishTarget,
         change: (PublishTargetState) -> PublishTargetState,
     ): PostEditorState = copy(targets = targets.map { if (it.target == target) change(it) else it })
+
+    private companion object {
+        const val MinTypedForSuggestions = 2
+    }
 
     /** Removes the post from the list and deletes the image made from it. */
     fun remove() {

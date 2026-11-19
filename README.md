@@ -142,13 +142,22 @@ Bluesky are not the ones that work on Instagram. Settings holds the usual tags
 for each, which new posts start with. On Bluesky a full handle in the text or
 the tags, such as `@name.bsky.social`, becomes a real mention.
 
+While you type a mention the app offers accounts to finish it with: the ones
+you have mentioned in earlier posts, and on Bluesky also what Bluesky's own
+search suggests for the letters typed so far. Tapping one completes the
+mention. For Instagram the app also reads the captions of your recent posts,
+where Meta allows it, to collect names you have used before.
+
 Mentions are checked while you write. For Bluesky the app asks Bluesky's open
 directory whether the handle exists (only the handle is sent, with no
 sign-in) and shows the account's name, or says that nobody has that handle or
-that a bare `@name` needs its full handle. Instagram gives an app that posts
-with an Instagram sign-in no way to ask whether an account exists, so there
-the app only catches names Instagram would not accept and offers each one as
-a link to open the profile and see for yourself.
+that a bare `@name` needs its full handle. Instagram has no dependable way for an app to ask whether an account exists.
+The app tries Meta's lookup of professional accounts and shows the account's
+name when Meta confirms it; Meta documents that lookup only for another kind
+of sign-in, so it may simply never answer, and it knows nothing of personal
+accounts. A name it does not confirm is therefore never called wrong: the app
+only catches names Instagram would not accept, and offers each one as a link
+to open the profile and see for yourself.
 
 ### Instagram
 

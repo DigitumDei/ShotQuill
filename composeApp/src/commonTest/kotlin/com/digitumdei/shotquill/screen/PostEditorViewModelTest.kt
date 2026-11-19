@@ -27,6 +27,7 @@ import com.digitumdei.shotquill.shared.post.PostSummary
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.social.AccountLookup
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.social.PostToPublish
@@ -513,8 +514,7 @@ class PostEditorViewModelTest {
     }
 
     @Test
-    fun instagramMentionsAreNeverLookedUpOnlyReadForMistakes() {
-        instagram.configured = true
+    fun instagramNamesAreNotLookedUpUntilInstagramIsSetUp() {
         val vm = loadedViewModel()
         vm.updateCaption("Brewed with @some_friend")
         vm.updateTags(PublishTarget.Instagram, "#craftbeer @craft-beer")
@@ -526,6 +526,94 @@ class PostEditorViewModelTest {
         assertEquals(listOf(MentionStatus.CannotCheck, MentionStatus.Problem), checks.map { it.status })
         assertEquals("https://www.instagram.com/some_friend/", checks[0].profileUrl)
         assertTrue(instagram.lookedUp.isEmpty())
+    }
+
+    @Test
+    fun aMentionBeingTypedIsOfferedNamesUsedBeforeAndBlueskysOwnSuggestions() {
+        settings.saveSettings(
+            settings.readSettings().copy(
+                mentionHistory = mapOf(
+                    PublishTarget.Bluesky to listOf("doctrinebrewing.co.za"),
+                    PublishTarget.Instagram to listOf("some_friend", "doctrine_fan"),
+                ),
+            ),
+        )
+        bluesky.suggestions["doc"] = listOf(AccountSuggestion("doctor.bsky.social", "A Doctor"))
+        val vm = loadedViewModel()
+        assertTrue(MentionField.entries.all { vm.suggestionsFor(it).isEmpty() })
+
+        vm.updateBlueskyText("Cheers @Doc")
+        // Names used before are there at once; Bluesky's own arrive after it has been asked.
+        assertEquals(listOf("doctrinebrewing.co.za"), vm.suggestionsFor(MentionField.BlueskyText).map { it.handle })
+        vm.fetchSuggestions()
+        vm.fetchSuggestions()
+        assertEquals(listOf("doc"), bluesky.suggestedFor)
+        assertEquals(
+            listOf(AccountSuggestion("doctrinebrewing.co.za"), AccountSuggestion("doctor.bsky.social", "A Doctor")),
+            vm.suggestionsFor(MentionField.BlueskyText),
+        )
+
+        vm.applySuggestion(MentionField.BlueskyText, AccountSuggestion("doctor.bsky.social", "A Doctor"))
+        assertEquals("Cheers @doctor.bsky.social ", vm.state.blueskyText)
+        assertTrue(vm.suggestionsFor(MentionField.BlueskyText).isEmpty())
+
+        // Instagram's boxes are offered Instagram names, and nothing is asked of any service for them.
+        vm.updateCaption("With @doc")
+        vm.fetchSuggestions()
+        assertEquals(listOf("doctrine_fan"), vm.suggestionsFor(MentionField.Caption).map { it.handle })
+        vm.applySuggestion(MentionField.Caption, AccountSuggestion("doctrine_fan"))
+        assertEquals("With @doctrine_fan ", vm.state.caption)
+        assertEquals(listOf("doc"), bluesky.suggestedFor)
+
+        vm.updateTags(PublishTarget.Instagram, "#craftbeer @")
+        assertEquals(listOf("some_friend", "doctrine_fan"), vm.suggestionsFor(MentionField.InstagramTags).map { it.handle })
+        vm.applySuggestion(MentionField.InstagramTags, AccountSuggestion("some_friend"))
+        assertEquals("#craftbeer @some_friend ", vm.state.tagsFor(PublishTarget.Instagram))
+        vm.updateTags(PublishTarget.Bluesky, "@doctr")
+        vm.applySuggestion(MentionField.BlueskyTags, AccountSuggestion("doctrinebrewing.co.za"))
+        assertEquals("@doctrinebrewing.co.za ", vm.state.tagsFor(PublishTarget.Bluesky))
+    }
+
+    @Test
+    fun whoWasMentionedInAPostIsRememberedForNextTime() {
+        instagram.configured = true
+        instagram.past = listOf("from_old_captions", "some_friend")
+        val vm = loadedViewModel()
+        vm.loadMentionHistory()
+        vm.updateCaption("Brewed with @Some_Friend")
+        vm.updateBlueskyText("Brewed with @friend.bsky.social and @bare")
+
+        vm.publish(PublishTarget.Bluesky)
+        vm.share()
+
+        val saved = settings.readSettings()
+        assertEquals(listOf("friend.bsky.social"), saved.mentionHistoryFor(PublishTarget.Bluesky))
+        assertEquals(listOf("some_friend"), saved.mentionHistoryFor(PublishTarget.Instagram))
+        // Offered next time: what was just used first, then what Instagram's old captions held.
+        vm.updateTags(PublishTarget.Instagram, "@")
+        assertEquals(
+            listOf("some_friend", "from_old_captions"),
+            vm.suggestionsFor(MentionField.InstagramTags).map { it.handle },
+        )
+        val reopened = loadedViewModel()
+        reopened.updateBlueskyText("@fri")
+        assertEquals(listOf("friend.bsky.social"), reopened.suggestionsFor(MentionField.BlueskyText).map { it.handle })
+    }
+
+    @Test
+    fun anInstagramNameIsConfirmedWhenInstagramWillSay() {
+        instagram.configured = true
+        instagram.accounts["some_friend"] = AccountLookup.Found("some_friend", "Some Friend Brewing")
+        val vm = loadedViewModel()
+        vm.updateCaption("With @Some_Friend and @someone_else")
+
+        vm.checkMentions()
+        vm.checkMentions()
+
+        val checks = vm.mentionChecks(PublishTarget.Instagram)
+        assertEquals(listOf(MentionStatus.Found, MentionStatus.CannotCheck), checks.map { it.status })
+        assertEquals("Some Friend Brewing", checks[0].note)
+        assertEquals(listOf("some_friend", "someone_else"), instagram.lookedUp)
     }
 
     @Test
@@ -909,6 +997,17 @@ internal class FakePublisher(
     val accounts = mutableMapOf<String, AccountLookup>()
     val lookedUp = mutableListOf<String>()
     var lookupFailure: Exception? = null
+
+    val suggestions = mutableMapOf<String, List<AccountSuggestion>>()
+    val suggestedFor = mutableListOf<String>()
+    var past: List<String> = emptyList()
+
+    override fun suggestAccounts(typed: String): List<AccountSuggestion> {
+        suggestedFor += typed
+        return suggestions[typed].orEmpty()
+    }
+
+    override fun pastMentions(): List<String> = past
 
     /** Runs while a post is "on its way", standing in for the wait on the network. */
     var whilePublishing: (() -> Unit)? = null

@@ -3,10 +3,12 @@ package com.digitumdei.shotquill.screen
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import com.digitumdei.shotquill.ScreenTestActivity
@@ -15,6 +17,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.EditablePost
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.AccountLookup
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.ui.ShotQuillTheme
@@ -159,6 +162,25 @@ class PostEditorScreenTest {
             compose.onAllNodesWithText("Posted to Bluesky", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Typed while posting").assertExists()
+    }
+
+    @Test
+    fun typingTheStartOfABlueskyNameOffersAccountsAndPickingOneFinishesIt() {
+        bluesky.suggestions["doct"] = listOf(AccountSuggestion("doctrinebrewing.co.za", "Dion"))
+        show()
+
+        compose.onNodeWithText("Leave empty to post the caption as it is")
+            .performScrollTo()
+            .performTextReplacement("Cheers @doct")
+        waitFor("Bluesky's suggestion to appear") {
+            compose.onAllNodesWithText("@doctrinebrewing.co.za", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("@doctrinebrewing.co.za", substring = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
+
+        compose.onNodeWithText("Cheers @doctrinebrewing.co.za ").assertExists()
+        assertEquals(listOf("doct"), bluesky.suggestedFor)
     }
 
     @Test

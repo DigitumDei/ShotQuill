@@ -374,10 +374,8 @@ class SettingsViewModelTest {
         val everything = privacyNote(dictationOnDevice = null, aiConfigured = true, postingTo = listOf("Instagram", "Bluesky"))
         assertTrue(everything.contains("alt text"))
         assertTrue(everything.contains("and when you post to Instagram or Bluesky"))
-        assertTrue(everything.contains("and to ask Bluesky whether an account you @mention exists."))
-        assertFalse(
-            privacyNote(dictationOnDevice = null, aiConfigured = false, postingTo = listOf("Instagram")).contains("@mention"),
-        )
+        assertTrue(everything.contains("and to look up the accounts you @mention there, sending only the name."))
+        assertFalse(privacyNote(dictationOnDevice = null, aiConfigured = true).contains("@mention"))
         assertTrue(
             privacyNote(dictationOnDevice = null, aiConfigured = false, postingTo = listOf("Bluesky"))
                 .contains("only when you post to Bluesky"),

@@ -5,6 +5,7 @@ import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.captionStats
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
+import kotlin.concurrent.Volatile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -189,6 +190,79 @@ class InstagramPublisher(
 
     private class Account(val id: String, val username: String)
 
+    // Learned the first time the token is used and kept for this run of the
+    // app, so checking a name does not ask who the account is every time.
+    @Volatile
+    private var knownAccount: Account? = null
+
+    // Set once Meta has shown it will not answer lookups of other accounts
+    // for this kind of token, so the app stops asking.
+    @Volatile
+    private var lookupsRefused = false
+
+    /**
+     * Asks Meta about another account by name. Meta documents this lookup
+     * (Business Discovery) only for the older Facebook login, and it only
+     * knows professional accounts, so the answer is either "found" or
+     * "cannot say": a name is never reported as not existing.
+     */
+    override fun findAccount(name: String): AccountLookup {
+        val wanted = name.trim().removePrefix("@").lowercase()
+        val token = settings.getSecret(InstagramSettings.AccessTokenSecret) ?: return AccountLookup.CannotCheck
+        if (lookupsRefused || InstagramSettings.isInstagramLoginToken(token)) return AccountLookup.CannotCheck
+        if (!LookupNamePattern.matches(wanted)) return AccountLookup.CannotCheck
+        return try {
+            val account = knownAccount ?: account(token)
+            val response = transport.send(
+                HttpRequest(
+                    method = "GET",
+                    url = "$unifiedGraphUrl/${account.id}?fields=business_discovery.username($wanted){username,name}",
+                    headers = bearer(token),
+                ),
+            )
+            val reply = runCatching { json.parseToJsonElement(response.body) as? JsonObject }.getOrNull()
+            val found = reply?.get("business_discovery") as? JsonObject
+            when {
+                response.isSuccess && found != null -> AccountLookup.Found(
+                    handle = found.text("username").ifEmpty { wanted },
+                    displayName = found.text("name"),
+                )
+
+                else -> {
+                    val error = reply?.get("error") as? JsonObject
+                    val code = (error?.get("code") as? JsonPrimitive)?.content?.toIntOrNull()
+                    val subcode = (error?.get("error_subcode") as? JsonPrimitive)?.content?.toIntOrNull()
+                    // "No such professional account" is an answer about this one
+                    // name. Anything else means the lookup itself is not on offer.
+                    val aboutThisName = code == UnknownAccountCode || subcode == UnknownAccountSubcode
+                    if (!response.isSuccess && !aboutThisName) lookupsRefused = true
+                    AccountLookup.CannotCheck
+                }
+            }
+        } catch (_: Exception) {
+            AccountLookup.CannotCheck
+        }
+    }
+
+    /** The names this account has mentioned in the captions of its recent posts, when Meta will show them. */
+    override fun pastMentions(): List<String> {
+        val token = settings.getSecret(InstagramSettings.AccessTokenSecret) ?: return emptyList()
+        return try {
+            val account = knownAccount ?: account(token)
+            val reply = get(
+                token,
+                "${graphFor(token)}/${account.id}/media?fields=caption&limit=$PastPostsToRead",
+                step = "read earlier posts",
+            )
+            (reply["data"] as? JsonArray).orEmpty()
+                .mapNotNull { (it as? JsonObject)?.text("caption") }
+                .flatMap { mentionNamesFor(PublishTarget.Instagram, it) }
+                .distinct()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private fun graphFor(token: String): String =
         if (InstagramSettings.isInstagramLoginToken(token)) graphUrl else unifiedGraphUrl
 
@@ -199,6 +273,7 @@ class InstagramPublisher(
             settings.saveSettings(current.copy(instagram = current.instagram.copy(username = found.username)))
         }
         return Account(id = found.id, username = found.username.ifEmpty { current.instagram.username })
+            .also { knownAccount = it }
     }
 
     /** An "Instagram login" token belongs to one account and can simply be asked whose it is. */
@@ -348,6 +423,10 @@ class InstagramPublisher(
         const val StatusCheckDelayMillis = 1_500L
         const val RefreshAfterMillis = 24L * 60 * 60 * 1000
         const val InvalidTokenCode = 190
+        const val UnknownAccountCode = 110
+        const val UnknownAccountSubcode = 2207013
+        const val PastPostsToRead = 50
+        val LookupNamePattern = Regex("[a-z0-9._]{1,30}")
         val RateLimitCodes = setOf(4, 17, 32, 613)
         val json = Json { ignoreUnknownKeys = true }
 

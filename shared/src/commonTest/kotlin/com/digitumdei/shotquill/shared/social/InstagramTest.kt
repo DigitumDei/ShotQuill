@@ -316,6 +316,83 @@ class InstagramTest {
         assertFalse(InstagramSettings.isInstagramLoginToken("EAAexample"))
     }
 
+    private fun unified() {
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAunified-abcdef-123456")
+        transport.on("/me/assigned_instagram_accounts", """{"data":[{"id":"1784","username":"doctrinebrewing"}]}""")
+    }
+
+    @Test
+    fun aNameMetaKnowsIsConfirmedAndOneItDoesNotKnowIsLeftUnchecked() {
+        unified()
+        transport.on(
+            "business_discovery.username(some_friend)",
+            """{"business_discovery":{"username":"some_friend","name":"Some Friend Brewing","id":"99"},"id":"1784"}""",
+        )
+        transport.on(
+            "business_discovery.username(personal_one)",
+            """{"error":{"message":"Invalid user id","code":110,"error_subcode":2207013}}""",
+            status = 400,
+        )
+
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount(" @Some_Friend "))
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("personal_one"))
+        // An answer about one name does not stop the next being asked about.
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount("some_friend"))
+
+        val lookups = transport.requests.filter { it.url.contains("business_discovery") }
+        assertEquals(
+            "https://graph.facebook.com/v27.0/1784?fields=business_discovery.username(some_friend){username,name}",
+            lookups.first().url,
+        )
+        assertEquals("Bearer EAAunified-abcdef-123456", lookups.first().headers["Authorization"])
+        // The account is asked for once, not before every name.
+        assertEquals(1, transport.requests.count { it.url.contains("assigned_instagram_accounts") })
+        // A name that could not be an Instagram name is never sent.
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("bad name&x=1"))
+        assertEquals(3, transport.requests.count { it.url.contains("business_discovery") })
+    }
+
+    @Test
+    fun whenMetaRefusesLookupsAltogetherTheAppStopsAsking() {
+        unified()
+        transport.on(
+            "business_discovery",
+            """{"error":{"message":"(#10) Application does not have permission for this action","code":10}}""",
+            status = 400,
+        )
+
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("another_friend"))
+        assertEquals(1, transport.requests.count { it.url.contains("business_discovery") })
+    }
+
+    @Test
+    fun namesAreNotLookedUpWithAnInstagramLoginTokenOrWithoutAToken() {
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        settings.clearSecret(InstagramSettings.AccessTokenSecret)
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertTrue(publisher.pastMentions().isEmpty())
+        assertTrue(transport.requests.isEmpty())
+    }
+
+    @Test
+    fun earlierCaptionsAreReadForTheNamesMentionedInThem() {
+        unified()
+        transport.on(
+            "/1784/media?fields=caption",
+            """{"data":[{"caption":"Brewed with @Some_Friend for the festival","id":"1"},{"id":"2"},{"caption":"Thanks @another.one and @some_friend!","id":"3"}]}""",
+        )
+
+        assertEquals(listOf("some_friend", "another.one"), publisher.pastMentions())
+        assertEquals(
+            "https://graph.facebook.com/v27.0/1784/media?fields=caption&limit=50",
+            transport.requests.last().url,
+        )
+
+        transport.on("/1784/media?fields=caption", """{"error":{"message":"caption is not available","code":100}}""", status = 400)
+        assertTrue(publisher.pastMentions().isEmpty())
+    }
+
     @Test
     fun checkingTriesTheTokenAndTheHostingWithoutPosting() {
         happyPath()
