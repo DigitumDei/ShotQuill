@@ -38,11 +38,18 @@ class PostToPublish(
     val altText: String,
     val imageWidth: Int,
     val imageHeight: Int,
+    /** People tagged on the photo. Only Instagram takes these. */
+    val userTags: List<PhotoTag> = emptyList(),
+    /** Accounts invited to share the post as collaborators. Only Instagram takes these. */
+    val collaborators: List<String> = emptyList(),
 )
 
 sealed interface PublishResult {
-    /** [url] opens the published post in a browser or the service's own app. */
-    data class Success(val url: String) : PublishResult
+    /**
+     * [url] opens the published post in a browser or the service's own app.
+     * [note] is set when the post went out but the service left part of it off.
+     */
+    data class Success(val url: String, val note: String? = null) : PublishResult
 
     /** [message] is written for the person using the app and never contains a password or token. */
     data class Failure(val message: String) : PublishResult

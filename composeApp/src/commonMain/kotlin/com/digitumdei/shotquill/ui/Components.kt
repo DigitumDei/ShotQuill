@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,6 +42,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -215,6 +218,10 @@ fun PhotoStage(
     modifier: Modifier = Modifier,
     heightLimit: Dp = 440.dp,
     onPanZoom: ((panXFraction: Float, panYFraction: Float, zoomChange: Float) -> Unit)? = null,
+    /** Labels drawn over the photo, such as people tagged on it. */
+    markers: List<PhotoMarker> = emptyList(),
+    /** A tap on the photo, as fractions of the visible frame from its top-left corner. */
+    onTap: ((xFraction: Float, yFraction: Float) -> Unit)? = null,
 ) {
     val crop = remember(treatment.cropShape, treatment.zoom, treatment.centerX, treatment.centerY, imageSize) {
         treatment.cropRect(imageSize.width, imageSize.height)
@@ -228,6 +235,7 @@ fun PhotoStage(
         }
     }
     val currentOnPanZoom by rememberUpdatedState(onPanZoom)
+    val currentOnTap by rememberUpdatedState(onTap)
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val stageWidth = min(maxWidth, heightLimit * aspect)
@@ -252,7 +260,16 @@ fun PhotoStage(
                 .size(stageWidth, stageHeight)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                .then(gesture),
+                .then(gesture)
+                .then(
+                    if (onTap != null) {
+                        Modifier.testTag(PhotoStageTag).pointerInput(Unit) {
+                            detectTapGestures { at -> currentOnTap?.invoke(at.x / size.width, at.y / size.height) }
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             Layout(
                 content = {
@@ -298,9 +315,34 @@ fun PhotoStage(
                         ),
                 )
             }
+            markers.forEach { marker ->
+                Text(
+                    text = marker.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (marker.selected) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (marker.x.coerceIn(0f, 1f) * stageWidthPx).roundToInt(),
+                                (marker.y.coerceIn(0f, 1f) * stageHeightPx).roundToInt(),
+                            )
+                        }
+                        .background(
+                            color = if (marker.selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),
+                            shape = MaterialTheme.shapes.small,
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
         }
     }
 }
+
+/** A label over the photo at [x], [y], fractions of the frame from its top-left corner. */
+data class PhotoMarker(val label: String, val x: Float, val y: Float, val selected: Boolean = false)
+
+/** Finds the photo in tests. */
+const val PhotoStageTag = "photo-stage"
 
 /** A quiet panel used to group related controls. */
 @Composable

@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performSemanticsAction
@@ -11,6 +12,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -20,8 +24,11 @@ import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.MentionStatus
+import com.digitumdei.shotquill.shared.social.PhotoTag
+import com.digitumdei.shotquill.shared.social.instagramNameOrNull
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.speech.DictationState
+import com.digitumdei.shotquill.ui.PhotoStageTag
 import com.digitumdei.shotquill.ui.ShotQuillTheme
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -51,6 +58,7 @@ class PostEditorContentTest {
     private val opened = mutableListOf<String>()
     private val suggestions = mutableMapOf<MentionField, List<AccountSuggestion>>()
     private val picked = mutableListOf<Pair<MentionField, AccountSuggestion>>()
+    private val placed = mutableListOf<Pair<Float, Float>>()
     private var removed = 0
     private var shared = 0
 
@@ -119,6 +127,18 @@ class PostEditorContentTest {
                     onLookEnabled = {},
                     onLogoEnabled = {},
                     onLogoCorner = {},
+                    onAddPhotoTag = { typed ->
+                        val name = instagramNameOrNull(typed)
+                        if (name != null) current = current.copy(photoTags = current.photoTags + PhotoTag(name), placingTag = name)
+                        name != null
+                    },
+                    onRemovePhotoTag = { name -> current = current.copy(photoTags = current.photoTags.filterNot { it.username == name }) },
+                    onSelectPhotoTag = { name -> current = current.copy(placingTag = name) },
+                    onPlacePhotoTag = { x, y ->
+                        placed += x to y
+                        current = current.copy(placingTag = null)
+                    },
+                    onCollaboratorsChange = { current = current.copy(collaborators = it) },
                     onDismissMessage = {},
                     onShare = { shared++ },
                     onRemove = { removed++ },
@@ -237,6 +257,59 @@ class PostEditorContentTest {
             ),
             picked,
         )
+    }
+
+    @Test
+    fun tagsAndCollaboratorsAreOnlyOfferedOnceInstagramIsSetUp() {
+        show(loaded(targets = listOf(bluesky)))
+
+        assertTrue(compose.onAllNodesWithText("Tag someone on the photo").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithText("Collaborators, up to 3").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun aPersonIsTaggedThenPlacedByTappingThePhotoAndCanBeRemoved() {
+        show(loaded(targets = listOf(instagram)))
+
+        compose.onNodeWithText("Tag someone on the photo").performScrollTo().performTextInput("@Some_Friend")
+        compose.onNodeWithText("Tag").performClick()
+
+        // The tag shows as a chip and over the photo, and asks to be placed.
+        assertEquals(2, compose.onAllNodesWithText("@some_friend").fetchSemanticsNodes().size)
+        compose.onNodeWithText("Tap the photo where @some_friend is.").assertExists()
+
+        compose.onNodeWithTag(PhotoStageTag).performScrollTo().performTouchInput {
+            click(Offset(width * 0.25f, height * 0.75f))
+        }
+
+        assertEquals(1, placed.size)
+        assertEquals(0.25f, placed.single().first, 0.02f)
+        assertEquals(0.75f, placed.single().second, 0.02f)
+        compose.onNodeWithText("Tap a name, then the photo", substring = true).assertExists()
+
+        compose.onNodeWithContentDescription("Remove tag some_friend").performSemanticsAction(SemanticsActions.OnClick)
+        assertTrue(compose.onAllNodesWithText("@some_friend").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun somethingThatIsNotAnInstagramNameStaysInTheBoxToBeCorrected() {
+        show(loaded(targets = listOf(instagram)))
+
+        compose.onNodeWithText("Tag someone on the photo").performScrollTo().performTextInput("craft-beer")
+        compose.onNodeWithText("Tag").performClick()
+
+        compose.onNodeWithText("craft-beer").assertExists()
+        assertTrue(compose.onAllNodesWithText("@craft-beer").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun tooManyCollaboratorsAreSaidUnderTheBox() {
+        show(loaded(targets = listOf(instagram)))
+
+        compose.onNodeWithText("Each gets an invitation", substring = true).performScrollTo().assertExists()
+        compose.onNodeWithText("Collaborators, up to 3").performScrollTo().performTextInput("a b c d")
+
+        compose.onNodeWithText("Instagram allows up to 3 collaborators and this has 4.").assertExists()
     }
 
     @Test

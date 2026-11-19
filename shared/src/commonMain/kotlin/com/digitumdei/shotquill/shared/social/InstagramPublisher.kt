@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -135,6 +137,13 @@ class InstagramPublisher(
         }
         problemWith(post.text)?.let { return PublishResult.Failure(it) }
         problemWithImage(post.imageWidth, post.imageHeight)?.let { return PublishResult.Failure(it) }
+        if (post.collaborators.size > InstagramCollaboratorLimit) {
+            return PublishResult.Failure("Instagram allows up to $InstagramCollaboratorLimit collaborators.")
+        }
+        if (post.userTags.size > InstagramPhotoTagLimit) {
+            return PublishResult.Failure("Instagram allows up to $InstagramPhotoTagLimit people on a photo.")
+        }
+        val hasExtras = post.userTags.isNotEmpty() || post.collaborators.isNotEmpty()
 
         var token = savedToken
         var uploadedName: String? = null
@@ -151,32 +160,64 @@ class InstagramPublisher(
             }
             uploadedName = fileName
 
-            val container = post(
-                token,
-                "$graph/${account.id}/media",
-                buildJsonObject {
-                    put("image_url", imageUrl)
-                    if (post.text.isNotBlank()) put("caption", post.text)
-                    if (post.altText.isNotBlank()) put("alt_text", post.altText.trim())
-                },
-                step = "prepare the post",
-            ).text("id").ifEmpty { throw StepFailed("Instagram did not accept the image.") }
+            val container = try {
+                post(
+                    token,
+                    "$graph/${account.id}/media",
+                    buildJsonObject {
+                        put("image_url", imageUrl)
+                        if (post.text.isNotBlank()) put("caption", post.text)
+                        if (post.altText.isNotBlank()) put("alt_text", post.altText.trim())
+                        if (post.userTags.isNotEmpty()) {
+                            putJsonArray("user_tags") {
+                                post.userTags.forEach { tag ->
+                                    addJsonObject {
+                                        put("username", tag.username)
+                                        put("x", tag.x.coerceIn(0f, 1f))
+                                        put("y", tag.y.coerceIn(0f, 1f))
+                                    }
+                                }
+                            }
+                        }
+                        if (post.collaborators.isNotEmpty()) {
+                            putJsonArray("collaborators") { post.collaborators.forEach { add(JsonPrimitive(it)) } }
+                        }
+                    },
+                    step = "prepare the post",
+                )
+            } catch (failure: StepFailed) {
+                // Nothing has been posted at this point. A wrong name among the
+                // people tagged or invited is the likeliest reason, so say so.
+                if (!hasExtras) throw failure
+                throw StepFailed(
+                    failure.message.orEmpty() + " If this is about someone tagged or invited, check the name " +
+                        "or take it off and post again.",
+                )
+            }.text("id").ifEmpty { throw StepFailed("Instagram did not accept the image.") }
 
             waitUntilReady(token, container)
 
-            val mediaId = post(
+            val published = post(
                 token,
                 "$graph/${account.id}/media_publish",
                 buildJsonObject { put("creation_id", container) },
                 step = "publish the post",
-            ).text("id").ifEmpty {
+            )
+            val mediaId = published.text("id").ifEmpty {
                 throw StepFailed("Instagram did not confirm the post. Check your profile before trying again.")
+            }
+            // The post is out, but Instagram can still say it left part of it off.
+            val note = when (val issue = published.text("config_issue")) {
+                "" -> null
+                "USER_TAGGING_FAILURE" -> "Instagram left the photo tags off."
+                "CAPTION_NOT_ATTACHED" -> "Instagram left the caption off."
+                else -> "Instagram reported a problem with part of it: $issue."
             }
 
             val permalink = runCatching {
                 get(token, "$graph/$mediaId?fields=permalink", step = "find the post").text("permalink")
             }.getOrDefault("")
-            PublishResult.Success(permalink.ifEmpty { "https://www.instagram.com/${account.username}/" })
+            PublishResult.Success(permalink.ifEmpty { "https://www.instagram.com/${account.username}/" }, note)
         } catch (failure: StepFailed) {
             PublishResult.Failure(redact(failure.message.orEmpty(), savedToken, token))
         } catch (e: Exception) {

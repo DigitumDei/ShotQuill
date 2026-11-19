@@ -4,6 +4,8 @@ import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.social.PhotoTag
+import com.digitumdei.shotquill.shared.social.PhotoTagCodec
 import com.digitumdei.shotquill.shared.social.PublishTarget
 
 /**
@@ -22,6 +24,10 @@ data class StoredTreatment(
      * meaning "none"; until then the usual tags from settings apply.
      */
     val tags: Map<PublishTarget, String> = emptyMap(),
+    /** People tagged on the photo, for Instagram. */
+    val photoTags: List<PhotoTag> = emptyList(),
+    /** The Instagram collaborators box, as typed. */
+    val collaborators: String = "",
 )
 
 interface PhotoTreatmentStore {
@@ -62,6 +68,8 @@ object StoredTreatmentCodec {
     private const val KeyBlueskyText = "bluesky"
     private const val KeyPublishedPrefix = "published."
     private const val KeyTagsPrefix = "tags."
+    private const val KeyPhotoTags = "phototags"
+    private const val KeyCollaborators = "collaborators"
 
     fun encode(stored: StoredTreatment): String = buildString {
         val t = stored.treatment
@@ -76,6 +84,8 @@ object StoredTreatmentCodec {
         if (stored.blueskyText.isNotEmpty()) appendLine("$KeyBlueskyText=${escape(stored.blueskyText)}")
         stored.published.forEach { (target, url) -> appendLine("$KeyPublishedPrefix${target.wireValue}=$url") }
         stored.tags.forEach { (target, tags) -> appendLine("$KeyTagsPrefix${target.wireValue}=${escape(tags)}") }
+        if (stored.photoTags.isNotEmpty()) appendLine("$KeyPhotoTags=${PhotoTagCodec.encode(stored.photoTags)}")
+        if (stored.collaborators.isNotEmpty()) appendLine("$KeyCollaborators=${escape(stored.collaborators)}")
     }.trimEnd()
 
     fun decode(encoded: String): StoredTreatment {
@@ -115,6 +125,8 @@ object StoredTreatmentCodec {
                     PublishTarget.fromWireValue(key.removePrefix(KeyTagsPrefix))?.let { it to unescape(tags) }
                 }
             }.toMap(),
+            photoTags = fields[KeyPhotoTags]?.let(PhotoTagCodec::decode).orEmpty(),
+            collaborators = fields[KeyCollaborators]?.let(::unescape).orEmpty(),
         )
     }
 

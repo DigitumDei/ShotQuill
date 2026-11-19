@@ -7,6 +7,7 @@ import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.social.PhotoTag
 import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.datetime.Instant
@@ -37,6 +38,10 @@ data class EditablePost(
     val published: Map<PublishTarget, String> = emptyMap(),
     /** Hashtags set on this post, per service. A service that is absent uses the usual tags from settings. */
     val tags: Map<PublishTarget, String> = emptyMap(),
+    /** People tagged on the photo, for Instagram. */
+    val photoTags: List<PhotoTag> = emptyList(),
+    /** The Instagram collaborators box, as typed. */
+    val collaborators: String = "",
 )
 
 /** The few things the app needs to keep about a post: the photo, the words and how the photo is treated. */
@@ -53,6 +58,9 @@ interface PostEditorStore {
     /** Records that the post went out to [target] and where it can be seen. */
     fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String)
     fun remove(id: PostDraftId)
+
+    /** Keeps who is tagged on the photo and who is invited as a collaborator, for Instagram. */
+    fun saveInstagramExtras(id: PostDraftId, photoTags: List<PhotoTag>, collaborators: String) {}
 
     /**
      * The original photos of posts that were removed from the list. Removing a
@@ -116,7 +124,15 @@ class DraftBackedPostEditorStore(
             blueskyText = stored?.blueskyText.orEmpty(),
             published = stored?.published.orEmpty(),
             tags = stored?.tags.orEmpty(),
+            photoTags = stored?.photoTags.orEmpty(),
+            collaborators = stored?.collaborators.orEmpty(),
         )
+    }
+
+    override fun saveInstagramExtras(id: PostDraftId, photoTags: List<PhotoTag>, collaborators: String) {
+        val existing = stored(id)
+        if (existing.photoTags == photoTags && existing.collaborators == collaborators) return
+        treatments.save(id, existing.copy(photoTags = photoTags, collaborators = collaborators))
     }
 
     override fun saveCaption(id: PostDraftId, caption: String) {

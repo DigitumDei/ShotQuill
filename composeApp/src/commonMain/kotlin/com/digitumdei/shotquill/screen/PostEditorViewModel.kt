@@ -46,6 +46,11 @@ import com.digitumdei.shotquill.shared.social.mentionBeingTyped
 import com.digitumdei.shotquill.shared.social.mentionNamesFor
 import com.digitumdei.shotquill.shared.social.rememberMentions
 import com.digitumdei.shotquill.shared.social.suggestMentions
+import com.digitumdei.shotquill.shared.social.InstagramPhotoTagLimit
+import com.digitumdei.shotquill.shared.social.PhotoTag
+import com.digitumdei.shotquill.shared.social.collaboratorsProblem
+import com.digitumdei.shotquill.shared.social.instagramNameOrNull
+import com.digitumdei.shotquill.shared.social.parseCollaborators
 import com.digitumdei.shotquill.shared.social.withTags
 import kotlin.concurrent.Volatile
 
@@ -92,8 +97,19 @@ data class PostEditorState(
     val blueskyText: String = "",
     /** The hashtags for this post on each service, as typed. */
     val tags: Map<PublishTarget, String> = emptyMap(),
+    /** People tagged on the photo, for Instagram. */
+    val photoTags: List<PhotoTag> = emptyList(),
+    /** The tag that the next tap on the photo will move, if any. */
+    val placingTag: String? = null,
+    /** The Instagram collaborators box, as typed. */
+    val collaborators: String = "",
 ) {
     fun tagsFor(target: PublishTarget): String = tags[target].orEmpty()
+
+    val hasInstagram: Boolean get() = targets.any { it.target == PublishTarget.Instagram }
+
+    /** Why the collaborators as typed cannot be sent, or null when they can. */
+    val collaboratorsProblem: String? get() = collaboratorsProblem(collaborators)
 
     /** The caption with Instagram's hashtags: what is shared or posted to Instagram. */
     val instagramPostText: String get() = withTags(caption, tagsFor(PublishTarget.Instagram))
@@ -221,6 +237,8 @@ class PostEditorViewModel(
             tags = PublishTarget.entries.associateWith { target ->
                 post.tags[target] ?: settings.usualTagsFor(target)
             },
+            photoTags = post.photoTags,
+            collaborators = post.collaborators,
             message = if (imageSize == null) "The photo could not be read." else null,
         )
         update { loaded }
@@ -282,8 +300,81 @@ class PostEditorViewModel(
         }
     }
 
+    /**
+     * Tags [typed] on the photo, in the middle to begin with, and makes it the
+     * tag the next tap on the photo will move. Returns false when [typed] is
+     * not an Instagram name.
+     */
+    fun addPhotoTag(typed: String): Boolean {
+        if (!state.isLoaded) return false
+        val name = instagramNameOrNull(typed)
+        if (name == null) {
+            update { it.copy(message = "That is not an Instagram name.") }
+            return false
+        }
+        update { current ->
+            when {
+                current.photoTags.any { it.username == name } -> current.copy(placingTag = name)
+                current.photoTags.size >= InstagramPhotoTagLimit ->
+                    current.copy(message = "Instagram allows up to $InstagramPhotoTagLimit people on a photo.")
+
+                else -> current.copy(photoTags = current.photoTags + PhotoTag(name), placingTag = name)
+            }
+        }
+        return true
+    }
+
+    fun removePhotoTag(username: String) {
+        update { current ->
+            current.copy(
+                photoTags = current.photoTags.filterNot { it.username == username },
+                placingTag = current.placingTag.takeIf { it != username },
+            )
+        }
+    }
+
+    /** Chooses which tag the next tap on the photo moves; choosing it again lets go of it. */
+    fun selectPhotoTag(username: String) {
+        update { current ->
+            if (current.photoTags.none { it.username == username }) {
+                current
+            } else {
+                current.copy(placingTag = if (current.placingTag == username) null else username)
+            }
+        }
+    }
+
+    /** A tap on the photo: the chosen tag moves there. Without a chosen tag nothing happens. */
+    fun placePhotoTag(xFraction: Float, yFraction: Float) {
+        update { current ->
+            val name = current.placingTag
+            if (name == null) {
+                current
+            } else {
+                current.copy(
+                    photoTags = current.photoTags.map {
+                        if (it.username == name) it.copy(x = xFraction.coerceIn(0f, 1f), y = yFraction.coerceIn(0f, 1f)) else it
+                    },
+                    placingTag = null,
+                )
+            }
+        }
+    }
+
+    fun updateCollaborators(text: String) {
+        if (!state.isLoaded) return
+        update { it.copy(collaborators = text) }
+    }
+
+    fun persistInstagramExtras() {
+        if (!state.isLoaded) return
+        val current = state
+        store.saveInstagramExtras(draftId, current.photoTags, current.collaborators)
+    }
+
     /** Blocking. Writes everything typed or dragged that may not have been saved yet. */
     fun persistAll() {
+        persistInstagramExtras()
         persistCaption()
         persistAltText()
         persistBlueskyText()
@@ -631,6 +722,13 @@ class PostEditorViewModel(
             update { it.copy(message = problem) }
             return
         }
+        val forInstagram = target == PublishTarget.Instagram
+        if (forInstagram) {
+            current.collaboratorsProblem?.let { problem ->
+                update { it.copy(message = problem) }
+                return
+            }
+        }
         // Only one post or share runs at a time; a second tap that slipped in is dropped here.
         val started = updateIf({ it.canShare }) { latest ->
             latest.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
@@ -639,6 +737,7 @@ class PostEditorViewModel(
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         store.saveBlueskyText(draftId, current.blueskyText)
+        store.saveInstagramExtras(draftId, current.photoTags, current.collaborators)
         persistTags()
         store.saveTreatment(draftId, current.treatment)
 
@@ -681,6 +780,12 @@ class PostEditorViewModel(
                         altText = current.altText.trim(),
                         imageWidth = outcome.size.width,
                         imageHeight = outcome.size.height,
+                        userTags = if (forInstagram) current.photoTags else emptyList(),
+                        collaborators = if (forInstagram) {
+                            parseCollaborators(current.collaborators).mapNotNull(::instagramNameOrNull)
+                        } else {
+                            emptyList()
+                        },
                     ),
                 )
                 when (result) {
@@ -690,7 +795,11 @@ class PostEditorViewModel(
                         rememberMentionsUsed(target, text)
                         renderedUri = outcome.uri
                         if (previous != null && previous != outcome.uri) renderer.discard(previous)
-                        finish("Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}.", result.url)
+                        finish(
+                            "Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}." +
+                                result.note?.let { " $it" }.orEmpty(),
+                            result.url,
+                        )
                     }
 
                     is PublishResult.Failure -> {

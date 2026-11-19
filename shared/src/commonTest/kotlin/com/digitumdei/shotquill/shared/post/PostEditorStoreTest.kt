@@ -17,6 +17,7 @@ import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
 import kotlinx.datetime.Instant
+import com.digitumdei.shotquill.shared.social.PhotoTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -68,6 +69,27 @@ class PostEditorStoreTest {
         assertNotNull(store.load(kept))
         assertTrue(store.removedPostPhotos().isEmpty())
         assertTrue(store.clearRemovedPosts().isEmpty())
+    }
+
+    @Test
+    fun peopleTaggedOnThePhotoAndCollaboratorsAreKeptWithThePost() {
+        val id = newPost("tagged")
+        store.saveBlueskyText(id, "Short one")
+        val tags = listOf(PhotoTag("some_friend", 0.2f, 0.8f), PhotoTag("another.one"))
+
+        store.saveInstagramExtras(id, tags, "@some_friend another.one")
+
+        val post = assertNotNull(store.load(id))
+        assertEquals(tags, post.photoTags)
+        assertEquals("@some_friend another.one", post.collaborators)
+        // Nothing else stored beside the post is disturbed.
+        assertEquals("Short one", post.blueskyText)
+
+        store.saveInstagramExtras(id, emptyList(), "")
+        val cleared = assertNotNull(store.load(id))
+        assertTrue(cleared.photoTags.isEmpty())
+        assertEquals("", cleared.collaborators)
+        assertTrue(assertNotNull(store.load(newPost("plain"))).photoTags.isEmpty())
     }
 
     @Test

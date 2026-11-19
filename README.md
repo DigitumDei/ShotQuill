@@ -213,6 +213,20 @@ are renewed by the app whenever you post.
 Instagram's API takes feed shapes from 4:5 to 1.91:1, so a 9:16 crop has to go
 through Share instead.
 
+A post made straight to Instagram can also carry two things Share cannot:
+
+- **People tagged on the photo.** Type a name under the Instagram hashtags and
+  choose Tag. The tag appears over the photo; tap its name and then the photo
+  to put it where the person is. Up to 20.
+- **Collaborators.** Up to three accounts, each of whom gets an invitation to
+  show the post on their own profile once it is out.
+
+Both are sent with the post as Meta's publishing API describes. Meta's own
+pages disagree about whether an app set up with Unified login may use them, so
+the first real post decides: if Instagram refuses a tagged post, nothing is
+posted and the message says to check the names or take them off, and if it
+posts but leaves the tags off, the app says so.
+
 ## Removed posts
 
 Removing a post takes it off the list and deletes the image that was made from

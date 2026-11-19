@@ -29,6 +29,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -66,6 +67,7 @@ import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.social.AccountSuggestion
 import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.InstagramCollaboratorLimit
 import com.digitumdei.shotquill.shared.social.MentionCheck
 import com.digitumdei.shotquill.shared.social.MentionStatus
 import com.digitumdei.shotquill.shared.social.PostPublisher
@@ -75,6 +77,7 @@ import com.digitumdei.shotquill.speech.DictationState
 import com.digitumdei.shotquill.ui.CornerPicker
 import com.digitumdei.shotquill.ui.Panel
 import com.digitumdei.shotquill.ui.PanelDivider
+import com.digitumdei.shotquill.ui.PhotoMarker
 import com.digitumdei.shotquill.ui.PhotoStage
 import com.digitumdei.shotquill.ui.ScreenHeader
 import com.digitumdei.shotquill.ui.SectionLabel
@@ -149,6 +152,10 @@ fun PostEditorScreen(
     LaunchedEffect(viewModel, state.blueskyText) {
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistBlueskyText() } }
+    }
+    LaunchedEffect(viewModel, state.photoTags, state.collaborators) {
+        delay(600)
+        writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistInstagramExtras() } }
     }
     LaunchedEffect(viewModel, state.tags) {
         delay(600)
@@ -238,6 +245,11 @@ fun PostEditorScreen(
         onLookEnabled = viewModel::setLookEnabled,
         onLogoEnabled = viewModel::setLogoEnabled,
         onLogoCorner = viewModel::setLogoCorner,
+        onAddPhotoTag = viewModel::addPhotoTag,
+        onRemovePhotoTag = viewModel::removePhotoTag,
+        onSelectPhotoTag = viewModel::selectPhotoTag,
+        onPlacePhotoTag = viewModel::placePhotoTag,
+        onCollaboratorsChange = viewModel::updateCollaborators,
         onDismissMessage = viewModel::dismissMessage,
         onShare = {
             scope.launch {
@@ -281,6 +293,12 @@ fun PostEditorContent(
     onLookEnabled: (Boolean) -> Unit,
     onLogoEnabled: (Boolean) -> Unit,
     onLogoCorner: (LogoCorner) -> Unit,
+    /** Tags a name on the photo; false when it is not an Instagram name. */
+    onAddPhotoTag: (String) -> Boolean,
+    onRemovePhotoTag: (String) -> Unit,
+    onSelectPhotoTag: (String) -> Unit,
+    onPlacePhotoTag: (xFraction: Float, yFraction: Float) -> Unit,
+    onCollaboratorsChange: (String) -> Unit,
     onDismissMessage: () -> Unit,
     onShare: () -> Unit,
     onRemove: () -> Unit,
@@ -317,6 +335,10 @@ fun PostEditorContent(
                     logo = state.logo,
                     logoSize = state.logoSize,
                     onPanZoom = onPanZoom,
+                    markers = state.photoTags.map {
+                        PhotoMarker("@${it.username}", it.x, it.y, selected = it.username == state.placingTag)
+                    },
+                    onTap = if (state.placingTag != null) onPlacePhotoTag else null,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     ShapeChips(selected = state.treatment.cropShape, onSelect = onSelectShape)
@@ -466,6 +488,15 @@ fun PostEditorContent(
                     onApplySuggestion(MentionField.InstagramTags, it)
                 }
                 MentionLines(instagramMentions, onOpenLink)
+                if (state.hasInstagram) {
+                    InstagramExtras(
+                        state = state,
+                        onAddPhotoTag = onAddPhotoTag,
+                        onRemovePhotoTag = onRemovePhotoTag,
+                        onSelectPhotoTag = onSelectPhotoTag,
+                        onCollaboratorsChange = onCollaboratorsChange,
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     FlowRow(
                         modifier = Modifier.weight(1f),
@@ -732,6 +763,89 @@ private fun ToggleRow(
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
+}
+
+/**
+ * What only a post made straight to Instagram can carry: people tagged on the
+ * photo, and accounts invited to share the post as collaborators.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun InstagramExtras(
+    state: PostEditorState,
+    onAddPhotoTag: (String) -> Boolean,
+    onRemovePhotoTag: (String) -> Unit,
+    onSelectPhotoTag: (String) -> Unit,
+    onCollaboratorsChange: (String) -> Unit,
+) {
+    var newTag by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = newTag,
+            onValueChange = { newTag = it },
+            modifier = Modifier.weight(1f),
+            enabled = state.isLoaded && !state.isPublishing,
+            singleLine = true,
+            label = { Text("Tag someone on the photo") },
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+            shape = MaterialTheme.shapes.medium,
+        )
+        TextButton(
+            onClick = { if (onAddPhotoTag(newTag)) newTag = "" },
+            enabled = newTag.isNotBlank() && state.isLoaded && !state.isPublishing,
+        ) { Text("Tag") }
+    }
+    if (state.photoTags.isNotEmpty()) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.photoTags.forEach { tag ->
+                InputChip(
+                    selected = tag.username == state.placingTag,
+                    onClick = { onSelectPhotoTag(tag.username) },
+                    label = { Text("@${tag.username}") },
+                    trailingIcon = {
+                        IconButton(onClick = { onRemovePhotoTag(tag.username) }, modifier = Modifier.size(20.dp)) {
+                            Icon(
+                                ShotQuillIcons.Close,
+                                contentDescription = "Remove tag ${tag.username}",
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        Text(
+            text = if (state.placingTag != null) {
+                "Tap the photo where @${state.placingTag} is."
+            } else {
+                "Tap a name, then the photo, to move its tag. Tags go out only when you post to Instagram here, " +
+                    "not through Share."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.placingTag != null) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
+    OutlinedTextField(
+        value = state.collaborators,
+        onValueChange = onCollaboratorsChange,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = state.isLoaded && !state.isPublishing,
+        singleLine = true,
+        isError = state.collaboratorsProblem != null,
+        label = { Text("Collaborators, up to $InstagramCollaboratorLimit") },
+        supportingText = {
+            Text(
+                state.collaboratorsProblem
+                    ?: "Each gets an invitation to share the post on their own profile once it is out.",
+            )
+        },
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+        shape = MaterialTheme.shapes.medium,
+    )
 }
 
 /** Accounts offered while a mention is being typed. Tapping one finishes the mention with it. */
