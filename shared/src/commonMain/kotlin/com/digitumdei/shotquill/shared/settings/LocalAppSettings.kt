@@ -1,25 +1,16 @@
 package com.digitumdei.shotquill.shared.settings
 
 import com.digitumdei.shotquill.shared.ai.AiSettings
-import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
-import com.digitumdei.shotquill.shared.domain.QualityTier
-import com.digitumdei.shotquill.shared.domain.RealismLevel
-import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
 import com.digitumdei.shotquill.shared.social.PublishTarget
 
 data class LocalAppSettings(
-    val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
-    val defaultQualityTier: QualityTier = QualityTier.Standard,
-    val defaultRealismLevel: RealismLevel = RealismLevel.Photoreal,
-    val activeBrandProfileId: BrandProfileId? = null,
-    val promptHistoryEnabled: Boolean = true,
     val defaultCropShape: CropShape = CropShape.Portrait,
     val look: LookSettings = LookSettings(),
     val logo: LogoSettings = LogoSettings(),

@@ -8,15 +8,11 @@ import androidx.security.crypto.MasterKey
 import com.digitumdei.shotquill.shared.ai.AiOperation
 import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.ai.parseModelList
-import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.LookSettings
-import com.digitumdei.shotquill.shared.domain.QualityTier
-import com.digitumdei.shotquill.shared.domain.RealismLevel
-import com.digitumdei.shotquill.shared.domain.TargetPlatform
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.InstagramSettings
@@ -44,25 +40,6 @@ class AndroidLocalSettingsRepository(
 
     override fun readSettings(): LocalAppSettings =
         LocalAppSettings(
-            defaultTargetPlatform = regularPreferences.enumSetting(
-                KeyDefaultTargetPlatform,
-                TargetPlatform.InstagramFeedSquare,
-                TargetPlatform::fromWireValue,
-            ),
-            defaultQualityTier = regularPreferences.enumSetting(
-                KeyDefaultQualityTier,
-                QualityTier.Standard,
-                QualityTier::fromWireValue,
-            ),
-            defaultRealismLevel = regularPreferences.enumSetting(
-                KeyDefaultRealismLevel,
-                RealismLevel.Photoreal,
-                RealismLevel::fromWireValue,
-            ),
-            activeBrandProfileId = regularPreferences.getString(KeyActiveBrandProfileId, null)
-                ?.takeIf { it.isNotBlank() }
-                ?.let(::BrandProfileId),
-            promptHistoryEnabled = regularPreferences.getBoolean(KeyPromptHistoryEnabled, true),
             defaultCropShape = regularPreferences.enumSetting(
                 KeyDefaultCropShape,
                 CropShape.Portrait,
@@ -133,11 +110,12 @@ class AndroidLocalSettingsRepository(
 
     override fun saveSettings(settings: LocalAppSettings) {
         regularPreferences.edit()
-            .putString(KeyDefaultTargetPlatform, settings.defaultTargetPlatform.wireValue)
-            .putString(KeyDefaultQualityTier, settings.defaultQualityTier.wireValue)
-            .putString(KeyDefaultRealismLevel, settings.defaultRealismLevel.wireValue)
-            .putString(KeyActiveBrandProfileId, settings.activeBrandProfileId?.value)
-            .putBoolean(KeyPromptHistoryEnabled, settings.promptHistoryEnabled)
+            // Left behind by the removed AI flow; nothing reads them any more.
+            .remove("default_target_platform")
+            .remove("default_quality_tier")
+            .remove("default_realism_level")
+            .remove("active_brand_profile_id")
+            .remove("prompt_history_enabled")
             .putString(KeyDefaultCropShape, settings.defaultCropShape.wireValue)
             .putFloat(KeyLookWarmth, settings.look.warmth)
             .putFloat(KeyLookContrast, settings.look.contrast)
@@ -289,11 +267,6 @@ class AndroidLocalSettingsRepository(
 
         private const val SettingsPreferencesName = "shotquill_local_settings"
         const val SecretPreferencesName = "shotquill_secret_settings"
-        const val KeyDefaultTargetPlatform = "default_target_platform"
-        const val KeyDefaultQualityTier = "default_quality_tier"
-        const val KeyDefaultRealismLevel = "default_realism_level"
-        const val KeyActiveBrandProfileId = "active_brand_profile_id"
-        const val KeyPromptHistoryEnabled = "prompt_history_enabled"
         const val KeyOpenAiApiKey = "openai_api_key"
         const val KeyDefaultCropShape = "default_crop_shape"
         const val KeyLookWarmth = "look_warmth"

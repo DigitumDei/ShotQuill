@@ -1,9 +1,7 @@
 package com.digitumdei.shotquill.shared.settings
 
-import com.digitumdei.shotquill.shared.domain.BrandProfileId
-import com.digitumdei.shotquill.shared.domain.QualityTier
-import com.digitumdei.shotquill.shared.domain.RealismLevel
-import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.domain.CropShape
+import com.digitumdei.shotquill.shared.domain.LookSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,11 +13,8 @@ class LocalSettingsRepositoryTest {
     fun readsAndWritesNonSecretSettings() {
         val repository = InMemoryLocalSettingsRepository()
         val settings = LocalAppSettings(
-            defaultTargetPlatform = TargetPlatform.BlueskyPost,
-            defaultQualityTier = QualityTier.High,
-            defaultRealismLevel = RealismLevel.Polished,
-            activeBrandProfileId = BrandProfileId("brand-1"),
-            promptHistoryEnabled = false,
+            defaultCropShape = CropShape.Square,
+            look = LookSettings(warmth = 0.5f, contrast = 0f, saturation = 0f, fade = 0f),
         )
 
         repository.saveSettings(settings)
