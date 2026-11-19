@@ -656,7 +656,8 @@ fun PostEditorContent(
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove this post?") },
-            text = { Text("It disappears from your list. The original photo stays in the app's storage.") },
+            text = { Text("It disappears from your list. Its original photo stays on the phone until you clear " +
+                        "removed posts in Settings.") },
             confirmButton = {
                 TextButton(
                     onClick = {

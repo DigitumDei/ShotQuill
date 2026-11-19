@@ -199,7 +199,7 @@ fun App(
                     }
 
                     screen == AppScreen.Settings -> {
-                        val viewModel = remember(settings, photoRenderer) { SettingsViewModel(settings, photoRenderer) }
+                        val viewModel = remember(settings, photoRenderer, store) { SettingsViewModel(settings, photoRenderer, posts = store) }
                         val previewUri = posts.firstOrNull()?.originalUri
                         val previewSize = remember(previewUri, photoRenderer) {
                             previewUri?.let { photoRenderer?.orientedSize(it) }

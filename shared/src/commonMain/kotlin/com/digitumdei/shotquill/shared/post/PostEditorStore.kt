@@ -53,6 +53,18 @@ interface PostEditorStore {
     /** Records that the post went out to [target] and where it can be seen. */
     fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String)
     fun remove(id: PostDraftId)
+
+    /**
+     * The original photos of posts that were removed from the list. Removing a
+     * post only hides it, so these stay on the phone until they are cleared.
+     */
+    fun removedPostPhotos(): List<String> = emptyList()
+
+    /**
+     * Deletes every removed post's record for good and returns the addresses
+     * of the photos that went with them, for the caller to delete.
+     */
+    fun clearRemovedPosts(): List<String> = emptyList()
 }
 
 class DraftBackedPostEditorStore(
@@ -73,6 +85,21 @@ class DraftBackedPostEditorStore(
                     updatedAtEpochMillis = summary.updatedAtEpochMillis,
                 )
             }
+
+    override fun removedPostPhotos(): List<String> =
+        drafts.listPostDrafts()
+            .filter { it.status == DraftStatus.Archived }
+            .mapNotNull { it.primaryMediaUri }
+
+    override fun clearRemovedPosts(): List<String> =
+        drafts.listPostDrafts()
+            .filter { it.status == DraftStatus.Archived }
+            .flatMap { removed ->
+                val rendered = treatments.get(removed.id)?.renderedUri
+                treatments.remove(removed.id)
+                drafts.delete(removed.id) + listOfNotNull(rendered)
+            }
+            .distinct()
 
     override fun load(id: PostDraftId): EditablePost? {
         val draft = drafts.get(id)?.takeIf { it.status != DraftStatus.Archived } ?: return null

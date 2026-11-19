@@ -45,6 +45,32 @@ class PostEditorStoreTest {
     }
 
     @Test
+    fun removedPostsKeepTheirPhotosUntilTheyAreCleared() {
+        val kept = newPost("kept")
+        val gone = newPost("gone")
+        val alsoGone = newPost("also-gone")
+        store.markShared(alsoGone, "file:///edited/also-gone.jpg")
+        assertTrue(store.removedPostPhotos().isEmpty())
+
+        store.remove(gone)
+        store.remove(alsoGone)
+
+        assertEquals(setOf("file:///photos/gone.jpg", "file:///photos/also-gone.jpg"), store.removedPostPhotos().toSet())
+        assertEquals(listOf(kept), store.listPosts().map { it.id })
+        // Removing a post is still only hiding it.
+        assertNotNull(drafts.get(gone))
+
+        val cleared = store.clearRemovedPosts()
+
+        assertEquals(setOf("file:///photos/gone.jpg", "file:///photos/also-gone.jpg"), cleared.toSet())
+        assertNull(drafts.get(gone))
+        assertNull(drafts.get(alsoGone))
+        assertNotNull(store.load(kept))
+        assertTrue(store.removedPostPhotos().isEmpty())
+        assertTrue(store.clearRemovedPosts().isEmpty())
+    }
+
+    @Test
     fun aNewPostOpensWithItsPhotoAndNothingElse() {
         val id = newPost("one")
 
@@ -321,6 +347,9 @@ private class InMemoryPostDraftRepository : PostDraftRepository {
     }
 
     override fun get(id: PostDraftId): PostDraft? = drafts[id]
+
+    override fun delete(id: PostDraftId): List<String> =
+        drafts.remove(id)?.mediaItems?.map { it.mediaAsset.uri }.orEmpty()
 
     override fun listPostDrafts(): List<DraftSummary> =
         drafts.values

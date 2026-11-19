@@ -204,6 +204,15 @@ are renewed by the app whenever you post.
 Instagram's API takes feed shapes from 4:5 to 1.91:1, so a 9:16 crop has to go
 through Share instead.
 
+## Removed posts
+
+Removing a post takes it off the list and deletes the image that was made from
+it, but keeps its original photo and record on the phone. Settings, Storage
+shows how many removed posts are still kept and how much room they take, and
+clears them on request. Clearing cannot be undone: photos picked from the
+gallery still exist there, but photos taken with the in-app camera do not
+exist anywhere else.
+
 ## Local settings
 
 The look, the logo placement, the usual crop shape and the caption snippets are

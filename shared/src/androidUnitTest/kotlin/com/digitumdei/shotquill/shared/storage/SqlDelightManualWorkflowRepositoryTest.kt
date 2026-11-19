@@ -321,6 +321,38 @@ class SqlDelightManualWorkflowRepositoryTest {
     }
 
     @Test
+    fun deletingADraftRemovesItAndItsMediaButLeavesOtherDraftsAlone() {
+        for (enforceLinks in listOf(true, false)) {
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            if (enforceLinks) driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            ShotQuillDatabase.Schema.create(driver)
+            val repository = SqlDelightManualWorkflowRepository(driver)
+            val first = samplePostDraft()
+            val otherAsset = sampleMediaAsset().copy(id = MediaAssetId("media-other"), uri = "file:///photos/other.jpg")
+            val second = first.copy(
+                id = PostDraftId("draft-2"),
+                mediaItems = listOf(PostMediaItem(mediaAsset = otherAsset, order = 0)),
+                selectedMediaAssetId = null,
+            )
+            repository.save(first)
+            repository.save(second)
+            val firstUris = first.mediaItems.map { it.mediaAsset.uri }
+
+            val freed = repository.delete(first.id)
+
+            assertEquals(firstUris.toSet(), freed.toSet(), "links enforced: $enforceLinks")
+            assertNull(repository.get(first.id))
+            first.mediaItems.forEach { assertNull(repository.get(it.mediaAsset.id)) }
+            assertEquals(listOf(second.id), repository.listPostDrafts().map { it.id })
+            assertNotNull(repository.get(second.id))
+            assertNotNull(repository.get(otherAsset.id))
+            assertTrue(repository.delete(first.id).isEmpty())
+            assertTrue(repository.delete(PostDraftId("never-existed")).isEmpty())
+            driver.close()
+        }
+    }
+
+    @Test
     fun savePhotoEditSuccessRollsBackPartialWritesOnForeignKeyViolation() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(null, "PRAGMA foreign_keys = ON", 0)

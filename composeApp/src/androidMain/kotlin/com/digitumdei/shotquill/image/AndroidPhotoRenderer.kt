@@ -176,6 +176,9 @@ class AndroidPhotoRenderer(
             ((crop.top + crop.height) * decodeScale).roundToInt().coerceIn(1, photo.height),
         )
 
+    override fun storedBytes(uri: String): Long =
+        uri.toFilePath()?.let { runCatching { File(it).length() }.getOrDefault(0L) } ?: 0L
+
     override fun discard(uri: String) {
         val path = uri.toFilePath() ?: return
         runCatching { File(path).delete() }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -84,6 +85,8 @@ fun SettingsScreen(
     val logo = settings.logo
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf<PublishTarget?>(null) }
+    var confirmClearRemoved by remember { mutableStateOf(false) }
+    var clearingRemoved by remember { mutableStateOf(false) }
 
     fun check(target: PublishTarget, show: (String) -> Unit) {
         val publisher = publishers.firstOrNull { it.target == target } ?: return
@@ -95,6 +98,33 @@ fun SettingsScreen(
             checking = null
             show(outcome)
         }
+    }
+
+    if (confirmClearRemoved) {
+        AlertDialog(
+            onDismissRequest = { confirmClearRemoved = false },
+            title = { Text("Clear removed posts?") },
+            text = {
+                Text(
+                    "This deletes the photos and records of ${postsWord(state.removedPostCount)} for good. Photos " +
+                        "you picked from the gallery are still in your gallery. Photos taken with the camera in " +
+                        "ShotQuill exist nowhere else and will be gone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClearRemoved = false
+                        clearingRemoved = true
+                        scope.launch {
+                            withContext(Dispatchers.IO) { viewModel.clearRemovedPosts() }
+                            clearingRemoved = false
+                        }
+                    },
+                ) { Text("Delete them") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearRemoved = false }) { Text("Keep them") } },
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize().imePadding()) {
@@ -398,6 +428,28 @@ fun SettingsScreen(
                         TextButton(
                             onClick = { modelsText = settings.ai.modelsFor(operation).joinToString("\n") },
                         ) { Text("Show the starting models") }
+                    }
+                }
+            }
+
+            SettingsGroup(
+                label = "Storage",
+                detail = "Removing a post only takes it off your list. Its original photo stays on the phone " +
+                    "until you clear it here.",
+            ) {
+                Text(
+                    text = state.storageMessage ?: if (state.removedPostCount == 0) {
+                        "No removed posts are being kept."
+                    } else {
+                        "${postsWord(state.removedPostCount).replaceFirstChar { it.uppercase() }} still on the phone, " +
+                            "taking ${formatBytes(state.removedPostBytes)}."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.removedPostCount > 0) {
+                    OutlinedButton(onClick = { confirmClearRemoved = true }, enabled = !clearingRemoved) {
+                        Text(if (clearingRemoved) "Clearing" else "Clear removed posts")
                     }
                 }
             }

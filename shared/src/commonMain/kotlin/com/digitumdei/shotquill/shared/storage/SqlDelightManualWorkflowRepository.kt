@@ -223,6 +223,36 @@ class SqlDelightManualWorkflowRepository(
             )
         }.executeAsList()
 
+    override fun delete(id: PostDraftId): List<String> =
+        queries.transactionWithResult {
+            if (queries.selectPostDraftById(id.value).executeAsOneOrNull() == null) {
+                return@transactionWithResult emptyList()
+            }
+            val assetIds = queries.selectPostDraftMediaAssetIds(id.value).executeAsList()
+            // Rows from the old AI flow that hang off the draft go with it. The
+            // database removes them by itself when it enforces its links between
+            // tables; they are named here so the result is the same when it does not.
+            queries.deleteExportRecordsByDraftId(id.value)
+            queries.deletePromptHistoryEntriesByDraftId(id.value)
+            queries.deletePhotoEditResultsByDraftId(id.value)
+            queries.deletePhotoEditRequestsByDraftId(id.value)
+            queries.deleteAltTextResultsByDraftId(id.value)
+            queries.deleteCaptionResultHashtagsByDraftId(id.value)
+            queries.deleteCaptionResultsByDraftId(id.value)
+            queries.deleteCaptionRequestsByDraftId(id.value)
+            queries.deleteVisionDescriptionsByDraftId(id.value)
+            queries.deleteFinalPostContentByDraftId(id.value)
+            queries.deletePostDraftCaptionHashtags(id.value)
+            queries.deletePostDraftTargetPlatforms(id.value)
+            queries.deletePostDraftMediaItems(id.value)
+            queries.deletePostDraftById(id.value)
+            assetIds.mapNotNull { assetId ->
+                val uri = queries.selectMediaAssetById(assetId).executeAsOneOrNull()?.uri
+                queries.deleteMediaAssetIfUnused(assetId)
+                uri.takeIf { queries.selectMediaAssetById(assetId).executeAsOneOrNull() == null }
+            }
+        }
+
     override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: Instant): Boolean {
         val current = get(id) ?: return false
         current.transitionTo(status, updatedAt)
