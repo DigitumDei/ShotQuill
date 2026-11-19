@@ -177,18 +177,18 @@ class AndroidLocalSettingsRepository(
             .apply()
     }
 
-    override fun getOpenAiApiKey(): String? = readSecret(KeyOpenAiApiKey)
+    override fun getAiApiKey(): String? = readSecret(KeyAiApiKey)
 
-    override fun saveOpenAiApiKey(apiKey: String) {
+    override fun saveAiApiKey(apiKey: String) {
         val trimmed = apiKey.trim()
-        require(trimmed.isNotEmpty()) { "OpenAI API key cannot be blank" }
-        writableSecrets().edit().putString(KeyOpenAiApiKey, trimmed).apply()
+        require(trimmed.isNotEmpty()) { "The AI key cannot be blank" }
+        writableSecrets().edit().putString(KeyAiApiKey, trimmed).apply()
     }
 
-    override fun hasOpenAiApiKey(): Boolean = !getOpenAiApiKey().isNullOrBlank()
+    override fun hasAiApiKey(): Boolean = !getAiApiKey().isNullOrBlank()
 
-    override fun clearOpenAiApiKey() {
-        removeSecret(KeyOpenAiApiKey)
+    override fun clearAiApiKey() {
+        removeSecret(KeyAiApiKey)
     }
 
     override fun getSecret(name: String): String? = readSecret(SecretPrefix + name)
@@ -284,7 +284,9 @@ class AndroidLocalSettingsRepository(
 
         private const val SettingsPreferencesName = "shotquill_local_settings"
         const val SecretPreferencesName = "shotquill_secret_settings"
-        const val KeyOpenAiApiKey = "openai_api_key"
+        // The name dates from when only OpenAI was supported. It is what the key is
+        // stored under on every phone, so it stays: renaming it would lose the key.
+        const val KeyAiApiKey = "openai_api_key"
         const val KeyDefaultCropShape = "default_crop_shape"
         const val KeyLookWarmth = "look_warmth"
         const val KeyLookContrast = "look_contrast"

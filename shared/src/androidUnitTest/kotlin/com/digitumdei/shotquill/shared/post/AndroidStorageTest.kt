@@ -114,6 +114,20 @@ class AndroidStorageTest {
     }
 
     @Test
+    fun anAiKeySavedByAnEarlierVersionIsStillRead() {
+        // Stands in for the encrypted store, so the test can put a key where earlier versions kept it.
+        val secrets = context.getSharedPreferences("stand-in-secrets", Context.MODE_PRIVATE)
+        secrets.edit().putString("openai_api_key", "key-from-an-earlier-version").commit()
+
+        val repository = AndroidLocalSettingsRepository(context) { secrets }
+
+        assertEquals("key-from-an-earlier-version", repository.getAiApiKey())
+        assertTrue(repository.hasAiApiKey())
+        repository.saveAiApiKey("a-newer-key-123456")
+        assertEquals("a-newer-key-123456", secrets.getString("openai_api_key", null))
+    }
+
+    @Test
     @Config(sdk = [35])
     fun secretsAreRefusedNotStoredUnprotectedWhenEncryptionIsUnavailable() {
         // A phone whose keystore is broken: the encrypted store cannot be opened at all.
@@ -121,13 +135,13 @@ class AndroidStorageTest {
 
         assertEquals(AndroidLocalSettingsRepository.SecretsUnavailableMessage, repository.secretStorageNotice)
         assertNull(repository.getSecret(BlueskySettings.AppPasswordSecret))
-        assertNull(repository.getOpenAiApiKey())
-        assertFalse(repository.hasOpenAiApiKey())
+        assertNull(repository.getAiApiKey())
+        assertFalse(repository.hasAiApiKey())
         val refused = kotlin.runCatching { repository.saveSecret(BlueskySettings.AppPasswordSecret, "abcd-efgh-ijkl-mnop") }
         assertEquals(AndroidLocalSettingsRepository.SecretsUnavailableMessage, refused.exceptionOrNull()?.message)
-        assertTrue(kotlin.runCatching { repository.saveOpenAiApiKey("key-abcdef-123456") }.isFailure)
+        assertTrue(kotlin.runCatching { repository.saveAiApiKey("key-abcdef-123456") }.isFailure)
         repository.clearSecret(BlueskySettings.AppPasswordSecret)
-        repository.clearOpenAiApiKey()
+        repository.clearAiApiKey()
 
         // Nothing was written anywhere it could be read back from.
         val plain = context.getSharedPreferences(
@@ -174,7 +188,7 @@ class AndroidStorageTest {
         val reopened = settingsRepository()
         assertEquals("abcd-efgh-ijkl-mnop", reopened.getSecret(BlueskySettings.AppPasswordSecret))
         assertNull(reopened.getSecret("something_else"))
-        assertNull(reopened.getOpenAiApiKey())
+        assertNull(reopened.getAiApiKey())
 
         reopened.clearSecret(BlueskySettings.AppPasswordSecret)
         assertNull(settingsRepository().getSecret(BlueskySettings.AppPasswordSecret))

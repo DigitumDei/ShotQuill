@@ -37,7 +37,7 @@ import com.digitumdei.shotquill.shared.social.InstagramPublisher
 import com.digitumdei.shotquill.social.FirebaseImageHost
 import com.digitumdei.shotquill.shared.social.UrlConnectionHttpTransport
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
-import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
+import com.digitumdei.shotquill.shared.storage.SqlDelightPostDraftRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val settingsRepository = AndroidLocalSettingsRepository(this)
-        val postDraftRepository = SqlDelightManualWorkflowRepository(
+        val postDraftRepository = SqlDelightPostDraftRepository(
             AndroidDatabaseDriverFactory(this).create(),
         )
         val treatmentStore = AndroidPhotoTreatmentStore(this)

@@ -71,7 +71,7 @@ class PostEditorViewModelTest {
                 ai = AiSettings().withModels(AiOperation.AltText, listOf("cheap/describer", "better/describer")),
             ),
         )
-        settings.saveOpenAiApiKey("key-abcdef-123456")
+        settings.saveAiApiKey("key-abcdef-123456")
         withAi = true
     }
 

@@ -4,7 +4,7 @@ class InMemoryLocalSettingsRepository(
     initialSettings: LocalAppSettings = LocalAppSettings(),
 ) : LocalSettingsRepository {
     private var settings = initialSettings
-    private var openAiApiKey: String? = null
+    private var aiApiKey: String? = null
 
     override fun readSettings(): LocalAppSettings = settings
 
@@ -12,18 +12,18 @@ class InMemoryLocalSettingsRepository(
         this.settings = settings
     }
 
-    override fun getOpenAiApiKey(): String? = openAiApiKey
+    override fun getAiApiKey(): String? = aiApiKey
 
-    override fun saveOpenAiApiKey(apiKey: String) {
+    override fun saveAiApiKey(apiKey: String) {
         val trimmed = apiKey.trim()
-        require(trimmed.isNotEmpty()) { "OpenAI API key cannot be blank" }
-        openAiApiKey = trimmed
+        require(trimmed.isNotEmpty()) { "The AI key cannot be blank" }
+        aiApiKey = trimmed
     }
 
-    override fun hasOpenAiApiKey(): Boolean = !openAiApiKey.isNullOrBlank()
+    override fun hasAiApiKey(): Boolean = !aiApiKey.isNullOrBlank()
 
-    override fun clearOpenAiApiKey() {
-        openAiApiKey = null
+    override fun clearAiApiKey() {
+        aiApiKey = null
     }
 
     private val secrets = mutableMapOf<String, String>()

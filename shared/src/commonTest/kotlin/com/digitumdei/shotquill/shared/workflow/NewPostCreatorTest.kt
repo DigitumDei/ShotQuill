@@ -4,12 +4,10 @@ import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
-import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
-import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -35,18 +33,6 @@ class NewPostCreatorTest {
         override fun delete(id: PostDraftId): List<String> = emptyList()
 
         override fun listPostDrafts(): List<com.digitumdei.shotquill.shared.domain.DraftSummary> = emptyList()
-
-        override fun updateStatus(id: PostDraftId, status: DraftStatus, updatedAt: kotlinx.datetime.Instant): Boolean =
-            false
-
-        override fun updateUpdatedAt(id: PostDraftId, updatedAt: kotlinx.datetime.Instant): Boolean =
-            false
-
-        override fun replaceMediaItems(id: PostDraftId, mediaItems: List<MediaAssetId>): Boolean =
-            false
-
-        override fun updateSelectedMediaAsset(id: PostDraftId, mediaAssetId: MediaAssetId?, updatedAt: kotlinx.datetime.Instant): UpdateSelectionResult =
-            UpdateSelectionResult.DraftNotFound
     }
 
     private fun getMediaAsset(id: MediaAssetId): MediaAsset? = savedMediaAssets[id]
@@ -116,7 +102,6 @@ class NewPostCreatorTest {
 
         val saved = getMediaAsset(mediaAssetId)
         assertNotNull(saved)
-        assertEquals(MediaType.Photo, saved.type)
         assertEquals("file://test/photo.webp", saved.uri)
         assertEquals("image/webp", saved.mimeType)
         assertEquals(400, saved.widthPx)
@@ -143,8 +128,8 @@ class NewPostCreatorTest {
         assertNotNull(saved)
         assertEquals(DraftStatus.PhotoAdded, saved.status)
         assertEquals(PostFormat.SingleImage, saved.format)
-        assertEquals(emptySet(), saved.targetPlatforms)
         assertEquals(null, saved.caption)
+        assertEquals(null, saved.altText)
     }
 
     @Test
@@ -207,28 +192,6 @@ class NewPostCreatorTest {
             override fun delete(id: PostDraftId): List<String> = emptyList()
 
             override fun listPostDrafts(): List<com.digitumdei.shotquill.shared.domain.DraftSummary> = emptyList()
-
-            override fun updateStatus(
-                id: PostDraftId,
-                status: DraftStatus,
-                updatedAt: kotlinx.datetime.Instant,
-            ): Boolean = false
-
-            override fun updateUpdatedAt(
-                id: PostDraftId,
-                updatedAt: kotlinx.datetime.Instant,
-            ): Boolean = false
-
-            override fun replaceMediaItems(
-                id: PostDraftId,
-                mediaItems: List<MediaAssetId>,
-            ): Boolean = false
-
-            override fun updateSelectedMediaAsset(
-                id: PostDraftId,
-                mediaAssetId: MediaAssetId?,
-                updatedAt: kotlinx.datetime.Instant,
-            ): UpdateSelectionResult = UpdateSelectionResult.DraftNotFound
         }
         val creator = NewPostCreator(failingRepo)
 

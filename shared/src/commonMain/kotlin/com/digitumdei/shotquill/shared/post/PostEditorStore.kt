@@ -1,9 +1,7 @@
 package com.digitumdei.shotquill.shared.post
 
-import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
-import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -131,8 +129,8 @@ class DraftBackedPostEditorStore(
             return EditablePost(
                 id = draft.id,
                 originalUri = original.uri,
-                caption = draft.caption?.text.orEmpty(),
-                altText = draft.finalPostContent?.editedAltText.orEmpty(),
+                caption = draft.caption.orEmpty(),
+                altText = draft.altText.orEmpty(),
                 treatment = stored?.treatment,
                 renderedUri = stored?.renderedUri,
                 shared = draft.status == DraftStatus.Shared,
@@ -157,33 +155,16 @@ class DraftBackedPostEditorStore(
     override fun saveCaption(id: PostDraftId, caption: String) {
         synchronized(lock) {
             val draft = listed(id) ?: return
-            if (draft.caption?.text.orEmpty() == caption) return
-            drafts.save(
-                draft.copy(
-                    caption = if (caption.isBlank()) null else CaptionDraft(text = caption, hashtags = emptyList()),
-                    updatedAt = nextUpdatedAt(draft),
-                ),
-            )
+            if (draft.caption.orEmpty() == caption) return
+            drafts.save(draft.copy(caption = caption.takeIf { it.isNotBlank() }, updatedAt = nextUpdatedAt(draft)))
         }
     }
 
     override fun saveAltText(id: PostDraftId, altText: String) {
         synchronized(lock) {
             val draft = listed(id) ?: return
-            val existing = draft.finalPostContent
-            if (existing?.editedAltText.orEmpty() == altText) return
-            val updatedAt = nextUpdatedAt(draft)
-            drafts.save(
-                draft.copy(
-                    finalPostContent = FinalPostContent(
-                        draftId = id,
-                        editedCaption = existing?.editedCaption,
-                        editedAltText = altText.takeIf { it.isNotBlank() },
-                        updatedAtEpochMillis = updatedAt.toEpochMilliseconds(),
-                    ),
-                    updatedAt = updatedAt,
-                ),
-            )
+            if (draft.altText.orEmpty() == altText) return
+            drafts.save(draft.copy(altText = altText.takeIf { it.isNotBlank() }, updatedAt = nextUpdatedAt(draft)))
         }
     }
 
@@ -244,9 +225,6 @@ class DraftBackedPostEditorStore(
     private fun keepAsShared(id: PostDraftId, renderedUri: String): Boolean {
         val draft = drafts.get(id)?.takeIf { it.status != DraftStatus.Archived } ?: return false
         treatments.save(id, stored(id).copy(renderedUri = renderedUri))
-        // Saved directly rather than through updateStatus: the status ladder was
-        // built for the old multi-step workflow and has no rung from "photo
-        // added" straight to "shared".
         drafts.save(draft.copy(status = DraftStatus.Shared, updatedAt = nextUpdatedAt(draft)))
         return true
     }

@@ -1,0 +1,116 @@
+-- Version 1 to 2: removes what the old AI caption and image flow left behind.
+--
+-- Posts, their photo, their caption and their alt text are kept. Everything
+-- else in the database belonged to the old flow and is dropped.
+--
+-- Nothing is altered in place. What is kept is copied aside, every table is
+-- dropped, the new tables are created and the copies are put back. That gives
+-- the same result whether or not the database is enforcing the links between
+-- its tables, and on every version of SQLite: an in-place rebuild of
+-- post_drafts would take its rows in other tables with it wherever those
+-- links are enforced, which they are on a phone.
+
+-- 1. Copy aside what is kept.
+
+CREATE TABLE migrating_post_drafts AS
+SELECT
+  pd.id AS id,
+  pd.format AS format,
+  -- The steps of the old flow are gone: a post is new, shared or removed.
+  CASE WHEN pd.status IN ('shared', 'archived') THEN pd.status ELSE 'photo_added' END AS status,
+  COALESCE(pd.caption_text, fpc.edited_caption) AS caption_text,
+  -- Alt text typed by hand, or failing that the last one the old flow wrote.
+  COALESCE(
+    fpc.edited_alt_text,
+    (
+      SELECT atr.alt_text FROM alt_text_results atr
+      WHERE atr.draft_id = pd.id
+      ORDER BY atr.created_at_epoch_millis DESC
+      LIMIT 1
+    )
+  ) AS alt_text,
+  pd.created_at_epoch_millis AS created_at_epoch_millis,
+  pd.updated_at_epoch_millis AS updated_at_epoch_millis
+FROM post_drafts pd
+LEFT JOIN final_post_content fpc ON fpc.draft_id = pd.id;
+
+-- Only photos a post uses. Images made by the old flow belong to no post.
+CREATE TABLE migrating_media_assets AS
+SELECT id, uri, mime_type, width_px, height_px, created_at_epoch_millis
+FROM media_assets
+WHERE id IN (SELECT media_asset_id FROM post_draft_media_items);
+
+CREATE TABLE migrating_post_draft_media_items AS
+SELECT draft_id, media_asset_id, media_order
+FROM post_draft_media_items
+WHERE draft_id IN (SELECT id FROM post_drafts)
+  AND media_asset_id IN (SELECT id FROM media_assets);
+
+-- 2. Drop every table, each before the tables it refers to.
+
+DROP TABLE export_records;
+DROP TABLE prompt_history_entries;
+DROP TABLE photo_edit_results;
+DROP TABLE photo_edit_requests;
+DROP TABLE final_post_content;
+DROP TABLE alt_text_results;
+DROP TABLE caption_result_hashtags;
+DROP TABLE caption_results;
+DROP TABLE caption_requests;
+DROP TABLE vision_descriptions;
+DROP TABLE post_draft_caption_hashtags;
+DROP TABLE post_draft_media_items;
+DROP TABLE post_draft_target_platforms;
+DROP TABLE post_drafts;
+DROP TABLE brand_image_assets;
+DROP TABLE brand_profile_links;
+DROP TABLE brand_profile_default_hashtags;
+DROP TABLE brand_profiles;
+DROP TABLE media_assets;
+
+-- 3. Create the tables as they are now.
+
+CREATE TABLE media_assets (
+  id TEXT NOT NULL PRIMARY KEY,
+  uri TEXT NOT NULL,
+  mime_type TEXT,
+  width_px INTEGER,
+  height_px INTEGER,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE post_drafts (
+  id TEXT NOT NULL PRIMARY KEY,
+  format TEXT NOT NULL,
+  status TEXT NOT NULL,
+  caption_text TEXT,
+  alt_text TEXT,
+  created_at_epoch_millis INTEGER NOT NULL,
+  updated_at_epoch_millis INTEGER NOT NULL
+);
+
+CREATE TABLE post_draft_media_items (
+  draft_id TEXT NOT NULL REFERENCES post_drafts(id) ON DELETE CASCADE,
+  media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  media_order INTEGER NOT NULL,
+  PRIMARY KEY (draft_id, media_asset_id),
+  UNIQUE (draft_id, media_order)
+);
+
+-- 4. Put the copies back, photos and posts before the rows that join them.
+
+INSERT INTO media_assets(id, uri, mime_type, width_px, height_px, created_at_epoch_millis)
+SELECT id, uri, mime_type, width_px, height_px, created_at_epoch_millis
+FROM migrating_media_assets;
+
+INSERT INTO post_drafts(id, format, status, caption_text, alt_text, created_at_epoch_millis, updated_at_epoch_millis)
+SELECT id, format, status, caption_text, alt_text, created_at_epoch_millis, updated_at_epoch_millis
+FROM migrating_post_drafts;
+
+INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order)
+SELECT draft_id, media_asset_id, media_order
+FROM migrating_post_draft_media_items;
+
+DROP TABLE migrating_post_draft_media_items;
+DROP TABLE migrating_media_assets;
+DROP TABLE migrating_post_drafts;

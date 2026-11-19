@@ -122,6 +122,42 @@ camera, the file chooser, the share sheet, speech recognition), real network
 calls, or how the screens look. The screen classes stay on the coverage
 exclusion list; these tests are their safety net, not part of the 80% figure.
 
+## The post database
+
+Posts are kept in a small SQLite database: each post's photo, caption, alt
+text and state. How the photo is framed, the Bluesky text, hashtags and where
+a post was published are kept beside it per post, and settings and secrets are
+not in the database at all.
+
+The tables are defined in `shared/src/commonMain/sqldelight/.../ShotQuill.sq`.
+Changing them means existing phones have to be brought up to date, so every
+change to the tables needs a migration:
+
+1. Add `N.sqm` next to `ShotQuill.sq`, where `N` is the version being left
+   (`1.sqm` takes version 1 to version 2). It runs once, inside a transaction,
+   the first time the updated app opens the database.
+2. Run `./gradlew check`. It applies the migrations to the stored snapshot of
+   the earlier layout in `sqldelight/databases/` and fails if the result is
+   not the layout `ShotQuill.sq` describes.
+3. Store a snapshot of the new layout for the next migration to start from,
+   and commit it. Run this on its own, not together with other tasks:
+
+   ```bash
+   ./gradlew :shared:generateCommonMainShotQuillDatabaseSchema
+   ```
+
+4. Add posts in the old layout to a test and check they come through, as
+   `DatabaseMigrationTest` and `AndroidDatabaseUpgradeTest` do for version 1.
+   The second opens the file the way a phone does.
+
+Two things to keep to in a migration. The links between tables are enforced
+on a phone and cannot be switched off inside the migration, so dropping a
+table deletes the rows in other tables that point at it: copy aside what is to
+be kept first, as `1.sqm` does. And each Android version ships its own
+SQLite, so newer forms cannot be used in migrations or in queries: `ON
+CONFLICT ... DO UPDATE` needs SQLite 3.24 (Android 11) and `ALTER TABLE ...
+DROP COLUMN` needs 3.35 (Android 14), while the app installs on Android 7.
+
 ## Posting directly
 
 Sharing through the system share sheet needs no setup. Posting straight from

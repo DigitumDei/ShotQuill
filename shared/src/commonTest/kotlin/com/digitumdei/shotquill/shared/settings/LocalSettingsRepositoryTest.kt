@@ -23,25 +23,25 @@ class LocalSettingsRepositoryTest {
     }
 
     @Test
-    fun detectsWhetherOpenAiApiKeyIsConfigured() {
+    fun detectsWhetherAnAiApiKeyIsConfigured() {
         val repository = InMemoryLocalSettingsRepository()
 
-        assertFalse(repository.hasOpenAiApiKey())
+        assertFalse(repository.hasAiApiKey())
 
-        repository.saveOpenAiApiKey("  sk-test_1234567890  ")
+        repository.saveAiApiKey("  sk-test_1234567890  ")
 
-        assertTrue(repository.hasOpenAiApiKey())
-        assertEquals("sk-test_1234567890", repository.getOpenAiApiKey())
+        assertTrue(repository.hasAiApiKey())
+        assertEquals("sk-test_1234567890", repository.getAiApiKey())
     }
 
     @Test
-    fun clearingOpenAiApiKeyRemovesConfiguredState() {
+    fun clearingTheAiApiKeyRemovesConfiguredState() {
         val repository = InMemoryLocalSettingsRepository()
-        repository.saveOpenAiApiKey("sk-test_1234567890")
+        repository.saveAiApiKey("sk-test_1234567890")
 
-        repository.clearOpenAiApiKey()
+        repository.clearAiApiKey()
 
-        assertFalse(repository.hasOpenAiApiKey())
-        assertNull(repository.getOpenAiApiKey())
+        assertFalse(repository.hasAiApiKey())
+        assertNull(repository.getAiApiKey())
     }
 }

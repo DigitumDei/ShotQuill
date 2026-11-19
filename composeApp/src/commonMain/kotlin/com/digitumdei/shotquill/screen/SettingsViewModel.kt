@@ -138,9 +138,9 @@ class SettingsViewModel(
         val trimmed = apiKey.trim()
         if (trimmed.isEmpty()) return
         state = try {
-            repository.saveOpenAiApiKey(trimmed)
+            repository.saveAiApiKey(trimmed)
             state.copy(
-                apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed),
+                apiKeyHint = SecretRedactor.maskApiKey(trimmed),
                 apiKeyMessage = "Key saved.",
                 secretStorageNotice = currentSecretNotice(),
             )
@@ -281,7 +281,7 @@ class SettingsViewModel(
     }
 
     fun clearApiKey() {
-        repository.clearOpenAiApiKey()
+        repository.clearAiApiKey()
         state = state.copy(apiKeyHint = null, apiKeyMessage = "Key removed. Nothing will be sent anywhere.")
     }
 
@@ -336,8 +336,8 @@ class SettingsViewModel(
         return SettingsState(
             settings = settings,
             logoSize = settings.logo.uri?.let { renderer?.orientedSize(it) },
-            apiKeyHint = runCatching { repository.getOpenAiApiKey() }.getOrNull()
-                ?.let(SecretRedactor::maskOpenAiApiKey),
+            apiKeyHint = runCatching { repository.getAiApiKey() }.getOrNull()
+                ?.let(SecretRedactor::maskApiKey),
             blueskyPasswordSaved = runCatching { repository.getSecret(BlueskySettings.AppPasswordSecret) }
                 .getOrNull() != null,
             instagramTokenSaved = runCatching { repository.getSecret(InstagramSettings.AccessTokenSecret) }

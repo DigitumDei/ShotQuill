@@ -43,10 +43,11 @@ data class LocalAppSettings(
 interface LocalSettingsRepository {
     fun readSettings(): LocalAppSettings
     fun saveSettings(settings: LocalAppSettings)
-    fun getOpenAiApiKey(): String?
-    fun saveOpenAiApiKey(apiKey: String)
-    fun hasOpenAiApiKey(): Boolean
-    fun clearOpenAiApiKey()
+    /** The key for the AI service that writes alt text, whichever service that is. */
+    fun getAiApiKey(): String?
+    fun saveAiApiKey(apiKey: String)
+    fun hasAiApiKey(): Boolean
+    fun clearAiApiKey()
 
     /** A stored secret such as an app password, or null when none is saved under [name]. */
     fun getSecret(name: String): String?

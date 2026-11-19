@@ -4,7 +4,6 @@ import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.domain.MediaAsset
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
-import com.digitumdei.shotquill.shared.domain.MediaType
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
@@ -31,7 +30,6 @@ class NewPostCreator(
 
         val mediaAsset = MediaAsset(
             id = mediaAssetId,
-            type = MediaType.Photo,
             uri = uri,
             mimeType = mimeType,
             widthPx = widthPx,
@@ -44,17 +42,6 @@ class NewPostCreator(
             format = format,
             status = DraftStatus.PhotoAdded,
             mediaItems = listOf(PostMediaItem(mediaAsset = mediaAsset, order = 0)),
-            caption = null,
-            targetPlatforms = emptySet(),
-            brandProfile = null,
-            visionDescriptions = emptyList(),
-            captionRequests = emptyList(),
-            captionResults = emptyList(),
-            altTextResults = emptyList(),
-            photoEditRequests = emptyList(),
-            photoEditResults = emptyList(),
-            promptHistory = emptyList(),
-            exportRecords = emptyList(),
             createdAt = nowInstant,
             updatedAt = nowInstant,
         )
