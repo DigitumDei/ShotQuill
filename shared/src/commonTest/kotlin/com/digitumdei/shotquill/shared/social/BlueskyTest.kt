@@ -223,6 +223,17 @@ class BlueskyTest {
     }
 
     @Test
+    fun aLinkKeepsABracketItOpenedButNotOneTheSentenceClosed() {
+        fun link(text: String) = blueskyFacets(text).single().link
+
+        assertEquals("https://en.wikipedia.org/wiki/Witbier_(beer)", link("Read https://en.wikipedia.org/wiki/Witbier_(beer)"))
+        assertEquals("https://en.wikipedia.org/wiki/Witbier_(beer)", link("(see https://en.wikipedia.org/wiki/Witbier_(beer))."))
+        assertEquals("https://example.com/beer", link("(see https://example.com/beer)"))
+        assertEquals("https://example.com/beer", link("Is it https://example.com/beer?!"))
+        assertEquals("https://example.com/a(b)c", link("at https://example.com/a(b)c, then"))
+    }
+
+    @Test
     fun tagsAreTidiedAndGetAHashWhereOneIsMissing() {
         assertEquals("#craftbeer #bskybeer", normalizeTags("  craftbeer,  #bskybeer \n"))
         assertEquals("#beersky @bskybeer.bsky.social", normalizeTags("#beersky @bskybeer.bsky.social"))

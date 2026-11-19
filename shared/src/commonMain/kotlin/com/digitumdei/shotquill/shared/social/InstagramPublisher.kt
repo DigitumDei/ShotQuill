@@ -107,8 +107,10 @@ class InstagramPublisher(
     override fun check(): String {
         val token = settings.getSecret(InstagramSettings.AccessTokenSecret)
             ?: return "Add an Instagram access token first."
+        var current = token
         return try {
-            val account = account(refreshIfDue(token))
+            current = refreshIfDue(token)
+            val account = account(current)
             if (!imageHost.isConfigured) {
                 "Connected to Instagram as @${account.username}. Image hosting is not set up yet."
             } else {
@@ -118,9 +120,9 @@ class InstagramPublisher(
                 "Connected to Instagram as @${account.username}, and image hosting works."
             }
         } catch (failure: StepFailed) {
-            failure.message.orEmpty()
+            redact(failure.message.orEmpty(), token, current)
         } catch (e: Exception) {
-            redact(e.message ?: "The check could not be completed.", token)
+            redact(e.message ?: "The check could not be completed.", token, current)
         }
     }
 
@@ -175,9 +177,11 @@ class InstagramPublisher(
             }.getOrDefault("")
             PublishResult.Success(permalink.ifEmpty { "https://www.instagram.com/${account.username}/" })
         } catch (failure: StepFailed) {
-            PublishResult.Failure(redact(failure.message.orEmpty(), token))
+            PublishResult.Failure(redact(failure.message.orEmpty(), savedToken, token))
         } catch (e: Exception) {
-            PublishResult.Failure(redact("Instagram could not be reached: ${e.message ?: "no connection"}", token))
+            PublishResult.Failure(
+                redact("Instagram could not be reached: ${e.message ?: "no connection"}", savedToken, token),
+            )
         } finally {
             uploadedName?.let { name -> runCatching { imageHost.delete(name) } }
         }
@@ -330,8 +334,9 @@ class InstagramPublisher(
 
     private fun JsonObject.text(key: String): String = (this[key] as? JsonPrimitive)?.content.orEmpty()
 
-    private fun redact(message: String, token: String): String =
-        SecretRedactor.redactKnownSecrets(message, listOf(token))
+    /** A renewal swaps the token part way through, so both the old and the new one are kept out of messages. */
+    private fun redact(message: String, vararg tokens: String): String =
+        SecretRedactor.redactKnownSecrets(message, tokens.distinct())
 
     private class StepFailed(message: String) : Exception(message)
 

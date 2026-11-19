@@ -220,6 +220,26 @@ class InstagramTest {
     }
 
     @Test
+    fun aRenewedTokenIsKeptOutOfMessagesAsWellAsTheOneItReplaced() {
+        settings.saveSettings(LocalAppSettings(instagram = InstagramSettings(tokenSavedAtMillis = now - 2 * 86_400_000L)))
+        happyPath()
+        transport.on("/refresh_access_token", """{"access_token":"IGTOKEN-renewed-999999","token_type":"bearer","expires_in":5184000}""")
+        host.failure = IllegalStateException("proxy said no to IGTOKEN-renewed-999999 and IGTOKEN-abcdef-123456")
+
+        val checked = publisher.check()
+        assertTrue(checked.contains("proxy said no"))
+        assertFalse(checked.contains("renewed-999999"))
+        assertFalse(checked.contains("abcdef-123456"))
+
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "IGTOKEN-abcdef-123456")
+        settings.saveSettings(LocalAppSettings(instagram = InstagramSettings(tokenSavedAtMillis = now - 2 * 86_400_000L)))
+        val posted = (publisher.publish(post()) as PublishResult.Failure).message
+        assertTrue(posted.contains("proxy said no"))
+        assertFalse(posted.contains("renewed-999999"))
+        assertFalse(posted.contains("abcdef-123456"))
+    }
+
+    @Test
     fun aFailedRenewalFallsBackToTheCurrentToken() {
         settings.saveSettings(LocalAppSettings(instagram = InstagramSettings(tokenSavedAtMillis = 0L)))
         happyPath()

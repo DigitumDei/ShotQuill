@@ -316,9 +316,6 @@ fun SettingsScreen(
                 val ai = settings.ai
                 var urlText by remember(viewModel) { mutableStateOf(ai.baseUrl) }
                 var keyText by remember(viewModel) { mutableStateOf("") }
-                var modelsText by remember(viewModel) {
-                    mutableStateOf(ai.modelsFor(AiOperation.AltText).joinToString("\n"))
-                }
 
                 OutlinedTextField(
                     value = urlText,
@@ -373,7 +370,10 @@ fun SettingsScreen(
                 )
 
                 AiOperation.entries.forEach { operation ->
-                    // One list per kind of AI job. Alt text is the only job today.
+                    // One list per kind of AI job, each with its own text. Alt text is the only job today.
+                    var modelsText by remember(viewModel, operation) {
+                        mutableStateOf(ai.modelsFor(operation).joinToString("\n"))
+                    }
                     OutlinedTextField(
                         value = modelsText,
                         onValueChange = {
@@ -390,6 +390,12 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (modelsText.isBlank()) {
+                        // An empty box already means the starting models are in use; this shows them.
+                        TextButton(
+                            onClick = { modelsText = settings.ai.modelsFor(operation).joinToString("\n") },
+                        ) { Text("Show the starting models") }
+                    }
                 }
             }
 

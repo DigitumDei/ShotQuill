@@ -71,7 +71,7 @@ data class BlueskyFacet(
 fun blueskyFacets(text: String): List<BlueskyFacet> {
     val facets = mutableListOf<BlueskyFacet>()
     for (match in LinkPattern.findAll(text)) {
-        val address = match.value.trimEnd('.', ',', ';', ':', '!', '?', ')', '"', '\'')
+        val address = linkWithoutTrailingPunctuation(match.value)
         if (address.length <= "https://".length) continue
         val start = byteOffset(text, match.range.first)
         facets += BlueskyFacet(
@@ -103,6 +103,27 @@ fun blueskyFacets(text: String): List<BlueskyFacet> {
         )
     }
     return facets.sortedBy { it.byteStart }
+}
+
+/**
+ * A link as written usually ends where the sentence carries on, so trailing
+ * punctuation is not part of it. A closing bracket is only dropped when the
+ * link has no opening one to match, which keeps addresses such as
+ * `https://en.wikipedia.org/wiki/Witbier_(beer)` whole.
+ */
+private fun linkWithoutTrailingPunctuation(link: String): String {
+    var address = link
+    while (address.isNotEmpty()) {
+        val last = address.last()
+        val drop = when (last) {
+            '.', ',', ';', ':', '!', '?', '"', '\'' -> true
+            ')' -> address.count { it == ')' } > address.count { it == '(' }
+            else -> false
+        }
+        if (!drop) break
+        address = address.dropLast(1)
+    }
+    return address
 }
 
 private fun byteOffset(text: String, charIndex: Int): Int = text.substring(0, charIndex).encodeToByteArray().size

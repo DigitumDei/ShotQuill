@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.social
 
 import android.content.Context
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
 import com.digitumdei.shotquill.shared.social.TemporaryImageHost
 import com.google.android.gms.tasks.Tasks
@@ -34,8 +35,15 @@ class FirebaseImageHost(
     override fun upload(jpeg: ByteArray, fileName: String): String {
         val reference = reference(fileName)
         val metadata = StorageMetadata.Builder().setContentType("image/jpeg").build()
-        await(reference.putBytes(jpeg, metadata), "upload the image")
-        return await(reference.downloadUrl, "get the image's address").toString()
+        return try {
+            await(reference.putBytes(jpeg, metadata), "upload the image")
+            await(reference.downloadUrl, "get the image's address").toString()
+        } catch (e: Exception) {
+            // The file may have arrived even though the upload did not finish
+            // cleanly, and the caller has no address to remove it by.
+            runCatching { Tasks.await(reference.delete(), CleanupTimeoutSeconds, TimeUnit.SECONDS) }
+            throw e
+        }
     }
 
     override fun delete(fileName: String) {
@@ -75,11 +83,22 @@ class FirebaseImageHost(
             Tasks.await(task, TimeoutSeconds, TimeUnit.SECONDS)
         } catch (e: Exception) {
             val cause = e.cause ?: e
-            throw IllegalStateException("Firebase could not $step: ${cause.message ?: cause::class.simpleName}", cause)
+            throw IllegalStateException(
+                withoutSecrets("Firebase could not $step: ${cause.message ?: cause::class.simpleName}"),
+                cause,
+            )
         }
+
+    /** Firebase's own messages should never repeat the upload password, but nothing shown may depend on that. */
+    private fun withoutSecrets(message: String): String =
+        SecretRedactor.redactKnownSecrets(
+            message,
+            listOfNotNull(runCatching { settings.getSecret(FirebaseHostSettings.UploadPasswordSecret) }.getOrNull()),
+        )
 
     private companion object {
         const val Folder = "shotquill-temp"
         const val TimeoutSeconds = 60L
+        const val CleanupTimeoutSeconds = 15L
     }
 }
