@@ -10,11 +10,14 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.media.ExifInterface
+import com.digitumdei.shotquill.shared.domain.PhotoTreatment
+import com.digitumdei.shotquill.shared.domain.PixelRect
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.domain.cropRect
 import com.digitumdei.shotquill.shared.domain.exportSize
 import com.digitumdei.shotquill.shared.domain.logoPlacement
 import com.digitumdei.shotquill.shared.domain.toColorMatrix
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.roundToInt
@@ -29,6 +32,7 @@ class AndroidPhotoRenderer(
 ) : PhotoRenderer {
     override fun orientedSize(uri: String): PixelSize? {
         val path = uri.toFilePath() ?: return null
+        if (path.isSvgPath()) return SvgLogo.load(File(path))?.size
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
@@ -53,13 +57,7 @@ class AndroidPhotoRenderer(
             val photo = decodeOriented(path, sampleSizeFor(crop.width, target.width))
                 ?: return RenderOutcome.Failure("The photo could not be opened.")
             source = photo
-            val decodeScale = photo.width.toFloat() / size.width
-            val sourceRect = Rect(
-                (crop.left * decodeScale).roundToInt().coerceIn(0, photo.width - 1),
-                (crop.top * decodeScale).roundToInt().coerceIn(0, photo.height - 1),
-                ((crop.left + crop.width) * decodeScale).roundToInt().coerceIn(1, photo.width),
-                ((crop.top + crop.height) * decodeScale).roundToInt().coerceIn(1, photo.height),
-            )
+            val sourceRect = cropWithin(photo, crop, decodeScale = photo.width.toFloat() / size.width)
 
             val finished = Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
             output = finished
@@ -101,6 +99,48 @@ class AndroidPhotoRenderer(
         }
     }
 
+    override fun encodeForDescription(sourceUri: String, treatment: PhotoTreatment, maxEdge: Int): ByteArray? {
+        var source: Bitmap? = null
+        var output: Bitmap? = null
+        return try {
+            val path = sourceUri.toFilePath() ?: return null
+            val size = orientedSize(sourceUri) ?: return null
+            val crop = treatment.cropRect(size.width, size.height)
+            val scale = minOf(1f, maxEdge / maxOf(crop.width, crop.height))
+            val width = (crop.width * scale).roundToInt().coerceAtLeast(1)
+            val height = (crop.height * scale).roundToInt().coerceAtLeast(1)
+
+            val photo = decodeOriented(path, sampleSizeFor(crop.width, width)) ?: return null
+            source = photo
+            val reduced = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            output = reduced
+            Canvas(reduced).drawBitmap(
+                photo,
+                cropWithin(photo, crop, decodeScale = photo.width.toFloat() / size.width),
+                RectF(0f, 0f, width.toFloat(), height.toFloat()),
+                Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG),
+            )
+            val bytes = ByteArrayOutputStream()
+            if (reduced.compress(Bitmap.CompressFormat.JPEG, DescriptionJpegQuality, bytes)) bytes.toByteArray() else null
+        } catch (_: OutOfMemoryError) {
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            source?.recycle()
+            output?.recycle()
+        }
+    }
+
+    /** The crop, given in full-size photo pixels, as a rectangle inside the (possibly reduced) decoded bitmap. */
+    private fun cropWithin(photo: Bitmap, crop: PixelRect, decodeScale: Float): Rect =
+        Rect(
+            (crop.left * decodeScale).roundToInt().coerceIn(0, photo.width - 1),
+            (crop.top * decodeScale).roundToInt().coerceIn(0, photo.height - 1),
+            ((crop.left + crop.width) * decodeScale).roundToInt().coerceIn(1, photo.width),
+            ((crop.top + crop.height) * decodeScale).roundToInt().coerceIn(1, photo.height),
+        )
+
     override fun discard(uri: String) {
         val path = uri.toFilePath() ?: return
         runCatching { File(path).delete() }
@@ -108,32 +148,62 @@ class AndroidPhotoRenderer(
 
     private fun drawLogo(canvas: Canvas, target: PixelSize, request: RenderRequest) {
         val logoPath = request.logo.uri?.toFilePath() ?: return
-        val logoBitmap = BitmapFactory.decodeFile(logoPath) ?: return
-        try {
+        val corner = request.treatment.logoCorner ?: request.logo.corner
+
+        fun boundsFor(aspect: Float): RectF {
             val placement = logoPlacement(
                 canvasWidth = target.width.toFloat(),
                 canvasHeight = target.height.toFloat(),
-                logoAspect = logoBitmap.width.toFloat() / logoBitmap.height,
+                logoAspect = aspect,
                 logo = request.logo,
-                corner = request.treatment.logoCorner ?: request.logo.corner,
+                corner = corner,
             )
+            return RectF(
+                placement.left,
+                placement.top,
+                placement.left + placement.width,
+                placement.top + placement.height,
+            )
+        }
+
+        if (logoPath.isSvgPath()) {
+            // A vector logo is drawn at exactly the size it will appear.
+            val svgLogo = SvgLogo.load(File(logoPath)) ?: return
+            val bounds = boundsFor(svgLogo.size.width.toFloat() / svgLogo.size.height)
+            svgLogo.draw(canvas, bounds, request.logo.opacity)
+            return
+        }
+
+        val logoBitmap = BitmapFactory.decodeFile(logoPath) ?: return
+        var reduced: Bitmap? = null
+        try {
+            val bounds = boundsFor(logoBitmap.width.toFloat() / logoBitmap.height)
+            val nearSize = halveTowards(logoBitmap, bounds.width())
+            reduced = nearSize
             val logoPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
                 alpha = (request.logo.opacity.coerceIn(0f, 1f) * 255).roundToInt()
             }
-            canvas.drawBitmap(
-                logoBitmap,
-                null,
-                RectF(
-                    placement.left,
-                    placement.top,
-                    placement.left + placement.width,
-                    placement.top + placement.height,
-                ),
-                logoPaint,
-            )
+            canvas.drawBitmap(nearSize, null, bounds, logoPaint)
         } finally {
+            if (reduced != null && reduced !== logoBitmap) reduced.recycle()
             logoBitmap.recycle()
         }
+    }
+
+    /**
+     * Shrinks a bitmap by halves until it is less than twice the size it will
+     * be drawn at. Each halving averages every pixel, so fine lines survive;
+     * shrinking a large image in one step would skip most of its pixels and
+     * leave thin strokes ragged.
+     */
+    private fun halveTowards(source: Bitmap, targetWidth: Float): Bitmap {
+        var current = source
+        while (current.width / 2 >= targetWidth && current.width >= 4 && current.height >= 4) {
+            val half = Bitmap.createScaledBitmap(current, current.width / 2, current.height / 2, true)
+            if (current !== source) current.recycle()
+            current = half
+        }
+        return current
     }
 
     /** Decodes at a reduced size when the photo is far larger than needed, then turns it upright. */
@@ -179,5 +249,6 @@ class AndroidPhotoRenderer(
     private companion object {
         const val OutputDirectory = "media/edited"
         const val JpegQuality = 92
+        const val DescriptionJpegQuality = 85
     }
 }

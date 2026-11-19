@@ -51,6 +51,7 @@ class PostEditorStoreTest {
 
         assertEquals("file:///photos/one.jpg", post.originalUri)
         assertEquals("", post.caption)
+        assertEquals("", post.altText)
         assertNull(post.treatment)
         assertNull(post.renderedUri)
         assertFalse(post.shared)
@@ -92,6 +93,33 @@ class PostEditorStoreTest {
         store.saveCaption(PostDraftId("missing"), "Ignored")
 
         assertEquals(savesBefore, drafts.saveCount)
+    }
+
+    @Test
+    fun altTextIsKeptBesideTheCaption() {
+        val id = newPost("one")
+        store.saveCaption(id, "First pour.")
+
+        store.saveAltText(id, "A glass of beer on a bar.")
+        store.saveCaption(id, "First pour, edited.")
+
+        val post = assertNotNull(store.load(id))
+        assertEquals("A glass of beer on a bar.", post.altText)
+        assertEquals("First pour, edited.", post.caption)
+    }
+
+    @Test
+    fun clearingOrRepeatingAltTextBehavesLikeTheCaption() {
+        val id = newPost("one")
+        store.saveAltText(id, "Something")
+        val savesBefore = drafts.saveCount
+
+        store.saveAltText(id, "Something")
+        store.saveAltText(PostDraftId("missing"), "Ignored")
+        assertEquals(savesBefore, drafts.saveCount)
+
+        store.saveAltText(id, "  ")
+        assertEquals("", store.load(id)?.altText)
     }
 
     @Test

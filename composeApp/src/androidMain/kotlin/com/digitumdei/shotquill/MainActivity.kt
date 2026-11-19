@@ -7,7 +7,6 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
@@ -26,6 +25,9 @@ import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.model.MediaCaptureResultSaver
 import com.digitumdei.shotquill.share.AndroidPostShareLauncher
+import com.digitumdei.shotquill.shared.ai.AltTextWriter
+import com.digitumdei.shotquill.shared.ai.ChatCompletionsClient
+import com.digitumdei.shotquill.shared.ai.UrlConnectionAiHttpTransport
 import com.digitumdei.shotquill.speech.rememberDictationController
 import com.digitumdei.shotquill.shared.post.AndroidPhotoTreatmentStore
 import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
@@ -36,6 +38,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+private class LogoPickCallbacks(
+    val onPicked: (uri: String, caution: String?) -> Unit,
+    val onFailed: (message: String) -> Unit,
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +59,10 @@ class MainActivity : ComponentActivity() {
         val logoImporter = LogoImporter(contentResolver, filesDir)
         val clipboardWriter = AndroidClipboardWriter(this)
         val postShareLauncher = AndroidPostShareLauncher(this)
+        val altTextWriter = AltTextWriter(
+            settings = settingsRepository,
+            client = ChatCompletionsClient(UrlConnectionAiHttpTransport()),
+        )
 
         setContent {
             // Re-applied whenever the system theme flips, so the status and
@@ -84,20 +95,23 @@ class MainActivity : ComponentActivity() {
             )
 
             // The settings screen asks for a logo and is told the stored file's URI once it is copied in.
-            val onLogoPicked = remember { mutableStateOf<((String) -> Unit)?>(null) }
+            // The system file chooser is used rather than the photo picker,
+            // because the photo picker does not list SVG files.
+            val logoCallbacks = remember { mutableStateOf<LogoPickCallbacks?>(null) }
             val logoPicker = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.PickVisualMedia(),
+                contract = ActivityResultContracts.OpenDocument(),
             ) { uri ->
-                val deliver = onLogoPicked.value
-                onLogoPicked.value = null
-                if (uri != null && deliver != null) {
+                val callbacks = logoCallbacks.value
+                logoCallbacks.value = null
+                if (uri != null && callbacks != null) {
                     scope.launch {
                         try {
-                            deliver(logoImporter.import(uri))
+                            val imported = logoImporter.import(uri)
+                            callbacks.onPicked(imported.uri, imported.caution)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            captureError = "The logo could not be imported: ${e.message ?: "unknown error"}"
+                            callbacks.onFailed(e.message ?: "The logo could not be imported.")
                         }
                     }
                 }
@@ -123,15 +137,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
-                onPickLogo = { deliver ->
-                    onLogoPicked.value = deliver
-                    logoPicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                    )
+                onPickLogo = { onPicked, onFailed ->
+                    logoCallbacks.value = LogoPickCallbacks(onPicked, onFailed)
+                    logoPicker.launch(arrayOf("image/*"))
                 },
                 clipboardWriter = clipboardWriter,
                 postShareLauncher = postShareLauncher,
                 dictation = dictation,
+                altTextWriter = altTextWriter,
             )
         }
     }

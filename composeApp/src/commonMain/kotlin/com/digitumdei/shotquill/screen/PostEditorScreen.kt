@@ -24,6 +24,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.image.PhotoRenderer
 import com.digitumdei.shotquill.share.PostShareLauncher
+import com.digitumdei.shotquill.shared.ai.AltTextWriter
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CaptionStats
 import com.digitumdei.shotquill.shared.domain.CropShape
@@ -80,10 +83,13 @@ fun PostEditorScreen(
     clipboardWriter: ClipboardWriter,
     shareLauncher: PostShareLauncher,
     dictation: DictationController?,
+    altTextWriter: AltTextWriter?,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val viewModel = remember(draftId, store, settingsRepository, renderer, clipboardWriter, shareLauncher) {
+    val viewModel = remember(
+        draftId, store, settingsRepository, renderer, clipboardWriter, shareLauncher, altTextWriter,
+    ) {
         PostEditorViewModel(
             draftId = draftId,
             store = store,
@@ -91,6 +97,7 @@ fun PostEditorScreen(
             renderer = renderer,
             clipboardWriter = clipboardWriter,
             shareLauncher = shareLauncher,
+            altTextWriter = altTextWriter,
         )
     }
     val state = viewModel.state
@@ -107,6 +114,10 @@ fun PostEditorScreen(
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistCaption() } }
     }
+    LaunchedEffect(viewModel, state.altText) {
+        delay(600)
+        writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistAltText() } }
+    }
     LaunchedEffect(viewModel, state.treatment) {
         delay(400)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTreatment() } }
@@ -114,6 +125,7 @@ fun PostEditorScreen(
     DisposableEffect(viewModel) {
         onDispose {
             viewModel.persistCaption()
+            viewModel.persistAltText()
             viewModel.persistTreatment()
         }
     }
@@ -141,6 +153,14 @@ fun PostEditorScreen(
             }
         },
         onCaptionChange = viewModel::updateCaption,
+        onAltTextChange = viewModel::updateAltText,
+        onSelectAltTextModel = viewModel::selectAltTextModel,
+        onCopyAltText = viewModel::copyAltText,
+        onWriteAltText = {
+            scope.launch {
+                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
+            }
+        },
         onAddSnippet = viewModel::addSnippet,
         onSelectShape = viewModel::selectShape,
         onPanZoom = viewModel::panZoom,
@@ -171,6 +191,10 @@ fun PostEditorContent(
     dictationState: DictationState,
     onToggleDictation: () -> Unit,
     onCaptionChange: (String) -> Unit,
+    onAltTextChange: (String) -> Unit,
+    onSelectAltTextModel: (String) -> Unit,
+    onCopyAltText: () -> Unit,
+    onWriteAltText: () -> Unit,
     onAddSnippet: (CaptionSnippet) -> Unit,
     onSelectShape: (CropShape) -> Unit,
     onPanZoom: (Float, Float, Float) -> Unit,
@@ -364,6 +388,64 @@ fun PostEditorContent(
                     }
                     Spacer(Modifier.width(12.dp))
                     CaptionCounter(state.captionStats, modifier = Modifier.padding(top = 14.dp))
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Alt text", modifier = Modifier.weight(1f))
+                    if (state.aiConfigured) {
+                        FilledTonalButton(onClick = onWriteAltText, enabled = state.canWriteAltText) {
+                            if (state.isWritingAltText) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Describing")
+                            } else {
+                                Text(if (state.altText.isBlank()) "Describe with AI" else "Describe again")
+                            }
+                        }
+                    }
+                }
+                if (state.aiConfigured && state.altTextModels.size > 1) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.altTextModels.forEach { model ->
+                            FilterChip(
+                                selected = model == state.altTextModel,
+                                onClick = { onSelectAltTextModel(model) },
+                                enabled = !state.isWritingAltText,
+                                label = { Text(model.substringAfterLast('/')) },
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = state.altText,
+                    onValueChange = onAltTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.isLoaded && !state.isWritingAltText,
+                    minLines = 2,
+                    placeholder = { Text("What the photo shows, for people who cannot see it") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    shape = MaterialTheme.shapes.medium,
+                )
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (state.aiConfigured) {
+                        Text(
+                            "${state.altText.length} characters",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        TextButton(onClick = onOpenSettings, modifier = Modifier.weight(1f, fill = false)) {
+                            Text("Set up AI to write this for you")
+                        }
+                        Spacer(Modifier.weight(1f))
+                    }
+                    TextButton(onClick = onCopyAltText, enabled = state.altText.isNotBlank()) { Text("Copy") }
                 }
             }
         }

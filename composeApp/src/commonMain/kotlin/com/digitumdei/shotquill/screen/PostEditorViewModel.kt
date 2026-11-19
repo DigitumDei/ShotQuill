@@ -8,6 +8,8 @@ import com.digitumdei.shotquill.image.PhotoRenderer
 import com.digitumdei.shotquill.image.RenderOutcome
 import com.digitumdei.shotquill.image.RenderRequest
 import com.digitumdei.shotquill.share.PostShareLauncher
+import com.digitumdei.shotquill.shared.ai.AiResult
+import com.digitumdei.shotquill.shared.ai.AltTextWriter
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CaptionStats
 import com.digitumdei.shotquill.shared.domain.CropShape
@@ -33,6 +35,12 @@ data class PostEditorState(
     val imageSize: PixelSize? = null,
     val treatment: PhotoTreatment = PhotoTreatment(),
     val caption: String = "",
+    val altText: String = "",
+    /** True once an AI service has been set up, so alt text can be written on request. */
+    val aiConfigured: Boolean = false,
+    val altTextModels: List<String> = emptyList(),
+    val altTextModel: String? = null,
+    val isWritingAltText: Boolean = false,
     val look: LookSettings = LookSettings(),
     val logo: LogoSettings = LogoSettings(),
     val logoSize: PixelSize? = null,
@@ -45,6 +53,8 @@ data class PostEditorState(
     val hasLogo: Boolean get() = logo.uri != null
     val logoCorner: LogoCorner get() = treatment.logoCorner ?: logo.corner
     val canShare: Boolean get() = isLoaded && !isSharing && originalUri != null && imageSize != null
+    val canWriteAltText: Boolean
+        get() = isLoaded && aiConfigured && !isWritingAltText && originalUri != null && imageSize != null
 }
 
 /**
@@ -59,6 +69,7 @@ class PostEditorViewModel(
     private val clipboardWriter: ClipboardWriter,
     private val shareLauncher: PostShareLauncher,
     private val clock: EpochClock = EpochClock.Default,
+    private val altTextWriter: AltTextWriter? = null,
 ) {
     var state: PostEditorState by mutableStateOf(PostEditorState())
         private set
@@ -83,6 +94,10 @@ class PostEditorViewModel(
             // added later from settings appears without a second step.
             treatment = post.treatment ?: PhotoTreatment(cropShape = settings.defaultCropShape),
             caption = post.caption,
+            altText = post.altText,
+            aiConfigured = altTextWriter?.isConfigured == true,
+            altTextModels = altTextWriter?.models().orEmpty(),
+            altTextModel = altTextWriter?.models()?.firstOrNull(),
             look = settings.look,
             logo = logo,
             logoSize = logo.uri?.let(renderer::orientedSize),
@@ -111,6 +126,60 @@ class PostEditorViewModel(
     fun persistCaption() {
         if (!state.isLoaded) return
         store.saveCaption(draftId, state.caption)
+    }
+
+    fun updateAltText(text: String) {
+        if (!state.isLoaded) return
+        state = state.copy(altText = text)
+    }
+
+    fun persistAltText() {
+        if (!state.isLoaded) return
+        store.saveAltText(draftId, state.altText)
+    }
+
+    fun selectAltTextModel(model: String) {
+        if (!state.isLoaded || model !in state.altTextModels) return
+        state = state.copy(altTextModel = model)
+    }
+
+    /**
+     * Sends the photo, cropped as it will be shared, to the AI service and
+     * puts the description it returns into the alt text box, where it can be
+     * edited like anything typed by hand.
+     */
+    fun writeAltText() {
+        val current = state
+        val writer = altTextWriter
+        val sourceUri = current.originalUri
+        if (!current.canWriteAltText || writer == null || sourceUri == null) return
+        state = current.copy(isWritingAltText = true, message = null)
+        val jpeg = renderer.encodeForDescription(sourceUri, current.treatment)
+        if (jpeg == null) {
+            state = state.copy(isWritingAltText = false, message = "The photo could not be prepared for describing.")
+            return
+        }
+        when (val result = writer.write(jpeg, current.caption, current.altTextModel)) {
+            is AiResult.Success -> {
+                state = state.copy(isWritingAltText = false, altText = result.text)
+                store.saveAltText(draftId, result.text)
+            }
+
+            is AiResult.Failure -> {
+                state = state.copy(isWritingAltText = false, message = result.message)
+            }
+        }
+    }
+
+    fun copyAltText() {
+        val text = state.altText.trim()
+        if (text.isEmpty()) return
+        state = try {
+            clipboardWriter.copy("alt text", text)
+            state.copy(message = "Alt text copied.")
+        } catch (_: Exception) {
+            state.copy(message = "The alt text could not be copied.")
+        }
     }
 
     fun selectShape(shape: CropShape) {
@@ -166,6 +235,7 @@ class PostEditorViewModel(
         if (!current.canShare || sourceUri == null) return
         state = current.copy(isSharing = true, message = null)
         store.saveCaption(draftId, current.caption)
+        store.saveAltText(draftId, current.altText)
         store.saveTreatment(draftId, current.treatment)
 
         val outcome = renderer.render(
@@ -184,13 +254,29 @@ class PostEditorViewModel(
 
             is RenderOutcome.Success -> {
                 val caption = current.caption.trim()
+                val altText = current.altText.trim()
                 var clipboardNote = ""
                 if (caption.isNotEmpty()) {
                     clipboardNote = try {
+                        // The alt text goes first so the caption ends up on top;
+                        // keyboards with clipboard history then offer both.
+                        if (altText.isNotEmpty()) clipboardWriter.copy("alt text", altText)
                         clipboardWriter.copy("post caption", caption)
-                        " Your caption is on the clipboard, ready to paste."
+                        if (altText.isNotEmpty()) {
+                            " Your caption is on the clipboard, with the alt text just behind it in your " +
+                                "keyboard's clipboard history."
+                        } else {
+                            " Your caption is on the clipboard, ready to paste."
+                        }
                     } catch (_: Exception) {
                         " The caption could not be copied, so copy it by hand."
+                    }
+                } else if (altText.isNotEmpty()) {
+                    clipboardNote = try {
+                        clipboardWriter.copy("alt text", altText)
+                        " Your alt text is on the clipboard, ready to paste."
+                    } catch (_: Exception) {
+                        " The alt text could not be copied, so copy it by hand."
                     }
                 }
                 val result = shareLauncher.share(outcome.uri, caption)

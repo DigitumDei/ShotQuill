@@ -23,6 +23,7 @@ import com.digitumdei.shotquill.screen.PostEditorScreen
 import com.digitumdei.shotquill.screen.SettingsScreen
 import com.digitumdei.shotquill.screen.SettingsViewModel
 import com.digitumdei.shotquill.share.PostShareLauncher
+import com.digitumdei.shotquill.shared.ai.AltTextWriter
 import com.digitumdei.shotquill.shared.domain.MediaAssetId
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
@@ -70,10 +71,11 @@ fun App(
     onClearCaptureResult: (() -> Unit)? = null,
     onClearCaptureError: (() -> Unit)? = null,
     onCleanupCapture: ((MediaCaptureResult) -> Unit)? = null,
-    onPickLogo: ((onPicked: (String) -> Unit) -> Unit)? = null,
+    onPickLogo: ((onPicked: (uri: String, caution: String?) -> Unit, onFailed: (String) -> Unit) -> Unit)? = null,
     clipboardWriter: ClipboardWriter? = null,
     postShareLauncher: PostShareLauncher? = null,
     dictation: DictationController? = null,
+    altTextWriter: AltTextWriter? = null,
 ) {
     val settings = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val store = remember(postDraftRepository, treatmentStore) {
@@ -172,6 +174,7 @@ fun App(
                                 clipboardWriter = clipboardWriter,
                                 shareLauncher = postShareLauncher,
                                 dictation = dictation,
+                                altTextWriter = altTextWriter,
                                 onBack = { goBack() },
                                 onOpenSettings = { openSettings() },
                             )
@@ -189,7 +192,9 @@ fun App(
                             previewUri = previewUri,
                             previewSize = previewSize,
                             dictationOnDevice = dictation?.takeIf { it.isAvailable }?.isOnDevice,
-                            onPickLogo = onPickLogo?.let { pick -> { pick { uri -> viewModel.setLogoUri(uri) } } },
+                            onPickLogo = onPickLogo?.let { pick ->
+                                { pick(viewModel::logoImported, viewModel::logoImportFailed) }
+                            },
                             onBack = { goBack() },
                         )
                     }

@@ -1,5 +1,7 @@
 package com.digitumdei.shotquill.screen
 
+import com.digitumdei.shotquill.shared.ai.AiOperation
+import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
@@ -33,7 +35,8 @@ class SettingsViewModelTest {
 
         assertEquals(CropShape.Story, state.settings.defaultCropShape)
         assertEquals(PixelSize(600, 200), state.logoSize)
-        assertFalse(state.hasLegacyApiKey)
+        assertFalse(state.hasApiKey)
+        assertEquals(AiSettings.DefaultBaseUrl, state.settings.ai.baseUrl)
     }
 
     @Test
@@ -77,6 +80,37 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun anImportedLogoIsUsedAndItsCautionShown() {
+        val vm = viewModel()
+
+        vm.logoImported("file:///brand/logo.png", caution = "It contains live text.")
+
+        assertEquals("file:///brand/logo.png", repository.readSettings().logo.uri)
+        assertEquals("It contains live text.", vm.state.logoNote)
+        assertFalse(vm.state.logoNoteIsError)
+
+        vm.logoImported("file:///brand/new.png", caution = null)
+        assertNull(vm.state.logoNote)
+    }
+
+    @Test
+    fun aFailedImportKeepsTheCurrentLogoAndSaysWhy() {
+        val vm = viewModel()
+        vm.logoImported("file:///brand/logo.png", caution = null)
+
+        vm.logoImportFailed("This SVG could not be read.")
+
+        assertEquals("file:///brand/logo.png", repository.readSettings().logo.uri)
+        assertEquals("This SVG could not be read.", vm.state.logoNote)
+        assertTrue(vm.state.logoNoteIsError)
+        assertTrue(renderer.discarded.isEmpty())
+
+        vm.setLogoUri(null)
+        assertNull(vm.state.logoNote)
+        assertFalse(vm.state.logoNoteIsError)
+    }
+
+    @Test
     fun logoSizeAndStrengthStayWithinBounds() {
         val vm = viewModel()
 
@@ -106,22 +140,62 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun aLeftOverApiKeyCanBeDeleted() {
-        repository.saveOpenAiApiKey("sk-old-key")
+    fun aSavedApiKeyIsOnlyEverShownMasked() {
+        repository.saveOpenAiApiKey("sk-or-v1-abcdefghijklmnop")
+
         val vm = viewModel()
-        assertTrue(vm.state.hasLegacyApiKey)
 
-        vm.clearLegacyApiKey()
-
-        assertFalse(vm.state.hasLegacyApiKey)
-        assertFalse(repository.hasOpenAiApiKey())
+        assertTrue(vm.state.hasApiKey)
+        assertEquals("sk-...mnop", vm.state.apiKeyHint)
     }
 
     @Test
-    fun privacyNoteSaysWhereDictationHappens() {
-        assertTrue(privacyNote(dictationOnDevice = true).contains("recognised on this phone"))
-        assertTrue(privacyNote(dictationOnDevice = false).contains("may send your voice"))
-        assertFalse(privacyNote(dictationOnDevice = null).contains("Dictation"))
+    fun theApiKeyCanBeSavedReplacedAndRemoved() {
+        val vm = viewModel()
+
+        vm.saveApiKey("   ")
+        assertFalse(vm.state.hasApiKey)
+
+        vm.saveApiKey("  first-key-000000001111  ")
+        assertEquals("first-key-000000001111", repository.getOpenAiApiKey())
+        assertEquals("fir...1111", vm.state.apiKeyHint)
+        assertEquals("Key saved.", vm.state.apiKeyMessage)
+
+        vm.saveApiKey("second-key-00000002222")
+        assertEquals("second-key-00000002222", repository.getOpenAiApiKey())
+
+        vm.clearApiKey()
+        assertFalse(vm.state.hasApiKey)
+        assertFalse(repository.hasOpenAiApiKey())
+        assertTrue(vm.state.apiKeyMessage.orEmpty().contains("Nothing will be sent"))
+    }
+
+    @Test
+    fun theAiAddressAndModelListsAreSaved() {
+        val vm = viewModel()
+
+        vm.setAiBaseUrl("  https://api.openai.com/v1  ")
+        vm.setAiModels(AiOperation.AltText, listOf("one/model", " two/model ", "one/model"))
+
+        val ai = repository.readSettings().ai
+        assertEquals("https://api.openai.com/v1", ai.baseUrl)
+        assertEquals(listOf("one/model", "two/model"), ai.modelsFor(AiOperation.AltText))
+
+        vm.setAiModels(AiOperation.AltText, emptyList())
+        assertEquals(AiOperation.AltText.defaultModels, repository.readSettings().ai.modelsFor(AiOperation.AltText))
+    }
+
+    @Test
+    fun privacyNoteSaysWhatLeavesThePhone() {
+        val offline = privacyNote(dictationOnDevice = null, aiConfigured = false)
+        assertTrue(offline.contains("does not connect to the internet"))
+        assertFalse(offline.contains("Dictation"))
+
+        val withAi = privacyNote(dictationOnDevice = true, aiConfigured = true)
+        assertTrue(withAi.contains("only when you ask for alt text"))
+        assertTrue(withAi.contains("recognised on this phone"))
+
+        assertTrue(privacyNote(dictationOnDevice = false, aiConfigured = false).contains("may send your voice"))
     }
 
     @Test

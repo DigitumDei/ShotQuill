@@ -30,6 +30,13 @@ interface PhotoRenderer {
 
     fun render(request: RenderRequest): RenderOutcome
 
+    /**
+     * The photo cropped as it will be shared, without the look or the logo, as
+     * a small JPEG suitable for sending to be described. Null when the photo
+     * cannot be read.
+     */
+    fun encodeForDescription(sourceUri: String, treatment: PhotoTreatment, maxEdge: Int = 1024): ByteArray?
+
     /** Deletes a previously rendered image. Missing files are ignored. */
     fun discard(uri: String)
 }

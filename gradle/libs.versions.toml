@@ -7,6 +7,7 @@ kotlinx-datetime = "0.6.1"
 kotlinx-serialization-json = "1.7.3"
 sqldelight = "2.3.2"
 coil = "3.2.0"
+androidsvg = "1.4"
 
 android-compileSdk = "35"
 android-minSdk = "24"
@@ -33,6 +34,8 @@ sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-dri
 sqldelight-runtime = { group = "app.cash.sqldelight", name = "runtime", version.ref = "sqldelight" }
 sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-driver", version.ref = "sqldelight" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
+androidsvg = { group = "com.caverock", name = "androidsvg-aar", version.ref = "androidsvg" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

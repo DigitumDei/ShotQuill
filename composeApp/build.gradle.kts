@@ -26,6 +26,7 @@ kotlin {
             implementation(compose.ui)
             implementation(libs.kotlinx.datetime)
             implementation(libs.coil.compose)
+            implementation(libs.coil.svg)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -36,6 +37,7 @@ kotlin {
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.androidsvg)
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)

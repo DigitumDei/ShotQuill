@@ -1,5 +1,6 @@
 package com.digitumdei.shotquill.shared.settings
 
+import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
@@ -19,6 +20,7 @@ data class LocalAppSettings(
     val look: LookSettings = LookSettings(),
     val logo: LogoSettings = LogoSettings(),
     val snippets: List<CaptionSnippet> = CaptionSnippet.Defaults,
+    val ai: AiSettings = AiSettings(),
 )
 
 interface LocalSettingsRepository {

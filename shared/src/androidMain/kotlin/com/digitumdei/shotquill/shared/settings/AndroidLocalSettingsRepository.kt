@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.digitumdei.shotquill.shared.ai.AiOperation
+import com.digitumdei.shotquill.shared.ai.AiSettings
+import com.digitumdei.shotquill.shared.ai.parseModelList
 import com.digitumdei.shotquill.shared.domain.BrandProfileId
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
@@ -53,6 +56,19 @@ class AndroidLocalSettingsRepository(
             snippets = regularPreferences.getString(KeySnippets, null)
                 ?.let(SnippetCodec::decode)
                 ?: CaptionSnippet.Defaults,
+            ai = readAi(),
+        )
+
+    private fun readAi(): AiSettings =
+        AiSettings(
+            baseUrl = regularPreferences.getString(KeyAiBaseUrl, null)?.takeIf { it.isNotBlank() }
+                ?: AiSettings.DefaultBaseUrl,
+            models = AiOperation.entries.mapNotNull { operation ->
+                regularPreferences.getString(KeyAiModelsPrefix + operation.wireValue, null)
+                    ?.let(::parseModelList)
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { operation to it }
+            }.toMap(),
         )
 
     private fun readLook(): LookSettings {
@@ -94,6 +110,17 @@ class AndroidLocalSettingsRepository(
             .putFloat(KeyLogoMargin, settings.logo.marginFraction)
             .putString(KeyLogoCorner, settings.logo.corner.wireValue)
             .putString(KeySnippets, SnippetCodec.encode(settings.snippets))
+            .putString(KeyAiBaseUrl, settings.ai.baseUrl)
+            .also { editor ->
+                AiOperation.entries.forEach { operation ->
+                    val models = settings.ai.models[operation]
+                    if (models.isNullOrEmpty()) {
+                        editor.remove(KeyAiModelsPrefix + operation.wireValue)
+                    } else {
+                        editor.putString(KeyAiModelsPrefix + operation.wireValue, models.joinToString("\n"))
+                    }
+                }
+            }
             .apply()
     }
 
@@ -165,5 +192,7 @@ class AndroidLocalSettingsRepository(
         const val KeyLogoMargin = "logo_margin_fraction"
         const val KeyLogoCorner = "logo_corner"
         const val KeySnippets = "caption_snippets"
+        const val KeyAiBaseUrl = "ai_base_url"
+        const val KeyAiModelsPrefix = "ai_models_"
     }
 }

@@ -1,6 +1,8 @@
 package com.digitumdei.shotquill.shared.post
 
 import android.content.Context
+import com.digitumdei.shotquill.shared.ai.AiOperation
+import com.digitumdei.shotquill.shared.ai.AiSettings
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
@@ -57,11 +59,27 @@ class AndroidStorageTest {
                 corner = LogoCorner.TopEnd,
             ),
             snippets = listOf(CaptionSnippet("Tags", "#doctrinebrewing\n#kzn")),
+            ai = AiSettings(baseUrl = "https://api.example.test/v1")
+                .withModels(AiOperation.AltText, listOf("one/model", "two/model")),
         )
 
         AndroidLocalSettingsRepository(context).saveSettings(settings)
 
         assertEquals(settings, AndroidLocalSettingsRepository(context).readSettings())
+    }
+
+    @Test
+    fun clearingTheModelListRestoresTheDefaults() {
+        val repository = AndroidLocalSettingsRepository(context)
+        repository.saveSettings(
+            LocalAppSettings(ai = AiSettings().withModels(AiOperation.AltText, listOf("one/model"))),
+        )
+
+        repository.saveSettings(LocalAppSettings(ai = AiSettings().withModels(AiOperation.AltText, emptyList())))
+
+        val ai = AndroidLocalSettingsRepository(context).readSettings().ai
+        assertEquals(AiOperation.AltText.defaultModels, ai.modelsFor(AiOperation.AltText))
+        assertEquals(AiSettings.DefaultBaseUrl, ai.baseUrl)
     }
 
     @Test

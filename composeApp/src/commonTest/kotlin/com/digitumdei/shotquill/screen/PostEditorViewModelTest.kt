@@ -6,6 +6,12 @@ import com.digitumdei.shotquill.image.RenderOutcome
 import com.digitumdei.shotquill.image.RenderRequest
 import com.digitumdei.shotquill.share.PostShareLauncher
 import com.digitumdei.shotquill.share.ShareResult
+import com.digitumdei.shotquill.shared.ai.AiHttpResponse
+import com.digitumdei.shotquill.shared.ai.AiHttpTransport
+import com.digitumdei.shotquill.shared.ai.AiOperation
+import com.digitumdei.shotquill.shared.ai.AiSettings
+import com.digitumdei.shotquill.shared.ai.AltTextWriter
+import com.digitumdei.shotquill.shared.ai.ChatCompletionsClient
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.EpochClock
@@ -45,6 +51,20 @@ class PostEditorViewModelTest {
         ),
     )
 
+    private val aiTransport = FakeAiTransport()
+    private var withAi = false
+
+    /** Saves a key and two models, so the view models made afterwards can ask for alt text. */
+    private fun setUpAi() {
+        settings.saveSettings(
+            settings.readSettings().copy(
+                ai = AiSettings().withModels(AiOperation.AltText, listOf("cheap/describer", "better/describer")),
+            ),
+        )
+        settings.saveOpenAiApiKey("key-abcdef-123456")
+        withAi = true
+    }
+
     private fun viewModel(): PostEditorViewModel =
         PostEditorViewModel(
             draftId = draftId,
@@ -56,10 +76,11 @@ class PostEditorViewModelTest {
             clock = object : EpochClock {
                 override fun nowMillis(): Long = 1_700_000_000_000L
             },
+            altTextWriter = if (withAi) AltTextWriter(settings, ChatCompletionsClient(aiTransport)) else null,
         )
 
     private fun loadedViewModel(): PostEditorViewModel {
-        store.post = EditablePost(draftId, photoUri, caption = "", treatment = null, renderedUri = null, shared = false)
+        store.post = EditablePost(draftId, photoUri, caption = "", altText = "", treatment = null, renderedUri = null, shared = false)
         renderer.sizes[photoUri] = PixelSize(4000, 3000)
         renderer.sizes[logoUri] = PixelSize(600, 200)
         return viewModel().also { it.load() }
@@ -96,7 +117,7 @@ class PostEditorViewModelTest {
     @Test
     fun anExistingPostKeepsItsOwnTreatmentAndCaption() {
         val saved = PhotoTreatment(cropShape = CropShape.Story, zoom = 2f, logoCorner = LogoCorner.TopEnd)
-        store.post = EditablePost(draftId, photoUri, "Bottling day", saved, "file:///edited/old.jpg", shared = true)
+        store.post = EditablePost(draftId, photoUri, caption = "Bottling day", altText = "", treatment = saved, renderedUri = "file:///edited/old.jpg", shared = true)
         renderer.sizes[photoUri] = PixelSize(3000, 4000)
 
         val state = viewModel().also { it.load() }.state
@@ -118,7 +139,7 @@ class PostEditorViewModelTest {
 
     @Test
     fun anUnreadablePhotoCannotBeShared() {
-        store.post = EditablePost(draftId, photoUri, "", null, null, shared = false)
+        store.post = EditablePost(draftId, photoUri, caption = "", altText = "", treatment = null, renderedUri = null, shared = false)
 
         val vm = viewModel().also { it.load() }
         vm.share()
@@ -135,6 +156,11 @@ class PostEditorViewModelTest {
         vm.updateCaption("Too early")
         vm.addSnippet(CaptionSnippet("x", "y"))
         vm.addDictation("spoken too early")
+        vm.updateAltText("too early")
+        vm.selectAltTextModel("any/model")
+        vm.writeAltText()
+        vm.copyAltText()
+        vm.persistAltText()
         vm.selectShape(CropShape.Story)
         vm.panZoom(0.5f, 0.5f, 2f)
         vm.setLookEnabled(false)
@@ -172,6 +198,135 @@ class PostEditorViewModelTest {
 
         assertEquals("First pour of the witbier. It came out hazy", vm.state.caption)
         assertEquals(listOf(vm.state.caption), store.savedCaptions)
+    }
+
+    @Test
+    fun withoutAnAiServiceAltTextIsTypedByHand() {
+        val vm = loadedViewModel()
+
+        vm.updateAltText("A glass of beer on a bar.")
+        vm.writeAltText()
+        vm.persistAltText()
+        vm.copyAltText()
+
+        assertFalse(vm.state.aiConfigured)
+        assertFalse(vm.state.canWriteAltText)
+        assertTrue(vm.state.altTextModels.isEmpty())
+        assertEquals("A glass of beer on a bar.", vm.state.altText)
+        assertEquals(listOf("A glass of beer on a bar."), store.savedAltTexts)
+        assertEquals(listOf("alt text" to "A glass of beer on a bar."), clipboard.copies)
+        assertEquals("Alt text copied.", vm.state.message)
+        assertTrue(renderer.described.isEmpty())
+    }
+
+    @Test
+    fun anExistingPostShowsItsSavedAltText() {
+        store.post = EditablePost(
+            draftId, photoUri, caption = "", altText = "Saved earlier.", treatment = null, renderedUri = null, shared = false,
+        )
+        renderer.sizes[photoUri] = PixelSize(4000, 3000)
+
+        assertEquals("Saved earlier.", viewModel().also { it.load() }.state.altText)
+    }
+
+    @Test
+    fun altTextIsWrittenFromTheCroppedPhotoWithTheFirstModel() {
+        setUpAi()
+        val vm = loadedViewModel()
+        vm.updateCaption("First pour of the witbier.")
+        vm.selectShape(CropShape.Portrait)
+        aiTransport.reply = AiHttpResponse(200, """{"choices":[{"message":{"content":"A full glass of hazy beer."}}]}""")
+
+        vm.writeAltText()
+
+        assertTrue(vm.state.aiConfigured)
+        assertEquals(listOf("cheap/describer", "better/describer"), vm.state.altTextModels)
+        assertEquals("cheap/describer", vm.state.altTextModel)
+        assertEquals("A full glass of hazy beer.", vm.state.altText)
+        assertFalse(vm.state.isWritingAltText)
+        assertNull(vm.state.message)
+        assertEquals(listOf("A full glass of hazy beer."), store.savedAltTexts)
+        assertEquals(listOf(photoUri to CropShape.Portrait), renderer.described)
+        assertTrue(aiTransport.body.contains("\"model\":\"cheap/describer\""))
+        assertTrue(aiTransport.body.contains("First pour of the witbier."))
+    }
+
+    @Test
+    fun anotherModelFromTheListCanBeChosen() {
+        setUpAi()
+        val vm = loadedViewModel()
+
+        vm.selectAltTextModel("not/listed")
+        assertEquals("cheap/describer", vm.state.altTextModel)
+
+        vm.selectAltTextModel("better/describer")
+        vm.writeAltText()
+
+        assertTrue(aiTransport.body.contains("\"model\":\"better/describer\""))
+    }
+
+    @Test
+    fun anAiFailureKeepsWhatWasThereAndSaysWhy() {
+        setUpAi()
+        val vm = loadedViewModel()
+        vm.updateAltText("Typed by hand.")
+        aiTransport.reply = AiHttpResponse(402, """{"error":{"message":"Insufficient credits"}}""")
+
+        vm.writeAltText()
+
+        assertEquals("Typed by hand.", vm.state.altText)
+        assertTrue(vm.state.message.orEmpty().contains("run out of credit"))
+        assertFalse(vm.state.isWritingAltText)
+        assertTrue(store.savedAltTexts.isEmpty())
+    }
+
+    @Test
+    fun aPhotoThatCannotBePreparedIsNotSent() {
+        setUpAi()
+        val vm = loadedViewModel()
+        renderer.descriptionBytes = null
+
+        vm.writeAltText()
+
+        assertEquals("The photo could not be prepared for describing.", vm.state.message)
+        assertNull(aiTransport.url)
+    }
+
+    @Test
+    fun sharingPutsTheAltTextBehindTheCaptionOnTheClipboard() {
+        val vm = loadedViewModel()
+        vm.updateCaption("First pour.")
+        vm.updateAltText("A glass of beer.")
+
+        vm.share()
+
+        assertEquals(listOf("alt text" to "A glass of beer.", "post caption" to "First pour."), clipboard.copies)
+        assertEquals(listOf("A glass of beer."), store.savedAltTexts)
+        assertTrue(vm.state.message.orEmpty().contains("clipboard history"))
+    }
+
+    @Test
+    fun sharingWithOnlyAltTextCopiesThat() {
+        val vm = loadedViewModel()
+        vm.updateAltText("A glass of beer.")
+
+        vm.share()
+
+        assertEquals(listOf("alt text" to "A glass of beer."), clipboard.copies)
+        assertTrue(vm.state.message.orEmpty().contains("alt text is on the clipboard"))
+    }
+
+    @Test
+    fun aFailedAltTextCopyIsReported() {
+        val vm = loadedViewModel()
+        vm.updateAltText("A glass of beer.")
+        clipboard.failure = IllegalStateException("clipboard busy")
+
+        vm.copyAltText()
+        assertEquals("The alt text could not be copied.", vm.state.message)
+
+        vm.share()
+        assertTrue(vm.state.message.orEmpty().contains("copy it by hand"))
     }
 
     @Test
@@ -243,7 +398,7 @@ class PostEditorViewModelTest {
 
     @Test
     fun sharingAgainReplacesTheEarlierImage() {
-        store.post = EditablePost(draftId, photoUri, "", PhotoTreatment(), "file:///edited/old.jpg", shared = true)
+        store.post = EditablePost(draftId, photoUri, caption = "", altText = "", treatment = PhotoTreatment(), renderedUri = "file:///edited/old.jpg", shared = true)
         renderer.sizes[photoUri] = PixelSize(4000, 3000)
         val vm = viewModel().also { it.load() }
 
@@ -294,7 +449,7 @@ class PostEditorViewModelTest {
 
     @Test
     fun removingAPostDeletesItsImageAndStopsFurtherWrites() {
-        store.post = EditablePost(draftId, photoUri, "Old", PhotoTreatment(), "file:///edited/old.jpg", shared = true)
+        store.post = EditablePost(draftId, photoUri, caption = "Old", altText = "", treatment = PhotoTreatment(), renderedUri = "file:///edited/old.jpg", shared = true)
         renderer.sizes[photoUri] = PixelSize(4000, 3000)
         val vm = viewModel().also { it.load() }
 
@@ -315,6 +470,7 @@ private class FakeStore : PostEditorStore {
     var post: EditablePost? = null
     val savedCaptions = mutableListOf<String>()
     val savedTreatments = mutableListOf<PhotoTreatment>()
+    val savedAltTexts = mutableListOf<String>()
     var sharedWith: String? = null
     var removed = false
 
@@ -324,6 +480,11 @@ private class FakeStore : PostEditorStore {
 
     override fun saveCaption(id: PostDraftId, caption: String) {
         savedCaptions += caption
+    }
+
+    override fun saveAltText(id: PostDraftId, altText: String) {
+        // Like the real store, saving nothing over nothing is not recorded.
+        if (altText.isNotEmpty() || savedAltTexts.isNotEmpty()) savedAltTexts += altText
     }
 
     override fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment) {
@@ -343,6 +504,8 @@ internal class FakeRenderer : PhotoRenderer {
     val sizes = mutableMapOf<String, PixelSize>()
     val requests = mutableListOf<RenderRequest>()
     val discarded = mutableListOf<String>()
+    val described = mutableListOf<Pair<String, CropShape>>()
+    var descriptionBytes: ByteArray? = byteArrayOf(9, 9, 9)
     var outcome: RenderOutcome? = null
 
     override fun orientedSize(uri: String): PixelSize? = sizes[uri]
@@ -352,8 +515,25 @@ internal class FakeRenderer : PhotoRenderer {
         return outcome ?: RenderOutcome.Success("file:///edited/${request.outputName}.jpg", PixelSize(1080, 1080))
     }
 
+    override fun encodeForDescription(sourceUri: String, treatment: PhotoTreatment, maxEdge: Int): ByteArray? {
+        described += sourceUri to treatment.cropShape
+        return descriptionBytes
+    }
+
     override fun discard(uri: String) {
         discarded += uri
+    }
+}
+
+private class FakeAiTransport : AiHttpTransport {
+    var reply = AiHttpResponse(200, """{"choices":[{"message":{"content":"A photo."}}]}""")
+    var url: String? = null
+    var body: String = ""
+
+    override fun postJson(url: String, headers: Map<String, String>, body: String): AiHttpResponse {
+        this.url = url
+        this.body = body
+        return reply
     }
 }
 

@@ -3,6 +3,7 @@ package com.digitumdei.shotquill.shared.post
 import com.digitumdei.shotquill.shared.domain.CaptionDraft
 import com.digitumdei.shotquill.shared.domain.DraftStatus
 import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
@@ -24,6 +25,7 @@ data class EditablePost(
     val id: PostDraftId,
     val originalUri: String,
     val caption: String,
+    val altText: String,
     /** Null until the photo has been framed at least once. */
     val treatment: PhotoTreatment?,
     val renderedUri: String?,
@@ -35,6 +37,7 @@ interface PostEditorStore {
     fun listPosts(): List<PostSummary>
     fun load(id: PostDraftId): EditablePost?
     fun saveCaption(id: PostDraftId, caption: String)
+    fun saveAltText(id: PostDraftId, altText: String)
     fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment)
     fun markShared(id: PostDraftId, renderedUri: String)
     fun remove(id: PostDraftId)
@@ -67,6 +70,7 @@ class DraftBackedPostEditorStore(
             id = draft.id,
             originalUri = original.uri,
             caption = draft.caption?.text.orEmpty(),
+            altText = draft.finalPostContent?.editedAltText.orEmpty(),
             treatment = stored?.treatment,
             renderedUri = stored?.renderedUri,
             shared = draft.status == DraftStatus.Shared,
@@ -80,6 +84,24 @@ class DraftBackedPostEditorStore(
             draft.copy(
                 caption = if (caption.isBlank()) null else CaptionDraft(text = caption, hashtags = emptyList()),
                 updatedAt = nextUpdatedAt(draft),
+            ),
+        )
+    }
+
+    override fun saveAltText(id: PostDraftId, altText: String) {
+        val draft = drafts.get(id) ?: return
+        val existing = draft.finalPostContent
+        if (existing?.editedAltText.orEmpty() == altText) return
+        val updatedAt = nextUpdatedAt(draft)
+        drafts.save(
+            draft.copy(
+                finalPostContent = FinalPostContent(
+                    draftId = id,
+                    editedCaption = existing?.editedCaption,
+                    editedAltText = altText.takeIf { it.isNotBlank() },
+                    updatedAtEpochMillis = updatedAt.toEpochMilliseconds(),
+                ),
+                updatedAt = updatedAt,
             ),
         )
     }

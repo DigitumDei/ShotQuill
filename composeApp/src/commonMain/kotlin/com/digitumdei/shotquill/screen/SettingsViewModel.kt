@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.digitumdei.shotquill.image.PhotoRenderer
+import com.digitumdei.shotquill.shared.ai.AiOperation
 import com.digitumdei.shotquill.shared.domain.CaptionSnippet
 import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
@@ -12,13 +13,20 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.settings.SecretRedactor
 
 data class SettingsState(
     val settings: LocalAppSettings = LocalAppSettings(),
     val logoSize: PixelSize? = null,
-    /** True while an OpenAI key saved by an earlier version is still on the device. */
-    val hasLegacyApiKey: Boolean = false,
-)
+    /** Something to tell the user about the logo they just chose, or why choosing it failed. */
+    val logoNote: String? = null,
+    val logoNoteIsError: Boolean = false,
+    /** The saved AI API key with its middle hidden, or null when there is none. The key itself is never shown. */
+    val apiKeyHint: String? = null,
+    val apiKeyMessage: String? = null,
+) {
+    val hasApiKey: Boolean get() = apiKeyHint != null
+}
 
 /** Every change is written straight away: there is no save button to forget. */
 class SettingsViewModel(
@@ -37,7 +45,19 @@ class SettingsViewModel(
     fun setLogoUri(uri: String?) {
         val previous = state.settings.logo.uri
         update { it.copy(logo = it.logo.copy(uri = uri)) }
+        state = state.copy(logoNote = null, logoNoteIsError = false)
         if (previous != null && previous != uri) renderer?.discard(previous)
+    }
+
+    /** A logo was chosen and copied in. [caution] is anything about it worth fixing at the source. */
+    fun logoImported(uri: String, caution: String?) {
+        setLogoUri(uri)
+        state = state.copy(logoNote = caution, logoNoteIsError = false)
+    }
+
+    /** Choosing a logo failed; the logo already in use, if any, is kept. */
+    fun logoImportFailed(message: String) {
+        state = state.copy(logoNote = message, logoNoteIsError = true)
     }
 
     fun setLogoWidth(fraction: Float) = update {
@@ -72,9 +92,30 @@ class SettingsViewModel(
         }
     }
 
-    fun clearLegacyApiKey() {
+    fun setAiBaseUrl(url: String) = update { it.copy(ai = it.ai.copy(baseUrl = url.trim())) }
+
+    fun setAiModels(operation: AiOperation, models: List<String>) =
+        update { it.copy(ai = it.ai.withModels(operation, models)) }
+
+    fun saveApiKey(apiKey: String) {
+        val trimmed = apiKey.trim()
+        if (trimmed.isEmpty()) return
+        state = try {
+            repository.saveOpenAiApiKey(trimmed)
+            state.copy(apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed), apiKeyMessage = "Key saved.")
+        } catch (e: Exception) {
+            state.copy(
+                apiKeyMessage = SecretRedactor.redactKnownSecrets(
+                    "The key could not be saved: ${e.message ?: "unknown error"}",
+                    listOf(trimmed),
+                ),
+            )
+        }
+    }
+
+    fun clearApiKey() {
         repository.clearOpenAiApiKey()
-        state = state.copy(hasLegacyApiKey = false)
+        state = state.copy(apiKeyHint = null, apiKeyMessage = "Key removed. Nothing will be sent anywhere.")
     }
 
     private fun update(change: (LocalAppSettings) -> LocalAppSettings) {
@@ -96,7 +137,8 @@ class SettingsViewModel(
         return SettingsState(
             settings = settings,
             logoSize = settings.logo.uri?.let { renderer?.orientedSize(it) },
-            hasLegacyApiKey = runCatching { repository.hasOpenAiApiKey() }.getOrDefault(false),
+            apiKeyHint = runCatching { repository.getOpenAiApiKey() }.getOrNull()
+                ?.let(SecretRedactor::maskOpenAiApiKey),
         )
     }
 }

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Only used when alt text is requested from the AI service set up in settings. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Dictating a caption. Recognition is done by the phone's speech service, not by this app. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 

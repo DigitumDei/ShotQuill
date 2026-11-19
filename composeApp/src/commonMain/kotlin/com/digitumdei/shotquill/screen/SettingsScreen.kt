@@ -24,13 +24,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.digitumdei.shotquill.shared.ai.AiOperation
+import com.digitumdei.shotquill.shared.ai.AiSettings
+import com.digitumdei.shotquill.shared.ai.parseModelList
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelSize
@@ -132,7 +142,8 @@ fun SettingsScreen(
 
             SettingsGroup(
                 label = "Logo",
-                detail = "A PNG with a transparent background works best.",
+                detail = "An SVG stays sharp at any size. A PNG with a transparent background also works. " +
+                    "For an SVG from Inkscape, convert text to paths and resize the page to the artwork first.",
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -168,6 +179,17 @@ fun SettingsScreen(
                             TextButton(onClick = { viewModel.setLogoUri(null) }) { Text("Remove") }
                         }
                     }
+                }
+                state.logoNote?.let { note ->
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (state.logoNoteIsError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
                 }
                 if (logo.uri != null) {
                     LabeledSlider(
@@ -239,17 +261,94 @@ fun SettingsScreen(
                 }
             }
 
-            if (state.hasLegacyApiKey) {
-                SettingsGroup(
-                    label = "Left over",
-                    detail = "An OpenAI key saved by an earlier version is still stored on this phone. This version never uses it.",
+            SettingsGroup(
+                label = "AI for alt text",
+                detail = "Optional. With a key saved, a post's alt text can be written for you: the cropped photo " +
+                    "and your caption are sent to the service below, and only when you ask. Any service that " +
+                    "speaks the OpenAI API works.",
+            ) {
+                val ai = settings.ai
+                var urlText by remember(viewModel) { mutableStateOf(ai.baseUrl) }
+                var keyText by remember(viewModel) { mutableStateOf("") }
+                var modelsText by remember(viewModel) {
+                    mutableStateOf(ai.modelsFor(AiOperation.AltText).joinToString("\n"))
+                }
+
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = {
+                        urlText = it
+                        viewModel.setAiBaseUrl(it)
+                    },
+                    label = { Text("Service address") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (urlText.trim() != AiSettings.DefaultBaseUrl) {
+                    TextButton(
+                        onClick = {
+                            urlText = AiSettings.DefaultBaseUrl
+                            viewModel.setAiBaseUrl(AiSettings.DefaultBaseUrl)
+                        },
+                    ) { Text("Use OpenRouter's address") }
+                }
+
+                OutlinedTextField(
+                    value = keyText,
+                    onValueChange = { keyText = it },
+                    label = { Text(if (state.hasApiKey) "Replace API key" else "API key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedButton(onClick = viewModel::clearLegacyApiKey) { Text("Delete the stored key") }
+                    Button(
+                        onClick = {
+                            viewModel.saveApiKey(keyText)
+                            keyText = ""
+                        },
+                        enabled = keyText.isNotBlank(),
+                    ) { Text("Save key") }
+                    if (state.hasApiKey) {
+                        TextButton(onClick = viewModel::clearApiKey) { Text("Remove key") }
+                    }
+                }
+                Text(
+                    text = state.apiKeyMessage
+                        ?: state.apiKeyHint?.let { "A key is saved ($it)." }
+                        ?: "No key saved, so nothing is sent anywhere.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                AiOperation.entries.forEach { operation ->
+                    // One list per kind of AI job. Alt text is the only job today.
+                    OutlinedTextField(
+                        value = modelsText,
+                        onValueChange = {
+                            modelsText = it
+                            viewModel.setAiModels(operation, parseModelList(it))
+                        },
+                        label = { Text("${operation.label} models, one per line") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "The first is used unless you pick another on the post. Clear the list to get the " +
+                            "starting models back.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
             Text(
-                privacyNote(dictationOnDevice),
+                privacyNote(dictationOnDevice, aiConfigured = state.hasApiKey),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -277,15 +376,21 @@ private fun SettingsGroup(
     }
 }
 
-internal fun privacyNote(dictationOnDevice: Boolean?): String {
-    val base = "ShotQuill prepares photos on this phone. Nothing is generated, and the app itself never " +
-        "connects to the internet."
-    return when (dictationOnDevice) {
-        true -> "$base Dictation is recognised on this phone too."
-        false -> "$base Dictation uses your phone's speech service, which may send your voice to its " +
-            "provider to recognise it."
-        null -> base
+internal fun privacyNote(dictationOnDevice: Boolean?, aiConfigured: Boolean): String {
+    val photos = "ShotQuill prepares photos on this phone and never generates the image or the caption."
+    val network = if (aiConfigured) {
+        "It connects to the internet only when you ask for alt text, to send that photo and caption to " +
+            "the AI service you set up."
+    } else {
+        "It does not connect to the internet unless you set up AI for alt text."
     }
+    val dictation = when (dictationOnDevice) {
+        true -> " Dictation is recognised on this phone."
+        false -> " Dictation uses your phone's speech service, which may send your voice to its provider " +
+            "to recognise it."
+        null -> ""
+    }
+    return "$photos $network$dictation"
 }
 
 /** Sliders report long fractions; two decimals is as fine as the eye can tell. */

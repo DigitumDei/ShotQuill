@@ -33,12 +33,14 @@ kover {
             "com.digitumdei.shotquill.media.ContentResolverMediaImporter*",
             "com.digitumdei.shotquill.media.LogoImporter*",
             "com.digitumdei.shotquill.image.AndroidPhotoRenderer*",
+            "com.digitumdei.shotquill.image.SvgLogo*",
             "com.digitumdei.shotquill.speech.Android*",
             "com.digitumdei.shotquill.screen.HomeScreenKt*",
             "com.digitumdei.shotquill.screen.PostEditorScreenKt*",
             "com.digitumdei.shotquill.screen.SettingsScreenKt*",
             "com.digitumdei.shotquill.ui.*",
             "com.digitumdei.shotquill.shared.db.*",
+            "com.digitumdei.shotquill.shared.ai.UrlConnectionAiHttpTransport*",
         )
 
         filters {
