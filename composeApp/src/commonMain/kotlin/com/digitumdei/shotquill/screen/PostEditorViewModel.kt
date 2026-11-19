@@ -211,10 +211,14 @@ class PostEditorViewModel(
 
     fun persistTags() {
         if (!state.isLoaded) return
-        state.tags.forEach { (target, tags) ->
-            if (savedTags[target] != tags) store.saveTags(draftId, target, tags)
+        // One reading of the tags serves both the writing and the record of
+        // what was written. Typing can carry on while this runs, and anything
+        // typed meanwhile must still count as unsaved.
+        val tags = state.tags
+        tags.forEach { (target, text) ->
+            if (savedTags[target] != text) store.saveTags(draftId, target, text)
         }
-        savedTags = state.tags
+        savedTags = tags
     }
 
     /**

@@ -415,6 +415,24 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun tagsTypedWhileAnEarlierSaveIsRunningAreStillSavedAfterwards() {
+        val vm = loadedViewModel()
+        vm.updateTags(PublishTarget.Bluesky, "#beersky")
+        // Typing carries on while the first save is being written.
+        store.whileSavingTags = { vm.updateTags(PublishTarget.Bluesky, "#beersky #craftbeer") }
+
+        vm.persistTags()
+        store.whileSavingTags = null
+        assertEquals(listOf(PublishTarget.Bluesky to "#beersky"), store.savedTags)
+
+        vm.persistTags()
+        assertEquals(
+            listOf(PublishTarget.Bluesky to "#beersky", PublishTarget.Bluesky to "#beersky #craftbeer"),
+            store.savedTags,
+        )
+    }
+
+    @Test
     fun blueskyTagsCountTowardsItsLimit() {
         val vm = loadedViewModel()
         vm.updateBlueskyText("a".repeat(295))
@@ -804,6 +822,7 @@ private class FakeStore : PostEditorStore {
     val savedAltTexts = mutableListOf<String>()
     val savedBlueskyTexts = mutableListOf<String>()
     val savedTags = mutableListOf<Pair<PublishTarget, String>>()
+    var whileSavingTags: (() -> Unit)? = null
     var publishedTo: Triple<PublishTarget, String, String>? = null
     var sharedWith: String? = null
     var removed = false
@@ -835,6 +854,7 @@ private class FakeStore : PostEditorStore {
 
     override fun saveTags(id: PostDraftId, target: PublishTarget, tags: String) {
         savedTags += target to tags
+        whileSavingTags?.invoke()
     }
 
     override fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String) {

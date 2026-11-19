@@ -36,7 +36,7 @@ class AndroidPhotoRenderer(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        return if (rotationDegrees(path) % 180 != 0) {
+        return if (orientation(path).swapsSides) {
             PixelSize(bounds.outHeight, bounds.outWidth)
         } else {
             PixelSize(bounds.outWidth, bounds.outHeight)
@@ -245,19 +245,22 @@ class AndroidPhotoRenderer(
     private fun decodeOriented(path: String, sampleSize: Int): Bitmap? {
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val decoded = BitmapFactory.decodeFile(path, options) ?: return null
-        val degrees = rotationDegrees(path)
-        if (degrees == 0) return decoded
-        val rotated = Bitmap.createBitmap(
+        val orientation = orientation(path)
+        if (orientation.isUpright) return decoded
+        val upright = Bitmap.createBitmap(
             decoded,
             0,
             0,
             decoded.width,
             decoded.height,
-            Matrix().apply { postRotate(degrees.toFloat()) },
+            Matrix().apply {
+                postRotate(orientation.degrees.toFloat())
+                if (orientation.mirrored) postScale(-1f, 1f)
+            },
             true,
         )
-        if (rotated !== decoded) decoded.recycle()
-        return rotated
+        if (upright !== decoded) decoded.recycle()
+        return upright
     }
 
     private fun sampleSizeFor(cropWidth: Float, targetWidth: Int): Int {
@@ -266,16 +269,13 @@ class AndroidPhotoRenderer(
         return sample
     }
 
-    private fun rotationDegrees(path: String): Int =
+    private fun orientation(path: String): PhotoOrientation =
         try {
-            when (ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
-                else -> 0
-            }
+            photoOrientationFor(
+                ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL),
+            )
         } catch (_: Exception) {
-            0
+            PhotoOrientation()
         }
 
     private fun String.toFilePath(): String? =
