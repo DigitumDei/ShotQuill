@@ -179,7 +179,13 @@ class SettingsViewModel(
                 it.copy(
                     instagram = InstagramSettings(
                         tokenSavedAtMillis = now,
-                        tokenExpiresAtMillis = now + LongLivedTokenMillis,
+                        // Only the older kind of token has a known life; the newer kind
+                        // lasts for whatever was chosen in Meta's console.
+                        tokenExpiresAtMillis = if (InstagramSettings.isInstagramLoginToken(trimmed)) {
+                            now + LongLivedTokenMillis
+                        } else {
+                            0L
+                        },
                     ),
                 )
             }

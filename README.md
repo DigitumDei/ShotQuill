@@ -152,19 +152,28 @@ Image hosting, in the Firebase console for a project on the Blaze plan:
    that file (or the `firebaseConfig` block), then enter the upload user's
    email and password.
 
-Instagram access, at developers.facebook.com:
+Instagram access, at developers.facebook.com. The app has to be owned by a
+business portfolio:
 
-1. Create an app and add the Instagram product, choosing the API setup with
-   Instagram login.
-2. Add your Instagram professional account to the app as an Instagram tester,
-   and accept the invitation from within Instagram.
-3. Generate an access token for that account with the
-   `instagram_business_content_publish` permission.
-4. In ShotQuill Settings, Instagram: save the token, then use "Check
+1. Create an app with the use case "Manage messaging & content on Instagram".
+2. Use cases, Customize, then "API setup with Unified login". Make sure the
+   permissions include `instagram_basic` and `instagram_content_publish`.
+3. Under "Generate access tokens", choose "Add account" to invite your
+   Instagram professional account as an Instagram Tester. Accept the invite in
+   Instagram on the web: Settings, Website permissions, Apps and websites,
+   Tester Invites.
+4. "Generate token" and copy it; it is shown once. If you are offered an
+   expiry, "never" saves making a new one later.
+5. In ShotQuill Settings, Instagram: save the token, then use "Check
    connection". It confirms the account and that image hosting accepts an
    upload, without posting anything.
 
-The token lasts about sixty days and the app renews it whenever you post.
+The app can stay unpublished: that is enough to post to an account that has a
+role on it. An older app that still offers "API setup with Instagram login"
+works too. Its tokens begin with `IG`, need the
+`instagram_business_content_publish` permission, last about sixty days, and
+are renewed by the app whenever you post.
+
 Instagram's API takes feed shapes from 4:5 to 1.91:1, so a 9:16 crop has to go
 through Share instead.
 

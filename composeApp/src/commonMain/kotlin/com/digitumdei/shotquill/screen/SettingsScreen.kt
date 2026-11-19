@@ -644,7 +644,7 @@ internal fun instagramStatus(state: SettingsState): String {
             .toLocalDateTime(TimeZone.currentSystemDefault()).date
         " The token is good until about $day and renews itself when you post."
     } else {
-        ""
+        " The token lasts for as long as you chose when making it in Meta's console."
     }
     val hosting = if (state.imageHostConfigured) "" else " Image hosting still needs setting up below."
     return "$account.$validity$hosting"

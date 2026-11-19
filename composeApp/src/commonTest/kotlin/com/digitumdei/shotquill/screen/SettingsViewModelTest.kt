@@ -252,6 +252,13 @@ class SettingsViewModelTest {
         assertTrue(instagramStatus(vm.state).contains("good until about 2027-01-1"))
         assertTrue(instagramStatus(vm.state).contains("Image hosting still needs setting up"))
 
+        vm.saveInstagramToken("EAAunified-abcdef-123456")
+        assertEquals(0L, repository.readSettings().instagram.tokenExpiresAtMillis)
+        assertEquals(now, repository.readSettings().instagram.tokenSavedAtMillis)
+        assertTrue(instagramStatus(vm.state).contains("for as long as you chose"))
+        assertFalse(instagramStatus(vm.state).contains("good until"))
+        vm.saveInstagramToken(" IGTOKEN-abcdef-123456 ")
+
         vm.useFirebaseConfig("nothing useful")
         assertTrue(vm.state.firebaseMessage.orEmpty().contains("does not contain a Firebase project"))
         assertFalse(vm.state.settings.firebaseHost.hasProject)

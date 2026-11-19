@@ -230,6 +230,73 @@ class InstagramTest {
     }
 
     @Test
+    fun aUnifiedLoginTokenPostsThroughMetasMainServerToTheAccountItWasGiven() {
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAunified-abcdef-123456")
+        // Old enough that an Instagram login token would be renewed.
+        settings.saveSettings(LocalAppSettings(instagram = InstagramSettings(tokenSavedAtMillis = 0L)))
+        transport.on(
+            "/me/assigned_instagram_accounts",
+            """{"data":[{"id":"17841400000000001","username":"doctrinebrewing"}],"paging":{"cursors":{"before":"a","after":"b"}}}""",
+        )
+        transport.on("/17841400000000001/media_publish", """{"id":"media-55"}""")
+        transport.on("/17841400000000001/media", """{"id":"container-9"}""")
+        transport.on("/container-9?fields=status_code", """{"status_code":"FINISHED"}""")
+        transport.on("/media-55?fields=permalink", """{"permalink":"https://www.instagram.com/p/XYZ789/"}""")
+
+        val result = publisher.publish(post())
+
+        assertEquals(PublishResult.Success("https://www.instagram.com/p/XYZ789/"), result)
+        assertEquals(
+            listOf(
+                "GET https://graph.facebook.com/v27.0/me/assigned_instagram_accounts?fields=id,username",
+                "POST https://graph.facebook.com/v27.0/17841400000000001/media",
+                "GET https://graph.facebook.com/v27.0/container-9?fields=status_code",
+                "POST https://graph.facebook.com/v27.0/17841400000000001/media_publish",
+                "GET https://graph.facebook.com/v27.0/media-55?fields=permalink",
+            ),
+            transport.requests.map { "${it.method} ${it.url}" },
+        )
+        assertTrue(transport.requests.all { it.headers["Authorization"] == "Bearer EAAunified-abcdef-123456" })
+        val body = Json.parseToJsonElement(transport.requests[1].body!!.decodeToString()).jsonObject
+        assertEquals("https://host.example/post-$now.jpg", body["image_url"]?.jsonPrimitive?.content)
+        assertEquals("A glass of beer.", body["alt_text"]?.jsonPrimitive?.content)
+        assertEquals("doctrinebrewing", settings.readSettings().instagram.username)
+        assertEquals("EAAunified-abcdef-123456", settings.getSecret(InstagramSettings.AccessTokenSecret))
+        assertEquals(host.uploaded, host.deleted)
+    }
+
+    @Test
+    fun aUnifiedLoginTokenKeepsToTheAccountUsedBeforeAndSaysWhenItHasNone() {
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAunified-abcdef-123456")
+        transport.on(
+            "/me/assigned_instagram_accounts",
+            """{"data":[{"id":"111","username":"another_account"},{"id":"222","username":"DoctrineBrewing"},{"username":"no_id"}]}""",
+        )
+        assertEquals("Connected to Instagram as @another_account, and image hosting works.", publisher.check())
+
+        settings.saveSettings(LocalAppSettings(instagram = InstagramSettings(username = "doctrinebrewing")))
+        assertEquals("Connected to Instagram as @DoctrineBrewing, and image hosting works.", publisher.check())
+
+        transport.on("/me/assigned_instagram_accounts", """{"data":[]}""")
+        val none = publisher.check()
+        assertTrue(none.contains("no Instagram account attached"))
+        assertTrue((publisher.publish(post()) as PublishResult.Failure).message.contains("no Instagram account attached"))
+        assertTrue(host.uploaded.size == 2)
+
+        transport.on(
+            "/me/assigned_instagram_accounts",
+            """{"error":{"message":"Invalid OAuth access token EAAunified-abcdef-123456","code":190}}""",
+            status = 400,
+        )
+        val refused = publisher.check()
+        assertTrue(refused.contains("did not accept the access token"))
+        assertFalse(refused.contains("EAAunified"))
+
+        assertTrue(InstagramSettings.isInstagramLoginToken(" IGAAexample "))
+        assertFalse(InstagramSettings.isInstagramLoginToken("EAAexample"))
+    }
+
+    @Test
     fun checkingTriesTheTokenAndTheHostingWithoutPosting() {
         happyPath()
 

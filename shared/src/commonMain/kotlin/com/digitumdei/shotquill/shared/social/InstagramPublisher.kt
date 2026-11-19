@@ -6,6 +6,7 @@ import com.digitumdei.shotquill.shared.domain.captionStats
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -21,6 +22,15 @@ data class InstagramSettings(
 ) {
     companion object {
         const val AccessTokenSecret = "instagram_access_token"
+
+        /**
+         * Meta hands out two kinds of token. The older "Instagram login" kind
+         * begins with IG, belongs to the Instagram account, lasts sixty days
+         * and can be renewed. The "Unified login" kind that new Meta apps get
+         * belongs to a business portfolio, is used on a different server, and
+         * lasts for as long as was chosen when it was made.
+         */
+        fun isInstagramLoginToken(token: String): Boolean = token.trim().startsWith("IG")
     }
 }
 
@@ -51,7 +61,10 @@ class InstagramPublisher(
     private val clock: EpochClock = EpochClock.Default,
     /** Waits between checks while Instagram is still fetching the image. */
     private val pause: (millis: Long) -> Unit = {},
+    /** Where an "Instagram login" token is used. */
     private val graphUrl: String = "https://graph.instagram.com",
+    /** Where a "Unified login" token is used. */
+    private val unifiedGraphUrl: String = "https://graph.facebook.com/v27.0",
 ) : PostPublisher {
     override val target: PublishTarget = PublishTarget.Instagram
 
@@ -125,6 +138,7 @@ class InstagramPublisher(
         return try {
             token = refreshIfDue(savedToken)
             val account = account(token)
+            val graph = graphFor(token)
 
             val fileName = "post-${clock.nowMillis()}.jpg"
             val imageUrl = try {
@@ -136,7 +150,7 @@ class InstagramPublisher(
 
             val container = post(
                 token,
-                "$graphUrl/${account.id}/media",
+                "$graph/${account.id}/media",
                 buildJsonObject {
                     put("image_url", imageUrl)
                     if (post.text.isNotBlank()) put("caption", post.text)
@@ -149,7 +163,7 @@ class InstagramPublisher(
 
             val mediaId = post(
                 token,
-                "$graphUrl/${account.id}/media_publish",
+                "$graph/${account.id}/media_publish",
                 buildJsonObject { put("creation_id", container) },
                 step = "publish the post",
             ).text("id").ifEmpty {
@@ -157,7 +171,7 @@ class InstagramPublisher(
             }
 
             val permalink = runCatching {
-                get(token, "$graphUrl/$mediaId?fields=permalink", step = "find the post").text("permalink")
+                get(token, "$graph/$mediaId?fields=permalink", step = "find the post").text("permalink")
             }.getOrDefault("")
             PublishResult.Success(permalink.ifEmpty { "https://www.instagram.com/${account.username}/" })
         } catch (failure: StepFailed) {
@@ -171,22 +185,53 @@ class InstagramPublisher(
 
     private class Account(val id: String, val username: String)
 
+    private fun graphFor(token: String): String =
+        if (InstagramSettings.isInstagramLoginToken(token)) graphUrl else unifiedGraphUrl
+
     private fun account(token: String): Account {
+        val found = if (InstagramSettings.isInstagramLoginToken(token)) ownAccount(token) else assignedAccount(token)
+        val current = settings.readSettings()
+        if (found.username.isNotEmpty() && current.instagram.username != found.username) {
+            settings.saveSettings(current.copy(instagram = current.instagram.copy(username = found.username)))
+        }
+        return Account(id = found.id, username = found.username.ifEmpty { current.instagram.username })
+    }
+
+    /** An "Instagram login" token belongs to one account and can simply be asked whose it is. */
+    private fun ownAccount(token: String): Account {
         val me = get(token, "$graphUrl/me?fields=user_id,username", step = "sign in")
         val id = me.text("user_id").ifEmpty { me.text("id") }
         if (id.isEmpty()) throw StepFailed("Instagram signed in but did not say which account this is.")
-        val username = me.text("username")
-        val current = settings.readSettings()
-        if (username.isNotEmpty() && current.instagram.username != username) {
-            settings.saveSettings(current.copy(instagram = current.instagram.copy(username = username)))
+        return Account(id = id, username = me.text("username"))
+    }
+
+    /**
+     * A "Unified login" token belongs to a business portfolio, so it is asked
+     * which Instagram accounts it has been given. When there are several, the
+     * one used before is kept; otherwise the first.
+     */
+    private fun assignedAccount(token: String): Account {
+        val reply = get(token, "$unifiedGraphUrl/me/assigned_instagram_accounts?fields=id,username", step = "sign in")
+        val accounts = (reply["data"] as? JsonArray).orEmpty()
+            .mapNotNull { it as? JsonObject }
+            .map { Account(id = it.text("id"), username = it.text("username")) }
+            .filter { it.id.isNotEmpty() }
+        if (accounts.isEmpty()) {
+            throw StepFailed(
+                "Meta accepted the access token but it has no Instagram account attached. In Meta's developer " +
+                    "console, add your account under Generate access tokens and make a new token.",
+            )
         }
-        return Account(id = id, username = username.ifEmpty { current.instagram.username })
+        val usedBefore = settings.readSettings().instagram.username
+        return accounts.firstOrNull { usedBefore.isNotEmpty() && it.username.equals(usedBefore, ignoreCase = true) }
+            ?: accounts.first()
     }
 
     /** Instagram fetches the image in the background, so the container may not be ready at once. */
     private fun waitUntilReady(token: String, container: String) {
         repeat(MaxStatusChecks) { attempt ->
-            val status = get(token, "$graphUrl/$container?fields=status_code", step = "check the image").text("status_code")
+            val status = get(token, "${graphFor(token)}/$container?fields=status_code", step = "check the image")
+                .text("status_code")
             when (status) {
                 "", "FINISHED", "PUBLISHED" -> return
                 "ERROR", "EXPIRED" -> throw StepFailed(
@@ -199,12 +244,14 @@ class InstagramPublisher(
     }
 
     /**
-     * Long-lived tokens last about sixty days and can be renewed once they are
-     * a day old. Renewing whenever one is due keeps the connection alive for as
-     * long as the app is used now and then. A failed renewal is not fatal: the
-     * current token is simply used as it is.
+     * Long-lived "Instagram login" tokens last about sixty days and can be
+     * renewed once they are a day old. Renewing whenever one is due keeps the
+     * connection alive for as long as the app is used now and then. A failed
+     * renewal is not fatal: the current token is simply used as it is. A
+     * "Unified login" token cannot be renewed from the phone and is left alone.
      */
     private fun refreshIfDue(token: String): String {
+        if (!InstagramSettings.isInstagramLoginToken(token)) return token
         val now = clock.nowMillis()
         val instagram = settings.readSettings().instagram
         if (now - instagram.tokenSavedAtMillis < RefreshAfterMillis) return token
