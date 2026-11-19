@@ -313,7 +313,7 @@ fun PostEditorContent(
         ) {
             IconButton(
                 onClick = { confirmRemove = true },
-                enabled = state.isLoaded && !state.isPublishing && !state.isSharing,
+                enabled = state.isLoaded && !state.isPublishing && !state.isSharing && !state.isWritingAltText,
             ) {
                 Icon(ShotQuillIcons.Delete, contentDescription = "Remove post")
             }
@@ -337,7 +337,9 @@ fun PostEditorContent(
                     look = state.look,
                     logo = state.logo,
                     logoSize = state.logoSize,
-                    onPanZoom = onPanZoom,
+                    // While a tag is being placed, a touch on the photo places it: a
+                    // finger that slips a little must not drag the framing instead.
+                    onPanZoom = if (state.placingTag == null && !state.isPublishing && !state.isSharing) onPanZoom else null,
                     markers = state.photoTags.map {
                         PhotoMarker("@${it.username}", it.x, it.y, selected = it.username == state.placingTag)
                     },

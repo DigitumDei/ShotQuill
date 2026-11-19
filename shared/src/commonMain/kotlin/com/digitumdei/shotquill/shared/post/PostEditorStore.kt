@@ -103,9 +103,13 @@ class DraftBackedPostEditorStore(
     }
 
     override fun removedPostPhotos(): List<String> = synchronized(lock) {
-        drafts.listPostDrafts()
-            .filter { it.status == DraftStatus.Archived }
-            .mapNotNull { it.primaryMediaUri }
+        val all = drafts.listPostDrafts()
+        // A photo a listed post still uses is not freed by clearing, so it is not counted.
+        val stillUsed = all.filter { it.status != DraftStatus.Archived }.mapNotNull { it.primaryMediaUri }.toSet()
+        all.filter { it.status == DraftStatus.Archived }
+            .flatMap { removed -> listOfNotNull(removed.primaryMediaUri, treatments.get(removed.id)?.renderedUri) }
+            .filter { it !in stillUsed }
+            .distinct()
     }
 
     override fun clearRemovedPosts(): List<String> = synchronized(lock) {
@@ -143,6 +147,7 @@ class DraftBackedPostEditorStore(
 
     override fun saveInstagramExtras(id: PostDraftId, photoTags: List<PhotoTag>, collaborators: String) {
         synchronized(lock) {
+            if (listed(id) == null) return
             val existing = stored(id)
             if (existing.photoTags == photoTags && existing.collaborators == collaborators) return
             treatments.save(id, existing.copy(photoTags = photoTags, collaborators = collaborators))
@@ -151,7 +156,7 @@ class DraftBackedPostEditorStore(
 
     override fun saveCaption(id: PostDraftId, caption: String) {
         synchronized(lock) {
-            val draft = drafts.get(id) ?: return
+            val draft = listed(id) ?: return
             if (draft.caption?.text.orEmpty() == caption) return
             drafts.save(
                 draft.copy(
@@ -164,7 +169,7 @@ class DraftBackedPostEditorStore(
 
     override fun saveAltText(id: PostDraftId, altText: String) {
         synchronized(lock) {
-            val draft = drafts.get(id) ?: return
+            val draft = listed(id) ?: return
             val existing = draft.finalPostContent
             if (existing?.editedAltText.orEmpty() == altText) return
             val updatedAt = nextUpdatedAt(draft)
@@ -184,12 +189,14 @@ class DraftBackedPostEditorStore(
 
     override fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment) {
         synchronized(lock) {
+            if (listed(id) == null) return
             treatments.save(id, stored(id).copy(treatment = treatment))
         }
     }
 
     override fun saveBlueskyText(id: PostDraftId, text: String) {
         synchronized(lock) {
+            if (listed(id) == null) return
             val existing = stored(id)
             if (existing.blueskyText == text) return
             treatments.save(id, existing.copy(blueskyText = text))
@@ -198,6 +205,7 @@ class DraftBackedPostEditorStore(
 
     override fun saveTags(id: PostDraftId, target: PublishTarget, tags: String) {
         synchronized(lock) {
+            if (listed(id) == null) return
             val existing = stored(id)
             if (existing.tags[target] == tags) return
             treatments.save(id, existing.copy(tags = existing.tags + (target to tags)))
@@ -213,6 +221,13 @@ class DraftBackedPostEditorStore(
     }
 
     private fun stored(id: PostDraftId): StoredTreatment = treatments.get(id) ?: StoredTreatment(PhotoTreatment())
+
+    /**
+     * The draft, when it is still on the list. A save that arrives after the
+     * post was removed, such as alt text that was being written at the time,
+     * finds nothing here and is dropped rather than written onto a removed post.
+     */
+    private fun listed(id: PostDraftId): PostDraft? = drafts.get(id)?.takeIf { it.status != DraftStatus.Archived }
 
     override fun markShared(id: PostDraftId, renderedUri: String) {
         synchronized(lock) {

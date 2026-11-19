@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -326,6 +327,13 @@ fun PhotoStage(
                                 (marker.x.coerceIn(0f, 1f) * stageWidthPx).roundToInt(),
                                 (marker.y.coerceIn(0f, 1f) * stageHeightPx).roundToInt(),
                             )
+                        }
+                        // Slides the label back by the same share of its own size, so
+                        // it starts at the point on the left edge, ends at it on the
+                        // right edge, and is never cut off by the frame.
+                        .graphicsLayer {
+                            translationX = -size.width * marker.x.coerceIn(0f, 1f)
+                            translationY = -size.height * marker.y.coerceIn(0f, 1f)
                         }
                         .background(
                             color = if (marker.selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),

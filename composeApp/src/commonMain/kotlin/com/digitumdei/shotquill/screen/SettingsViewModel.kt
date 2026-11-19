@@ -136,7 +136,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveOpenAiApiKey(trimmed)
-            state.copy(apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed), apiKeyMessage = "Key saved.")
+            state.copy(
+                apiKeyHint = SecretRedactor.maskOpenAiApiKey(trimmed),
+                apiKeyMessage = "Key saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 apiKeyMessage = SecretRedactor.redactKnownSecrets(
@@ -156,7 +160,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveSecret(BlueskySettings.AppPasswordSecret, trimmed)
-            state.copy(blueskyPasswordSaved = true, blueskyMessage = "App password saved.")
+            state.copy(
+                blueskyPasswordSaved = true,
+                blueskyMessage = "App password saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 blueskyMessage = SecretRedactor.redactKnownSecrets(
@@ -197,7 +205,11 @@ class SettingsViewModel(
                     ),
                 )
             }
-            state = state.copy(instagramTokenSaved = true, instagramMessage = "Token saved. Use the check below to try it.")
+            state = state.copy(
+                instagramTokenSaved = true,
+                instagramMessage = "Token saved. Use the check below to try it.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state = state.copy(
                 instagramMessage = SecretRedactor.redactKnownSecrets(
@@ -245,7 +257,11 @@ class SettingsViewModel(
         if (trimmed.isEmpty()) return
         state = try {
             repository.saveSecret(FirebaseHostSettings.UploadPasswordSecret, trimmed)
-            state.copy(firebasePasswordSaved = true, firebaseMessage = "Upload password saved.")
+            state.copy(
+                firebasePasswordSaved = true,
+                firebaseMessage = "Upload password saved.",
+                secretStorageNotice = currentSecretNotice(),
+            )
         } catch (e: Exception) {
             state.copy(
                 firebaseMessage = SecretRedactor.redactKnownSecrets(
@@ -308,6 +324,8 @@ class SettingsViewModel(
             storageMessage = "Cleared ${postsWord(count)}, freeing ${formatBytes(freed)}.",
         )
     }
+
+    private fun currentSecretNotice(): String? = runCatching { repository.secretStorageNotice }.getOrNull()
 
     private fun readState(): SettingsState {
         val settings = repository.readSettings()

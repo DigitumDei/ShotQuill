@@ -142,6 +142,45 @@ class PostEditorStoreTest {
     }
 
     @Test
+    fun savesThatArriveAfterAPostWasRemovedAreDropped() {
+        val id = newPost("gone")
+        store.saveCaption(id, "Written before")
+        store.remove(id)
+        val savesBefore = drafts.saveCount
+
+        store.saveCaption(id, "Written after")
+        store.saveAltText(id, "Described after")
+        store.saveTreatment(id, PhotoTreatment(zoom = 2f))
+        store.saveBlueskyText(id, "After")
+        store.saveTags(id, PublishTarget.Bluesky, "#after")
+        store.saveInstagramExtras(id, listOf(PhotoTag("after")), "after")
+
+        assertEquals(savesBefore, drafts.saveCount)
+        assertNull(treatments.get(id))
+        assertEquals("Written before", drafts.get(id)?.caption?.text)
+        // And nothing is created for a post that never existed.
+        store.saveTreatment(PostDraftId("never"), PhotoTreatment())
+        assertNull(treatments.get(PostDraftId("never")))
+    }
+
+    @Test
+    fun whatIsCountedAsRemovedIsWhatClearingWouldFree() {
+        val listed = newPost("listed", uri = "file:///photos/shared.jpg")
+        val removedSharingAPhoto = newPost("twin", uri = "file:///photos/shared.jpg")
+        val removed = newPost("removed")
+        store.remove(removedSharingAPhoto)
+        store.remove(removed)
+        // An image left beside a removed post by some other route is counted, since clearing deletes it too.
+        treatments.save(removed, StoredTreatment(PhotoTreatment(), renderedUri = "file:///edited/removed.jpg"))
+
+        assertEquals(
+            setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"),
+            store.removedPostPhotos().toSet(),
+        )
+        assertNotNull(store.load(listed))
+    }
+
+    @Test
     fun aNewPostOpensWithItsPhotoAndNothingElse() {
         val id = newPost("one")
 

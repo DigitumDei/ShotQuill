@@ -561,12 +561,13 @@ class PostEditorViewModel(
         }
         when (val result = writer.write(jpeg, current.caption, current.altTextModel)) {
             is AiResult.Success -> {
-                update { it.copy(isWritingAltText = false, altText = result.text) }
-                store.saveAltText(draftId, result.text)
+                // Only if the post is still open: it may have been removed while the description was on its way.
+                val stillOpen = updateIf({ it.isLoaded }) { it.copy(isWritingAltText = false, altText = result.text) }
+                if (stillOpen) store.saveAltText(draftId, result.text)
             }
 
             is AiResult.Failure -> {
-                update { it.copy(isWritingAltText = false, message = result.message) }
+                updateIf({ it.isLoaded }) { it.copy(isWritingAltText = false, message = result.message) }
             }
         }
     }
@@ -583,40 +584,44 @@ class PostEditorViewModel(
         update { it.copy(message = message) }
     }
 
+    /**
+     * Changes how the photo is framed or treated. Not while it is being shared
+     * or posted: the image going out was made from the framing as it was, and
+     * that image is what gets recorded for the post.
+     */
+    private inline fun changeTreatment(change: (PhotoTreatment) -> PhotoTreatment) {
+        updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing }) { it.copy(treatment = change(it.treatment)) }
+    }
+
     fun selectShape(shape: CropShape) {
         if (!state.isLoaded || state.treatment.cropShape == shape) return
-        update { it.copy(treatment = it.treatment.withShape(shape)) }
+        changeTreatment { it.withShape(shape) }
     }
 
     /** A drag and pinch on the photo, in fractions of the visible crop. */
     fun panZoom(panXFraction: Float, panYFraction: Float, zoomChange: Float) {
         val size = state.imageSize ?: return
-        update {
-            it.copy(
-                treatment = it.treatment.panZoomed(
-                    panXFraction = panXFraction,
-                    panYFraction = panYFraction,
-                    zoomChange = zoomChange,
-                    imageWidth = size.width,
-                    imageHeight = size.height,
-                ),
+        changeTreatment {
+            it.panZoomed(
+                panXFraction = panXFraction,
+                panYFraction = panYFraction,
+                zoomChange = zoomChange,
+                imageWidth = size.width,
+                imageHeight = size.height,
             )
         }
     }
 
     fun setLookEnabled(enabled: Boolean) {
-        if (!state.isLoaded) return
-        update { it.copy(treatment = it.treatment.copy(lookEnabled = enabled)) }
+        changeTreatment { it.copy(lookEnabled = enabled) }
     }
 
     fun setLogoEnabled(enabled: Boolean) {
-        if (!state.isLoaded) return
-        update { it.copy(treatment = it.treatment.copy(logoEnabled = enabled)) }
+        changeTreatment { it.copy(logoEnabled = enabled) }
     }
 
     fun setLogoCorner(corner: LogoCorner) {
-        if (!state.isLoaded) return
-        update { it.copy(treatment = it.treatment.copy(logoCorner = corner)) }
+        changeTreatment { it.copy(logoCorner = corner) }
     }
 
     fun persistTreatment() {
@@ -822,11 +827,11 @@ class PostEditorViewModel(
 
     /**
      * Removes the post from the list and deletes the image made from it. Not
-     * while it is being shared or posted: that would finish afterwards and
-     * record the post as shared again.
+     * while it is being shared, posted or described: that would finish
+     * afterwards and write to a post that is gone.
      */
     fun remove() {
-        val removing = updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing }) {
+        val removing = updateIf({ it.isLoaded && !it.isPublishing && !it.isSharing && !it.isWritingAltText }) {
             PostEditorState(isMissing = true)
         }
         if (!removing) {

@@ -156,6 +156,8 @@ class AndroidStorageTest {
         assertNull(repository.getSecret("old"))
         repository.saveSecret("fresh", "value-1")
         assertEquals("value-1", repository.getSecret("fresh"))
+        // Entering a secret again answers the notice, so it does not stay up for the rest of the session.
+        assertNull(repository.secretStorageNotice)
         assertEquals(2, attempts)
 
         // A healthy store has nothing to report.

@@ -367,6 +367,31 @@ class InstagramTest {
     }
 
     @Test
+    fun whatWasLearnedWithOneTokenIsNotCarriedOverToAnother() {
+        unified()
+        transport.on(
+            "business_discovery",
+            """{"error":{"message":"(#10) Application does not have permission for this action","code":10}}""",
+            status = 400,
+        )
+        assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
+        assertEquals(1, transport.requests.count { it.url.contains("business_discovery") })
+
+        // A new token, for another account, with the permission the first lacked.
+        settings.saveSecret(InstagramSettings.AccessTokenSecret, "EAAsecond-abcdef-654321")
+        transport.on("/me/assigned_instagram_accounts", """{"data":[{"id":"2222","username":"second_account"}]}""")
+        transport.on(
+            "business_discovery",
+            """{"business_discovery":{"username":"some_friend","name":"Some Friend Brewing"},"id":"2222"}""",
+        )
+
+        assertEquals(AccountLookup.Found("some_friend", "Some Friend Brewing"), publisher.findAccount("some_friend"))
+        val lookup = transport.requests.last { it.url.contains("business_discovery") }
+        assertTrue(lookup.url.startsWith("https://graph.facebook.com/v27.0/2222?"), lookup.url)
+        assertEquals("Bearer EAAsecond-abcdef-654321", lookup.headers["Authorization"])
+    }
+
+    @Test
     fun namesAreNotLookedUpWithAnInstagramLoginTokenOrWithoutAToken() {
         assertEquals(AccountLookup.CannotCheck, publisher.findAccount("some_friend"))
         settings.clearSecret(InstagramSettings.AccessTokenSecret)

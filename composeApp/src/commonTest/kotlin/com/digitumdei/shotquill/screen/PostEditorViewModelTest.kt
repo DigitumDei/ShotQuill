@@ -731,6 +731,47 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun aPostCannotBeRemovedWhileItsAltTextIsBeingWritten() {
+        setUpAi()
+        val vm = loadedViewModel()
+        var removalMessage: String? = null
+        aiTransport.whileDescribing = {
+            vm.remove()
+            removalMessage = vm.state.message
+        }
+
+        vm.writeAltText()
+
+        assertEquals("Wait for this to finish before removing the post.", removalMessage)
+        assertFalse(store.removed)
+        assertEquals("A photo.", vm.state.altText)
+        assertEquals(listOf("A photo."), store.savedAltTexts)
+    }
+
+    @Test
+    fun theFramingCannotBeChangedWhileThePostIsOnItsWay() {
+        val vm = loadedViewModel()
+        val before = vm.state.treatment
+        bluesky.whilePublishing = {
+            vm.selectShape(CropShape.Story)
+            vm.panZoom(0.2f, 0.2f, 1.5f)
+            vm.setLookEnabled(!before.lookEnabled)
+            vm.setLogoEnabled(!before.logoEnabled)
+            vm.setLogoCorner(LogoCorner.TopStart)
+            // Words are a different matter: they can still be typed.
+            vm.updateCaption("Typed meanwhile")
+        }
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertEquals(before, vm.state.treatment)
+        assertEquals("Typed meanwhile", vm.state.caption)
+        // Once it is out, the framing can be changed again.
+        vm.selectShape(CropShape.Story)
+        assertEquals(CropShape.Story, vm.state.treatment.cropShape)
+    }
+
+    @Test
     fun instagramGetsTheCaptionEvenWhenThereIsABlueskyText() {
         instagram.configured = true
         instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/")
@@ -1159,7 +1200,11 @@ private class FakeAiTransport : AiHttpTransport {
     var url: String? = null
     var body: String = ""
 
+    /** Runs while the description is "on its way". */
+    var whileDescribing: (() -> Unit)? = null
+
     override fun postJson(url: String, headers: Map<String, String>, body: String): AiHttpResponse {
+        whileDescribing?.invoke()
         this.url = url
         this.body = body
         return reply

@@ -361,6 +361,13 @@ class PostEditorContentTest {
     }
 
     @Test
+    fun aPostWhoseAltTextIsBeingWrittenCannotBeRemoved() {
+        show(loaded().copy(aiConfigured = true, isWritingAltText = true))
+
+        compose.onNodeWithContentDescription("Remove post").assertIsNotEnabled()
+    }
+
+    @Test
     fun removingAPostAsksFirst() {
         show(loaded())
 

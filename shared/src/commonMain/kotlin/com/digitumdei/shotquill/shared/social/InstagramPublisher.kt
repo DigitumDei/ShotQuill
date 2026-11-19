@@ -241,6 +241,19 @@ class InstagramPublisher(
     @Volatile
     private var lookupsRefused = false
 
+    // Both of those are only true of the token they were learned with. A new
+    // token may belong to another account or carry other permissions.
+    @Volatile
+    private var rememberedForToken: String? = null
+
+    private fun forgetIfTokenChanged(token: String) {
+        if (rememberedForToken != token) {
+            knownAccount = null
+            lookupsRefused = false
+            rememberedForToken = token
+        }
+    }
+
     /**
      * Asks Meta about another account by name. Meta documents this lookup
      * (Business Discovery) only for the older Facebook login, and it only
@@ -250,6 +263,7 @@ class InstagramPublisher(
     override fun findAccount(name: String): AccountLookup {
         val wanted = name.trim().removePrefix("@").lowercase()
         val token = settings.getSecret(InstagramSettings.AccessTokenSecret) ?: return AccountLookup.CannotCheck
+        forgetIfTokenChanged(token)
         if (lookupsRefused || InstagramSettings.isInstagramLoginToken(token)) return AccountLookup.CannotCheck
         if (!LookupNamePattern.matches(wanted)) return AccountLookup.CannotCheck
         return try {
@@ -288,6 +302,7 @@ class InstagramPublisher(
     /** The names this account has mentioned in the captions of its recent posts, when Meta will show them. */
     override fun pastMentions(): List<String> {
         val token = settings.getSecret(InstagramSettings.AccessTokenSecret) ?: return emptyList()
+        forgetIfTokenChanged(token)
         return try {
             val account = knownAccount ?: account(token)
             val reply = get(
@@ -308,6 +323,7 @@ class InstagramPublisher(
         if (InstagramSettings.isInstagramLoginToken(token)) graphUrl else unifiedGraphUrl
 
     private fun account(token: String): Account {
+        forgetIfTokenChanged(token)
         val found = if (InstagramSettings.isInstagramLoginToken(token)) ownAccount(token) else assignedAccount(token)
         val current = settings.readSettings()
         if (found.username.isNotEmpty() && current.instagram.username != found.username) {

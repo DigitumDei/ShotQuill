@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.shared.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.concurrent.Volatile
 import java.io.File
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -208,7 +209,7 @@ class AndroidLocalSettingsRepository(
 
     private sealed interface SecretStore {
         /** [wasReset] is true when what was saved before could not be read and had to be cleared. */
-        class Available(val preferences: SharedPreferences, val wasReset: Boolean) : SecretStore
+        class Available(val preferences: SharedPreferences, @Volatile var wasReset: Boolean) : SecretStore
         data object Unavailable : SecretStore
     }
 
@@ -246,7 +247,8 @@ class AndroidLocalSettingsRepository(
 
     private fun writableSecrets(): SharedPreferences =
         when (val store = secretStore) {
-            is SecretStore.Available -> store.preferences
+            // Entering a secret again is the answer to "they were cleared", so the notice has done its job.
+            is SecretStore.Available -> store.preferences.also { store.wasReset = false }
             is SecretStore.Unavailable -> throw IllegalStateException(SecretsUnavailableMessage)
         }
 
