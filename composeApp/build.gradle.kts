@@ -48,6 +48,8 @@ kotlin {
         androidUnitTest.dependencies {
             implementation(libs.junit)
             implementation(libs.robolectric)
+            // Screen tests: Compose's test rule, run by Robolectric without an emulator.
+            implementation(libs.androidx.compose.ui.test.junit4)
         }
     }
 }
@@ -77,5 +79,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs the app's manifest, theme and resources to show a screen.
+            isIncludeAndroidResources = true
+        }
     }
 }

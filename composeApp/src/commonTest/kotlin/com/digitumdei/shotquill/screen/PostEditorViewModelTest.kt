@@ -815,7 +815,7 @@ class PostEditorViewModelTest {
     }
 }
 
-private class FakeStore : PostEditorStore {
+internal class FakeStore : PostEditorStore {
     var post: EditablePost? = null
     val savedCaptions = mutableListOf<String>()
     val savedTreatments = mutableListOf<PhotoTreatment>()
@@ -898,7 +898,7 @@ internal class FakeRenderer : PhotoRenderer {
     }
 }
 
-private class FakePublisher(
+internal class FakePublisher(
     override val target: PublishTarget = PublishTarget.Bluesky,
     private val account: String = "@doctrine.bsky.social",
 ) : PostPublisher {
@@ -944,7 +944,7 @@ private class FakeAiTransport : AiHttpTransport {
     }
 }
 
-private class RecordingClipboard : ClipboardWriter {
+internal class RecordingClipboard : ClipboardWriter {
     val copies = mutableListOf<Pair<String, String>>()
     var failure: Exception? = null
 
@@ -954,7 +954,7 @@ private class RecordingClipboard : ClipboardWriter {
     }
 }
 
-private class RecordingShareLauncher : PostShareLauncher {
+internal class RecordingShareLauncher : PostShareLauncher {
     val shares = mutableListOf<Pair<String?, String>>()
     var result = ShareResult(success = true)
 

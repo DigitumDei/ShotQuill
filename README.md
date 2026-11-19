@@ -95,6 +95,33 @@ Reports are written to:
 - `build/reports/kover/html/index.html` (human-readable)
 - `build/reports/kover/report.xml` (machine-readable, for coverage badges/tools)
 
+## Screen tests
+
+The screens are tested with Compose's UI test rule running under Robolectric,
+so they run with the other unit tests (`./gradlew test`) and need no emulator.
+They live in `composeApp/src/androidUnitTest`:
+
+- `PostEditorContentTest` draws the editor from a given state and checks what
+  is shown and what each control reports: typing, the mention lines, the
+  confirmation before posting, removing a post.
+- `PostEditorScreenTest` runs the editor with its view model against stand-in
+  storage and services: loading a post, saving once typing pauses, looking up
+  a mentioned account.
+- `SettingsScreenTest` checks that what is typed in settings is saved.
+- `AppNavigationTest` and `MainActivityRestartTest` move between screens and
+  check the open screen survives Android restarting the activity.
+
+To run only these:
+
+```bash
+./gradlew :composeApp:testDebugUnitTest --tests "*ScreenTest*" --tests "*ContentTest*" --tests "*AppNavigationTest*" --tests "*MainActivityRestartTest*"
+```
+
+They do not cover anything that belongs to Android rather than the app (the
+camera, the file chooser, the share sheet, speech recognition), real network
+calls, or how the screens look. The screen classes stay on the coverage
+exclusion list; these tests are their safety net, not part of the 80% figure.
+
 ## Posting directly
 
 Sharing through the system share sheet needs no setup. Posting straight from
