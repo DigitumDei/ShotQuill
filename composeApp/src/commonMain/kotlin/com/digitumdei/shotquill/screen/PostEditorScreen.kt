@@ -57,6 +57,9 @@ import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.PostPublisher
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.speech.DictationController
 import com.digitumdei.shotquill.speech.DictationState
 import com.digitumdei.shotquill.ui.CornerPicker
@@ -84,11 +87,12 @@ fun PostEditorScreen(
     shareLauncher: PostShareLauncher,
     dictation: DictationController?,
     altTextWriter: AltTextWriter?,
+    publishers: List<PostPublisher>,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel = remember(
-        draftId, store, settingsRepository, renderer, clipboardWriter, shareLauncher, altTextWriter,
+        draftId, store, settingsRepository, renderer, clipboardWriter, shareLauncher, altTextWriter, publishers,
     ) {
         PostEditorViewModel(
             draftId = draftId,
@@ -98,6 +102,7 @@ fun PostEditorScreen(
             clipboardWriter = clipboardWriter,
             shareLauncher = shareLauncher,
             altTextWriter = altTextWriter,
+            publishers = publishers,
         )
     }
     val state = viewModel.state
@@ -118,6 +123,10 @@ fun PostEditorScreen(
         delay(600)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistAltText() } }
     }
+    LaunchedEffect(viewModel, state.blueskyText) {
+        delay(600)
+        writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistBlueskyText() } }
+    }
     LaunchedEffect(viewModel, state.treatment) {
         delay(400)
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.persistTreatment() } }
@@ -126,6 +135,7 @@ fun PostEditorScreen(
         onDispose {
             viewModel.persistCaption()
             viewModel.persistAltText()
+            viewModel.persistBlueskyText()
             viewModel.persistTreatment()
         }
     }
@@ -154,6 +164,12 @@ fun PostEditorScreen(
         },
         onCaptionChange = viewModel::updateCaption,
         onAltTextChange = viewModel::updateAltText,
+        onBlueskyTextChange = viewModel::updateBlueskyText,
+        onPublish = { target ->
+            scope.launch {
+                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.publish(target) } }
+            }
+        },
         onSelectAltTextModel = viewModel::selectAltTextModel,
         onCopyAltText = viewModel::copyAltText,
         onWriteAltText = {
@@ -192,6 +208,8 @@ fun PostEditorContent(
     onToggleDictation: () -> Unit,
     onCaptionChange: (String) -> Unit,
     onAltTextChange: (String) -> Unit,
+    onBlueskyTextChange: (String) -> Unit,
+    onPublish: (PublishTarget) -> Unit,
     onSelectAltTextModel: (String) -> Unit,
     onCopyAltText: () -> Unit,
     onWriteAltText: () -> Unit,
@@ -206,6 +224,7 @@ fun PostEditorContent(
     onRemove: () -> Unit,
 ) {
     var confirmRemove by remember { mutableStateOf(false) }
+    var confirmPublish by remember { mutableStateOf<PublishTarget?>(null) }
 
     Column(modifier = Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(
@@ -448,6 +467,32 @@ fun PostEditorContent(
                     TextButton(onClick = onCopyAltText, enabled = state.altText.isNotBlank()) { Text("Copy") }
                 }
             }
+
+            if (state.hasBluesky) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionLabel("Bluesky text")
+                    OutlinedTextField(
+                        value = state.blueskyText,
+                        onValueChange = onBlueskyTextChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = state.isLoaded && !state.isPublishing,
+                        minLines = 2,
+                        placeholder = { Text("Leave empty to post the caption as it is") },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        shape = MaterialTheme.shapes.medium,
+                    )
+                    Text(
+                        text = "${state.blueskyLength} / $BlueskyTextLimit" +
+                            if (state.blueskyText.isBlank()) "  ·  using the caption" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.blueskyTooLong) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
         }
 
         if (state.message != null) {
@@ -463,16 +508,17 @@ fun PostEditorContent(
             }
         }
 
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Button(
                 onClick = onShare,
                 enabled = state.canShare,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
+                modifier = Modifier.weight(1f).height(54.dp),
                 shape = MaterialTheme.shapes.large,
             ) {
                 if (state.isSharing) {
@@ -489,7 +535,57 @@ fun PostEditorContent(
                     Text(if (state.shared) "Share again" else "Share", style = MaterialTheme.typography.titleMedium)
                 }
             }
+            state.targets.forEach { target ->
+                FilledTonalButton(
+                    onClick = { confirmPublish = target.target },
+                    enabled = state.canShare,
+                    modifier = Modifier.weight(1f).height(54.dp),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    if (target.isPublishing) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Posting", style = MaterialTheme.typography.titleMedium)
+                    } else {
+                        if (target.postedUrl != null) {
+                            Icon(ShotQuillIcons.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(target.target.label, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
         }
+    }
+
+    confirmPublish?.let { target ->
+        val targetState = state.targets.firstOrNull { it.target == target }
+        AlertDialog(
+            onDismissRequest = { confirmPublish = null },
+            title = { Text("Post to ${target.label}?") },
+            text = {
+                Text(
+                    buildString {
+                        append("This goes out publicly as ${targetState?.account.orEmpty()}.")
+                        if (targetState?.postedUrl != null) {
+                            append(" It has already been posted there once, so this would make a second post.")
+                        }
+                        if (state.altText.isBlank()) append(" There is no alt text yet.")
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmPublish = null
+                        onPublish(target)
+                    },
+                ) { Text("Post") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPublish = null }) { Text("Not yet") }
+            },
+        )
     }
 
     if (confirmRemove) {

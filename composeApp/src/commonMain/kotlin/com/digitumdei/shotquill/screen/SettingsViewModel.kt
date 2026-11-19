@@ -14,6 +14,11 @@ import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.SecretRedactor
+import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
+import com.digitumdei.shotquill.shared.social.InstagramSettings
+import com.digitumdei.shotquill.shared.social.parseFirebaseConfig
 
 data class SettingsState(
     val settings: LocalAppSettings = LocalAppSettings(),
@@ -24,7 +29,23 @@ data class SettingsState(
     /** The saved AI API key with its middle hidden, or null when there is none. The key itself is never shown. */
     val apiKeyHint: String? = null,
     val apiKeyMessage: String? = null,
+    /** Whether a Bluesky app password is stored. The password itself is never shown. */
+    val blueskyPasswordSaved: Boolean = false,
+    val blueskyMessage: String? = null,
+    val instagramTokenSaved: Boolean = false,
+    val instagramMessage: String? = null,
+    val firebasePasswordSaved: Boolean = false,
+    val firebaseMessage: String? = null,
 ) {
+    val blueskyConfigured: Boolean
+        get() = blueskyPasswordSaved && settings.bluesky.cleanHandle.isNotEmpty()
+
+    /** True when everything Instagram posting needs has been entered: a token and working image hosting. */
+    val instagramConfigured: Boolean
+        get() = instagramTokenSaved && imageHostConfigured
+    val imageHostConfigured: Boolean
+        get() = settings.firebaseHost.hasProject && settings.firebaseHost.email.isNotBlank() && firebasePasswordSaved
+
     val hasApiKey: Boolean get() = apiKeyHint != null
 }
 
@@ -32,6 +53,7 @@ data class SettingsState(
 class SettingsViewModel(
     private val repository: LocalSettingsRepository,
     private val renderer: PhotoRenderer?,
+    private val clock: EpochClock = EpochClock.Default,
 ) {
     var state: SettingsState by mutableStateOf(readState())
         private set
@@ -113,6 +135,114 @@ class SettingsViewModel(
         }
     }
 
+    fun setBlueskyHandle(handle: String) = update { it.copy(bluesky = it.bluesky.copy(handle = handle.trim())) }
+
+    fun setBlueskyServer(server: String) = update { it.copy(bluesky = it.bluesky.copy(server = server.trim())) }
+
+    fun saveBlueskyPassword(password: String) {
+        val trimmed = password.trim()
+        if (trimmed.isEmpty()) return
+        state = try {
+            repository.saveSecret(BlueskySettings.AppPasswordSecret, trimmed)
+            state.copy(blueskyPasswordSaved = true, blueskyMessage = "App password saved.")
+        } catch (e: Exception) {
+            state.copy(
+                blueskyMessage = SecretRedactor.redactKnownSecrets(
+                    "The app password could not be saved: ${e.message ?: "unknown error"}",
+                    listOf(trimmed),
+                ),
+            )
+        }
+    }
+
+    fun clearBlueskyPassword() {
+        repository.clearSecret(BlueskySettings.AppPasswordSecret)
+        state = state.copy(blueskyPasswordSaved = false, blueskyMessage = "App password removed.")
+    }
+
+    /** Shows the outcome of a connection check next to the Bluesky settings. */
+    fun showBlueskyMessage(message: String) {
+        state = state.copy(blueskyMessage = message)
+    }
+
+    fun saveInstagramToken(token: String) {
+        val trimmed = token.trim()
+        if (trimmed.isEmpty()) return
+        try {
+            repository.saveSecret(InstagramSettings.AccessTokenSecret, trimmed)
+            val now = clock.nowMillis()
+            update {
+                it.copy(
+                    instagram = InstagramSettings(
+                        tokenSavedAtMillis = now,
+                        tokenExpiresAtMillis = now + LongLivedTokenMillis,
+                    ),
+                )
+            }
+            state = state.copy(instagramTokenSaved = true, instagramMessage = "Token saved. Use the check below to try it.")
+        } catch (e: Exception) {
+            state = state.copy(
+                instagramMessage = SecretRedactor.redactKnownSecrets(
+                    "The token could not be saved: ${e.message ?: "unknown error"}",
+                    listOf(trimmed),
+                ),
+            )
+        }
+    }
+
+    fun clearInstagramToken() {
+        repository.clearSecret(InstagramSettings.AccessTokenSecret)
+        update { it.copy(instagram = InstagramSettings()) }
+        state = state.copy(instagramTokenSaved = false, instagramMessage = "Token removed.")
+    }
+
+    /** Shows the outcome of a connection check, and picks up anything the check learned, such as the username. */
+    fun showInstagramMessage(message: String) {
+        state = state.copy(settings = repository.readSettings(), instagramMessage = message)
+    }
+
+    /** Takes project details pasted from the Firebase console, in either form the console offers. */
+    fun useFirebaseConfig(pasted: String) {
+        val parsed = parseFirebaseConfig(pasted)
+        if (parsed == null) {
+            state = state.copy(
+                firebaseMessage = "That does not contain a Firebase project. Paste the whole google-services.json, " +
+                    "or the firebaseConfig block shown for a web app.",
+            )
+            return
+        }
+        update { it.copy(firebaseHost = parsed.copy(email = it.firebaseHost.email)) }
+        state = state.copy(firebaseMessage = "Using project ${parsed.projectId}, bucket ${parsed.storageBucket}.")
+    }
+
+    fun clearFirebaseConfig() {
+        update { it.copy(firebaseHost = FirebaseHostSettings(email = it.firebaseHost.email)) }
+        state = state.copy(firebaseMessage = "Project removed.")
+    }
+
+    fun setFirebaseEmail(email: String) = update { it.copy(firebaseHost = it.firebaseHost.copy(email = email.trim())) }
+
+    fun saveFirebasePassword(password: String) {
+        val trimmed = password.trim()
+        if (trimmed.isEmpty()) return
+        state = try {
+            repository.saveSecret(FirebaseHostSettings.UploadPasswordSecret, trimmed)
+            state.copy(firebasePasswordSaved = true, firebaseMessage = "Upload password saved.")
+        } catch (e: Exception) {
+            state.copy(
+                firebaseMessage = SecretRedactor.redactKnownSecrets(
+                    "The password could not be saved: ${e.message ?: "unknown error"}",
+                    listOf(trimmed),
+                ),
+            )
+        }
+    }
+
+    fun clearFirebasePassword() {
+        repository.clearSecret(FirebaseHostSettings.UploadPasswordSecret)
+        state = state.copy(firebasePasswordSaved = false, firebaseMessage = "Upload password removed.")
+    }
+
     fun clearApiKey() {
         repository.clearOpenAiApiKey()
         state = state.copy(apiKeyHint = null, apiKeyMessage = "Key removed. Nothing will be sent anywhere.")
@@ -132,6 +262,11 @@ class SettingsViewModel(
         )
     }
 
+    private companion object {
+        // Meta's long-lived tokens last about sixty days from when they are made.
+        const val LongLivedTokenMillis = 60L * 24 * 60 * 60 * 1000
+    }
+
     private fun readState(): SettingsState {
         val settings = repository.readSettings()
         return SettingsState(
@@ -139,6 +274,12 @@ class SettingsViewModel(
             logoSize = settings.logo.uri?.let { renderer?.orientedSize(it) },
             apiKeyHint = runCatching { repository.getOpenAiApiKey() }.getOrNull()
                 ?.let(SecretRedactor::maskOpenAiApiKey),
+            blueskyPasswordSaved = runCatching { repository.getSecret(BlueskySettings.AppPasswordSecret) }
+                .getOrNull() != null,
+            instagramTokenSaved = runCatching { repository.getSecret(InstagramSettings.AccessTokenSecret) }
+                .getOrNull() != null,
+            firebasePasswordSaved = runCatching { repository.getSecret(FirebaseHostSettings.UploadPasswordSecret) }
+                .getOrNull() != null,
         )
     }
 }

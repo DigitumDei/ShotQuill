@@ -27,6 +27,23 @@ import com.digitumdei.shotquill.shared.domain.panZoomed
 import com.digitumdei.shotquill.shared.domain.withShape
 import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.BlueskyTextLimit
+import com.digitumdei.shotquill.shared.social.PostPublisher
+import com.digitumdei.shotquill.shared.social.PostToPublish
+import com.digitumdei.shotquill.shared.social.PublishResult
+import com.digitumdei.shotquill.shared.social.PublishTarget
+import com.digitumdei.shotquill.shared.social.blueskyLength
+import com.digitumdei.shotquill.shared.social.blueskyTextFor
+
+/** One service the post can be published to directly, and what has happened there so far. */
+data class PublishTargetState(
+    val target: PublishTarget,
+    /** The account that will be posted as, such as `@name.bsky.social`. */
+    val account: String,
+    /** A link to the published post, or null when it has not been published there. */
+    val postedUrl: String? = null,
+    val isPublishing: Boolean = false,
+)
 
 data class PostEditorState(
     val isLoaded: Boolean = false,
@@ -48,11 +65,23 @@ data class PostEditorState(
     val isSharing: Boolean = false,
     val shared: Boolean = false,
     val message: String? = null,
+    /** The services set up for direct posting. Empty when none is. */
+    val targets: List<PublishTargetState> = emptyList(),
+    val blueskyText: String = "",
 ) {
+    val isPublishing: Boolean get() = targets.any { it.isPublishing }
+    val hasBluesky: Boolean get() = targets.any { it.target == PublishTarget.Bluesky }
+
+    /** What would be posted to Bluesky right now, and how long Bluesky counts it as. */
+    val blueskyPostText: String get() = blueskyTextFor(caption, blueskyText)
+    val blueskyLength: Int get() = blueskyLength(blueskyPostText)
+    val blueskyTooLong: Boolean get() = blueskyLength > BlueskyTextLimit
+
     val captionStats: CaptionStats get() = captionStats(caption)
     val hasLogo: Boolean get() = logo.uri != null
     val logoCorner: LogoCorner get() = treatment.logoCorner ?: logo.corner
-    val canShare: Boolean get() = isLoaded && !isSharing && originalUri != null && imageSize != null
+    val canShare: Boolean
+        get() = isLoaded && !isSharing && !isPublishing && originalUri != null && imageSize != null
     val canWriteAltText: Boolean
         get() = isLoaded && aiConfigured && !isWritingAltText && originalUri != null && imageSize != null
 }
@@ -70,6 +99,7 @@ class PostEditorViewModel(
     private val shareLauncher: PostShareLauncher,
     private val clock: EpochClock = EpochClock.Default,
     private val altTextWriter: AltTextWriter? = null,
+    private val publishers: List<PostPublisher> = emptyList(),
 ) {
     var state: PostEditorState by mutableStateOf(PostEditorState())
         private set
@@ -103,6 +133,14 @@ class PostEditorViewModel(
             logoSize = logo.uri?.let(renderer::orientedSize),
             snippets = settings.snippets,
             shared = post.shared,
+            targets = publishers.filter { it.isConfigured }.map { publisher ->
+                PublishTargetState(
+                    target = publisher.target,
+                    account = publisher.accountLabel.orEmpty(),
+                    postedUrl = post.published[publisher.target],
+                )
+            },
+            blueskyText = post.blueskyText,
             message = if (imageSize == null) "The photo could not be read." else null,
         )
     }
@@ -126,6 +164,16 @@ class PostEditorViewModel(
     fun persistCaption() {
         if (!state.isLoaded) return
         store.saveCaption(draftId, state.caption)
+    }
+
+    fun updateBlueskyText(text: String) {
+        if (!state.isLoaded) return
+        state = state.copy(blueskyText = text)
+    }
+
+    fun persistBlueskyText() {
+        if (!state.isLoaded) return
+        store.saveBlueskyText(draftId, state.blueskyText)
     }
 
     fun updateAltText(text: String) {
@@ -296,6 +344,92 @@ class PostEditorViewModel(
             }
         }
     }
+
+    /**
+     * Publishes the post to [target] directly. The image is rendered exactly
+     * as for sharing, and the words are the ones in the editor: nothing is
+     * added or rewritten on the way out.
+     */
+    fun publish(target: PublishTarget) {
+        val current = state
+        val publisher = publishers.firstOrNull { it.target == target && it.isConfigured }
+        val sourceUri = current.originalUri
+        if (!current.canShare || publisher == null || sourceUri == null) return
+        val text = when (target) {
+            PublishTarget.Instagram -> current.caption.trim()
+            PublishTarget.Bluesky -> current.blueskyPostText
+        }
+        publisher.problemWith(text)?.let { problem ->
+            state = current.copy(message = problem)
+            return
+        }
+        state = current.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
+        store.saveCaption(draftId, current.caption)
+        store.saveAltText(draftId, current.altText)
+        store.saveBlueskyText(draftId, current.blueskyText)
+        store.saveTreatment(draftId, current.treatment)
+
+        fun finish(message: String, postedUrl: String? = null) {
+            state = state.withTarget(target) {
+                it.copy(isPublishing = false, postedUrl = postedUrl ?: it.postedUrl)
+            }.copy(message = message, shared = state.shared || postedUrl != null)
+        }
+
+        val outcome = renderer.render(
+            RenderRequest(
+                sourceUri = sourceUri,
+                treatment = current.treatment.copy(logoCorner = current.logoCorner),
+                look = current.look,
+                logo = current.logo,
+                outputName = "${draftId.value}-${clock.nowMillis()}",
+            ),
+        )
+        when (outcome) {
+            is RenderOutcome.Failure -> finish(outcome.message)
+
+            is RenderOutcome.Success -> {
+                publisher.problemWithImage(outcome.size.width, outcome.size.height)?.let { problem ->
+                    renderer.discard(outcome.uri)
+                    finish(problem)
+                    return
+                }
+                val jpeg = renderer.jpegWithin(outcome.uri, publisher.maxImageBytes)
+                if (jpeg == null) {
+                    renderer.discard(outcome.uri)
+                    finish("The image could not be made small enough for ${target.label}.")
+                    return
+                }
+                val result = publisher.publish(
+                    PostToPublish(
+                        text = text,
+                        jpeg = jpeg,
+                        altText = current.altText.trim(),
+                        imageWidth = outcome.size.width,
+                        imageHeight = outcome.size.height,
+                    ),
+                )
+                when (result) {
+                    is PublishResult.Success -> {
+                        val previous = renderedUri
+                        store.markPublished(draftId, target, result.url, outcome.uri)
+                        renderedUri = outcome.uri
+                        if (previous != null && previous != outcome.uri) renderer.discard(previous)
+                        finish("Posted to ${target.label} as ${publisher.accountLabel.orEmpty()}.", result.url)
+                    }
+
+                    is PublishResult.Failure -> {
+                        renderer.discard(outcome.uri)
+                        finish(result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun PostEditorState.withTarget(
+        target: PublishTarget,
+        change: (PublishTargetState) -> PublishTargetState,
+    ): PostEditorState = copy(targets = targets.map { if (it.target == target) change(it) else it })
 
     /** Removes the post from the list and deletes the image made from it. */
     fun remove() {

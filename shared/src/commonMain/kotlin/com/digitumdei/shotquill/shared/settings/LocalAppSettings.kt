@@ -9,6 +9,9 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
+import com.digitumdei.shotquill.shared.social.InstagramSettings
 
 data class LocalAppSettings(
     val defaultTargetPlatform: TargetPlatform = TargetPlatform.InstagramFeedSquare,
@@ -21,6 +24,9 @@ data class LocalAppSettings(
     val logo: LogoSettings = LogoSettings(),
     val snippets: List<CaptionSnippet> = CaptionSnippet.Defaults,
     val ai: AiSettings = AiSettings(),
+    val bluesky: BlueskySettings = BlueskySettings(),
+    val instagram: InstagramSettings = InstagramSettings(),
+    val firebaseHost: FirebaseHostSettings = FirebaseHostSettings(),
 )
 
 interface LocalSettingsRepository {
@@ -30,6 +36,11 @@ interface LocalSettingsRepository {
     fun saveOpenAiApiKey(apiKey: String)
     fun hasOpenAiApiKey(): Boolean
     fun clearOpenAiApiKey()
+
+    /** A stored secret such as an app password, or null when none is saved under [name]. */
+    fun getSecret(name: String): String?
+    fun saveSecret(name: String, value: String)
+    fun clearSecret(name: String)
 }
 
 /**

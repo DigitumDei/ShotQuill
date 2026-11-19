@@ -10,6 +10,10 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.domain.EpochClock
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
+import com.digitumdei.shotquill.shared.social.InstagramSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,7 +27,12 @@ class SettingsViewModelTest {
         sizes["file:///brand/new.png"] = PixelSize(300, 300)
     }
 
-    private fun viewModel() = SettingsViewModel(repository, renderer)
+    private val now = 1_795_000_000_000L
+    private val clock = object : EpochClock {
+        override fun nowMillis(): Long = now
+    }
+
+    private fun viewModel() = SettingsViewModel(repository, renderer, clock)
 
     @Test
     fun startsFromWhatIsStored() {
@@ -186,6 +195,94 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun blueskyIsReadyOnceBothTheHandleAndAnAppPasswordAreSaved() {
+        val vm = viewModel()
+        assertFalse(vm.state.blueskyConfigured)
+
+        vm.saveBlueskyPassword("  ")
+        vm.saveBlueskyPassword(" abcd-efgh-ijkl-mnop ")
+        assertTrue(vm.state.blueskyPasswordSaved)
+        assertFalse(vm.state.blueskyConfigured)
+        assertEquals("abcd-efgh-ijkl-mnop", repository.getSecret(BlueskySettings.AppPasswordSecret))
+        assertEquals("App password saved.", vm.state.blueskyMessage)
+
+        vm.setBlueskyHandle(" @doctrine.bsky.social ")
+        vm.setBlueskyServer(" https://pds.example.org ")
+        assertTrue(vm.state.blueskyConfigured)
+        val saved = repository.readSettings().bluesky
+        assertEquals("doctrine.bsky.social", saved.cleanHandle)
+        assertEquals("https://pds.example.org", saved.server)
+
+        assertTrue(viewModel().state.blueskyConfigured)
+
+        vm.clearBlueskyPassword()
+        assertFalse(vm.state.blueskyConfigured)
+        assertNull(repository.getSecret(BlueskySettings.AppPasswordSecret))
+    }
+
+    @Test
+    fun instagramNeedsBothATokenAndImageHosting() {
+        val vm = viewModel()
+        assertFalse(vm.state.instagramConfigured)
+        assertTrue(instagramStatus(vm.state).contains("Not set up"))
+
+        vm.saveInstagramToken("  ")
+        vm.saveInstagramToken(" IGTOKEN-abcdef-123456 ")
+        assertTrue(vm.state.instagramTokenSaved)
+        assertFalse(vm.state.instagramConfigured)
+        assertEquals("IGTOKEN-abcdef-123456", repository.getSecret(InstagramSettings.AccessTokenSecret))
+        val saved = repository.readSettings().instagram
+        assertEquals(now, saved.tokenSavedAtMillis)
+        assertEquals(now + 60L * 86_400_000L, saved.tokenExpiresAtMillis)
+        assertTrue(instagramStatus(vm.state).contains("A token is saved"))
+        assertTrue(instagramStatus(vm.state).contains("good until about 2027-01-1"))
+        assertTrue(instagramStatus(vm.state).contains("Image hosting still needs setting up"))
+
+        vm.useFirebaseConfig("nothing useful")
+        assertTrue(vm.state.firebaseMessage.orEmpty().contains("does not contain a Firebase project"))
+        assertFalse(vm.state.settings.firebaseHost.hasProject)
+
+        vm.setFirebaseEmail(" uploads@doctrine.example ")
+        vm.useFirebaseConfig("""apiKey: "AIza", appId: "1:2:web:3", projectId: "doctrine-site", storageBucket: "doctrine-site.appspot.com"""")
+        assertEquals("Using project doctrine-site, bucket doctrine-site.appspot.com.", vm.state.firebaseMessage)
+        assertEquals(
+            FirebaseHostSettings("AIza", "1:2:web:3", "doctrine-site", "doctrine-site.appspot.com", "uploads@doctrine.example"),
+            repository.readSettings().firebaseHost,
+        )
+        assertFalse(vm.state.imageHostConfigured)
+
+        vm.saveFirebasePassword("   ")
+        vm.saveFirebasePassword(" upload-password-1 ")
+        assertTrue(vm.state.imageHostConfigured)
+        assertTrue(vm.state.instagramConfigured)
+        assertEquals("upload-password-1", repository.getSecret(FirebaseHostSettings.UploadPasswordSecret))
+
+        repository.saveSettings(
+            repository.readSettings().let { it.copy(instagram = it.instagram.copy(username = "doctrinebrewing")) },
+        )
+        vm.showInstagramMessage("Connected to Instagram as @doctrinebrewing, and image hosting works.")
+        assertEquals("doctrinebrewing", vm.state.settings.instagram.username)
+        assertTrue(instagramStatus(vm.state).startsWith("Connected as @doctrinebrewing."))
+        assertFalse(instagramStatus(vm.state).contains("Image hosting still"))
+
+        val reopened = viewModel().state
+        assertTrue(reopened.instagramConfigured)
+
+        vm.clearFirebasePassword()
+        assertFalse(vm.state.instagramConfigured)
+        vm.clearFirebaseConfig()
+        assertFalse(vm.state.settings.firebaseHost.hasProject)
+        assertEquals("uploads@doctrine.example", vm.state.settings.firebaseHost.email)
+        vm.clearInstagramToken()
+        assertFalse(vm.state.instagramTokenSaved)
+        assertEquals(InstagramSettings(), repository.readSettings().instagram)
+        assertNull(repository.getSecret(InstagramSettings.AccessTokenSecret))
+
+        vm.showBlueskyMessage("Signed in to Bluesky as @doctrine.bsky.social.")
+        assertEquals("Signed in to Bluesky as @doctrine.bsky.social.", vm.state.blueskyMessage)
+    }
+
+    @Test
     fun privacyNoteSaysWhatLeavesThePhone() {
         val offline = privacyNote(dictationOnDevice = null, aiConfigured = false)
         assertTrue(offline.contains("does not connect to the internet"))
@@ -196,6 +293,14 @@ class SettingsViewModelTest {
         assertTrue(withAi.contains("recognised on this phone"))
 
         assertTrue(privacyNote(dictationOnDevice = false, aiConfigured = false).contains("may send your voice"))
+
+        val everything = privacyNote(dictationOnDevice = null, aiConfigured = true, postingTo = listOf("Instagram", "Bluesky"))
+        assertTrue(everything.contains("alt text"))
+        assertTrue(everything.contains("and when you post to Instagram or Bluesky"))
+        assertTrue(
+            privacyNote(dictationOnDevice = null, aiConfigured = false, postingTo = listOf("Bluesky"))
+                .contains("only when you post to Bluesky"),
+        )
     }
 
     @Test

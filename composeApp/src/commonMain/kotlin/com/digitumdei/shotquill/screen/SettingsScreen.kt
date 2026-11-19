@@ -44,6 +44,16 @@ import com.digitumdei.shotquill.shared.ai.parseModelList
 import com.digitumdei.shotquill.shared.domain.LogoSettings
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelSize
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.PostPublisher
+import com.digitumdei.shotquill.shared.social.PublishTarget
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import com.digitumdei.shotquill.ui.CornerPicker
 import com.digitumdei.shotquill.ui.IconLabel
 import com.digitumdei.shotquill.ui.LabeledSlider
@@ -63,6 +73,8 @@ fun SettingsScreen(
     previewSize: PixelSize?,
     /** Whether dictation stays on the phone; null when the phone cannot dictate at all. */
     dictationOnDevice: Boolean?,
+    /** The places a post can go directly, used here to try saved account details without posting. */
+    publishers: List<PostPublisher>,
     onPickLogo: (() -> Unit)?,
     onBack: () -> Unit,
 ) {
@@ -70,6 +82,20 @@ fun SettingsScreen(
     val settings = state.settings
     val look = settings.look
     val logo = settings.logo
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf<PublishTarget?>(null) }
+
+    fun check(target: PublishTarget, show: (String) -> Unit) {
+        val publisher = publishers.firstOrNull { it.target == target } ?: return
+        scope.launch {
+            checking = target
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { publisher.check() }.getOrElse { "The check could not be completed." }
+            }
+            checking = null
+            show(outcome)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(title = "Settings", onBack = onBack)
@@ -347,8 +373,220 @@ fun SettingsScreen(
                 }
             }
 
+            SettingsGroup(
+                label = "Instagram",
+                detail = "Optional. Posts straight to your Instagram professional account with the caption and alt " +
+                    "text, without opening Instagram. It needs an access token from Meta's developer console, and " +
+                    "the image hosting below. The README has the one-time setup steps. Share still works without any " +
+                    "of this.",
+            ) {
+                var tokenText by remember(viewModel) { mutableStateOf("") }
+
+                OutlinedTextField(
+                    value = tokenText,
+                    onValueChange = { tokenText = it },
+                    label = { Text(if (state.instagramTokenSaved) "Replace access token" else "Access token") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.saveInstagramToken(tokenText)
+                            tokenText = ""
+                        },
+                        enabled = tokenText.isNotBlank(),
+                    ) { Text("Save token") }
+                    if (state.instagramTokenSaved) {
+                        TextButton(onClick = viewModel::clearInstagramToken) { Text("Remove token") }
+                    }
+                }
+                Text(
+                    text = state.instagramMessage ?: instagramStatus(state),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.instagramTokenSaved) {
+                    OutlinedButton(
+                        onClick = { check(PublishTarget.Instagram, viewModel::showInstagramMessage) },
+                        enabled = checking == null,
+                    ) { Text(if (checking == PublishTarget.Instagram) "Checking" else "Check connection") }
+                }
+            }
+
+            SettingsGroup(
+                label = "Image hosting for Instagram",
+                detail = "Instagram does not take an upload: it fetches the image from a web address. So the image is " +
+                    "put in your own Firebase Storage for a moment and removed once the post is made.",
+            ) {
+                val host = settings.firebaseHost
+                var configText by remember(viewModel) { mutableStateOf("") }
+                var emailText by remember(viewModel) { mutableStateOf(host.email) }
+                var passwordText by remember(viewModel) { mutableStateOf("") }
+
+                OutlinedTextField(
+                    value = configText,
+                    onValueChange = { configText = it },
+                    label = { Text(if (host.hasProject) "Paste a new Firebase config" else "Paste your Firebase config") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.useFirebaseConfig(configText)
+                            configText = ""
+                        },
+                        enabled = configText.isNotBlank(),
+                    ) { Text("Use this config") }
+                    if (host.hasProject) {
+                        TextButton(onClick = viewModel::clearFirebaseConfig) { Text("Remove project") }
+                    }
+                }
+                OutlinedTextField(
+                    value = emailText,
+                    onValueChange = {
+                        emailText = it
+                        viewModel.setFirebaseEmail(it)
+                    },
+                    label = { Text("Upload sign-in email") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = passwordText,
+                    onValueChange = { passwordText = it },
+                    label = { Text(if (state.firebasePasswordSaved) "Replace upload password" else "Upload password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.saveFirebasePassword(passwordText)
+                            passwordText = ""
+                        },
+                        enabled = passwordText.isNotBlank(),
+                    ) { Text("Save password") }
+                    if (state.firebasePasswordSaved) {
+                        TextButton(onClick = viewModel::clearFirebasePassword) { Text("Remove password") }
+                    }
+                }
+                Text(
+                    text = state.firebaseMessage ?: when {
+                        state.imageHostConfigured -> "Using project ${host.projectId}, bucket ${host.storageBucket}."
+                        host.hasProject -> "Project ${host.projectId} is set. Add the upload sign-in to finish."
+                        else -> "Not set up."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            SettingsGroup(
+                label = "Bluesky",
+                detail = "Optional. Lets a post go straight to Bluesky with its image, text and alt text. Use an " +
+                    "app password, not your main one: in Bluesky, open Settings, then Privacy and security, " +
+                    "then App passwords. Replies and conversations stay in the Bluesky app.",
+            ) {
+                val bluesky = settings.bluesky
+                var handleText by remember(viewModel) { mutableStateOf(bluesky.handle) }
+                var passwordText by remember(viewModel) { mutableStateOf("") }
+                var serverText by remember(viewModel) { mutableStateOf(bluesky.server) }
+
+                OutlinedTextField(
+                    value = handleText,
+                    onValueChange = {
+                        handleText = it
+                        viewModel.setBlueskyHandle(it)
+                    },
+                    label = { Text("Handle") },
+                    placeholder = { Text("yourname.bsky.social") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = passwordText,
+                    onValueChange = { passwordText = it },
+                    label = { Text(if (state.blueskyPasswordSaved) "Replace app password" else "App password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.saveBlueskyPassword(passwordText)
+                            passwordText = ""
+                        },
+                        enabled = passwordText.isNotBlank(),
+                    ) { Text("Save password") }
+                    if (state.blueskyPasswordSaved) {
+                        TextButton(onClick = viewModel::clearBlueskyPassword) { Text("Remove password") }
+                    }
+                }
+                Text(
+                    text = state.blueskyMessage ?: when {
+                        state.blueskyConfigured -> "Ready to post as @${bluesky.cleanHandle}."
+                        state.blueskyPasswordSaved -> "An app password is saved. Add your handle to finish."
+                        else -> "Not set up, so nothing is posted to Bluesky."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = serverText,
+                    onValueChange = {
+                        serverText = it
+                        viewModel.setBlueskyServer(it)
+                    },
+                    label = { Text("Server") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Leave the server as ${BlueskySettings.DefaultServer} unless your account is hosted elsewhere.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.blueskyConfigured) {
+                    OutlinedButton(
+                        onClick = { check(PublishTarget.Bluesky, viewModel::showBlueskyMessage) },
+                        enabled = checking == null,
+                    ) { Text(if (checking == PublishTarget.Bluesky) "Checking" else "Check sign-in") }
+                }
+            }
+
             Text(
-                privacyNote(dictationOnDevice, aiConfigured = state.hasApiKey),
+                privacyNote(
+                    dictationOnDevice,
+                    aiConfigured = state.hasApiKey,
+                    postingTo = buildList {
+                        if (state.instagramConfigured) add("Instagram")
+                        if (state.blueskyConfigured) add("Bluesky")
+                    },
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -376,13 +614,38 @@ private fun SettingsGroup(
     }
 }
 
-internal fun privacyNote(dictationOnDevice: Boolean?, aiConfigured: Boolean): String {
-    val photos = "ShotQuill prepares photos on this phone and never generates the image or the caption."
-    val network = if (aiConfigured) {
-        "It connects to the internet only when you ask for alt text, to send that photo and caption to " +
-            "the AI service you set up."
+/** What to say under the Instagram token box when there is no newer message. */
+internal fun instagramStatus(state: SettingsState): String {
+    val instagram = state.settings.instagram
+    if (!state.instagramTokenSaved) return "Not set up, so nothing is posted to Instagram by the app itself."
+    val account = if (instagram.username.isBlank()) "A token is saved" else "Connected as @${instagram.username}"
+    val validity = if (instagram.tokenExpiresAtMillis > 0) {
+        val day = Instant.fromEpochMilliseconds(instagram.tokenExpiresAtMillis)
+            .toLocalDateTime(TimeZone.currentSystemDefault()).date
+        " The token is good until about $day and renews itself when you post."
     } else {
-        "It does not connect to the internet unless you set up AI for alt text."
+        ""
+    }
+    val hosting = if (state.imageHostConfigured) "" else " Image hosting still needs setting up below."
+    return "$account.$validity$hosting"
+}
+
+internal fun privacyNote(
+    dictationOnDevice: Boolean?,
+    aiConfigured: Boolean,
+    postingTo: List<String> = emptyList(),
+): String {
+    val photos = "ShotQuill prepares photos on this phone and never generates the image or the caption."
+    val occasions = buildList {
+        if (aiConfigured) {
+            add("when you ask for alt text, to send that photo and caption to the AI service you set up")
+        }
+        if (postingTo.isNotEmpty()) add("when you post to " + postingTo.joinToString(" or "))
+    }
+    val network = if (occasions.isEmpty()) {
+        "It does not connect to the internet unless you set up AI for alt text or a place to post to."
+    } else {
+        "It connects to the internet only " + occasions.joinToString(", and ") + "."
     }
     val dictation = when (dictationOnDevice) {
         true -> " Dictation is recognised on this phone."

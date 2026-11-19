@@ -12,6 +12,9 @@ import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
+import com.digitumdei.shotquill.shared.social.InstagramSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -61,6 +64,19 @@ class AndroidStorageTest {
             snippets = listOf(CaptionSnippet("Tags", "#doctrinebrewing\n#kzn")),
             ai = AiSettings(baseUrl = "https://api.example.test/v1")
                 .withModels(AiOperation.AltText, listOf("one/model", "two/model")),
+            bluesky = BlueskySettings(handle = "doctrine.bsky.social", server = "https://pds.example.org"),
+            instagram = InstagramSettings(
+                username = "doctrinebrewing",
+                tokenSavedAtMillis = 1_795_000_000_000L,
+                tokenExpiresAtMillis = 1_800_184_000_000L,
+            ),
+            firebaseHost = FirebaseHostSettings(
+                apiKey = "AIza",
+                appId = "1:2:android:3",
+                projectId = "doctrine-site",
+                storageBucket = "doctrine-site.appspot.com",
+                email = "uploads@doctrine.example",
+            ),
         )
 
         AndroidLocalSettingsRepository(context).saveSettings(settings)
@@ -80,6 +96,21 @@ class AndroidStorageTest {
         val ai = AndroidLocalSettingsRepository(context).readSettings().ai
         assertEquals(AiOperation.AltText.defaultModels, ai.modelsFor(AiOperation.AltText))
         assertEquals(AiSettings.DefaultBaseUrl, ai.baseUrl)
+    }
+
+    @Test
+    fun secretsAreKeptSeparatelyByName() {
+        val repository = AndroidLocalSettingsRepository(context)
+
+        repository.saveSecret(BlueskySettings.AppPasswordSecret, " abcd-efgh-ijkl-mnop ")
+
+        val reopened = AndroidLocalSettingsRepository(context)
+        assertEquals("abcd-efgh-ijkl-mnop", reopened.getSecret(BlueskySettings.AppPasswordSecret))
+        assertNull(reopened.getSecret("something_else"))
+        assertNull(reopened.getOpenAiApiKey())
+
+        reopened.clearSecret(BlueskySettings.AppPasswordSecret)
+        assertNull(AndroidLocalSettingsRepository(context).getSecret(BlueskySettings.AppPasswordSecret))
     }
 
     @Test

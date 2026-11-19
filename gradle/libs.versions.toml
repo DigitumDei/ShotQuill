@@ -8,6 +8,7 @@ kotlinx-serialization-json = "1.7.3"
 sqldelight = "2.3.2"
 coil = "3.2.0"
 androidsvg = "1.4"
+firebase-bom = "34.19.0"
 
 android-compileSdk = "35"
 android-minSdk = "24"
@@ -36,6 +37,9 @@ sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-drive
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
 androidsvg = { group = "com.caverock", name = "androidsvg-aar", version.ref = "androidsvg" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
+firebase-storage = { group = "com.google.firebase", name = "firebase-storage" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

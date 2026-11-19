@@ -4,11 +4,18 @@ import com.digitumdei.shotquill.shared.domain.CropShape
 import com.digitumdei.shotquill.shared.domain.LogoCorner
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.social.PublishTarget
 
-/** What is remembered about one post's photo: how it is treated and the last file made from it. */
+/**
+ * What is remembered about one post beside the database: how its photo is
+ * treated, the last file made from it, the text written for Bluesky, and a
+ * link to each place it has been published to directly.
+ */
 data class StoredTreatment(
     val treatment: PhotoTreatment,
     val renderedUri: String? = null,
+    val blueskyText: String = "",
+    val published: Map<PublishTarget, String> = emptyMap(),
 )
 
 interface PhotoTreatmentStore {
@@ -46,6 +53,8 @@ object StoredTreatmentCodec {
     private const val KeyLogo = "logo"
     private const val KeyCorner = "corner"
     private const val KeyRendered = "rendered"
+    private const val KeyBlueskyText = "bluesky"
+    private const val KeyPublishedPrefix = "published."
 
     fun encode(stored: StoredTreatment): String = buildString {
         val t = stored.treatment
@@ -57,6 +66,8 @@ object StoredTreatmentCodec {
         appendLine("$KeyLogo=${t.logoEnabled}")
         t.logoCorner?.let { appendLine("$KeyCorner=${it.wireValue}") }
         stored.renderedUri?.let { appendLine("$KeyRendered=$it") }
+        if (stored.blueskyText.isNotEmpty()) appendLine("$KeyBlueskyText=${escape(stored.blueskyText)}")
+        stored.published.forEach { (target, url) -> appendLine("$KeyPublishedPrefix${target.wireValue}=$url") }
     }.trimEnd()
 
     fun decode(encoded: String): StoredTreatment {
@@ -81,7 +92,34 @@ object StoredTreatmentCodec {
                 logoCorner = fields[KeyCorner]?.let(LogoCorner::fromWireValue),
             ),
             renderedUri = fields[KeyRendered]?.takeIf { it.isNotBlank() },
+            blueskyText = fields[KeyBlueskyText]?.let(::unescape).orEmpty(),
+            published = fields.entries.mapNotNull { (key, url) ->
+                if (!key.startsWith(KeyPublishedPrefix) || url.isBlank()) {
+                    null
+                } else {
+                    PublishTarget.fromWireValue(key.removePrefix(KeyPublishedPrefix))?.let { it to url }
+                }
+            }.toMap(),
         )
+    }
+
+    // Each field sits on its own line, so line breaks inside a text are written as \n.
+    private fun escape(value: String): String = value.replace("\\", "\\\\").replace("\n", "\\n")
+
+    private fun unescape(value: String): String {
+        val out = StringBuilder(value.length)
+        var index = 0
+        while (index < value.length) {
+            val current = value[index]
+            if (current == '\\' && index + 1 < value.length) {
+                out.append(if (value[index + 1] == 'n') '\n' else value[index + 1])
+                index += 2
+            } else {
+                out.append(current)
+                index += 1
+            }
+        }
+        return out.toString()
     }
 
     private fun String?.toFraction(fallback: Float): Float =

@@ -33,6 +33,7 @@ import com.digitumdei.shotquill.shared.post.PhotoTreatmentStore
 import com.digitumdei.shotquill.shared.post.PostSummary
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.PostPublisher
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
 import com.digitumdei.shotquill.speech.DictationController
@@ -76,6 +77,7 @@ fun App(
     postShareLauncher: PostShareLauncher? = null,
     dictation: DictationController? = null,
     altTextWriter: AltTextWriter? = null,
+    publishers: List<PostPublisher> = emptyList(),
 ) {
     val settings = settingsRepository ?: remember { InMemoryLocalSettingsRepository() }
     val store = remember(postDraftRepository, treatmentStore) {
@@ -175,6 +177,7 @@ fun App(
                                 shareLauncher = postShareLauncher,
                                 dictation = dictation,
                                 altTextWriter = altTextWriter,
+                                publishers = publishers,
                                 onBack = { goBack() },
                                 onOpenSettings = { openSettings() },
                             )
@@ -192,6 +195,7 @@ fun App(
                             previewUri = previewUri,
                             previewSize = previewSize,
                             dictationOnDevice = dictation?.takeIf { it.isAvailable }?.isOnDevice,
+                            publishers = publishers,
                             onPickLogo = onPickLogo?.let { pick ->
                                 { pick(viewModel::logoImported, viewModel::logoImportFailed) }
                             },

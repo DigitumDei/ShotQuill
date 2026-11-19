@@ -12,6 +12,7 @@ import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
 import com.digitumdei.shotquill.shared.domain.PostFormat
 import com.digitumdei.shotquill.shared.settings.SnippetCodec
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import com.digitumdei.shotquill.shared.storage.UpdateSelectionResult
 import com.digitumdei.shotquill.shared.workflow.NewPostCreator
@@ -120,6 +121,39 @@ class PostEditorStoreTest {
 
         store.saveAltText(id, "  ")
         assertEquals("", store.load(id)?.altText)
+    }
+
+    @Test
+    fun blueskyTextAndWhereAPostWentAreKeptThroughOtherChanges() {
+        val id = newPost("one")
+
+        store.saveBlueskyText(id, "Short one.\nSecond line \\ with a backslash.")
+        store.saveBlueskyText(id, "Short one.\nSecond line \\ with a backslash.")
+        store.markPublished(id, PublishTarget.Bluesky, "https://bsky.app/profile/doctrine/post/1", "file:///edited/one.jpg")
+        store.saveTreatment(id, PhotoTreatment(cropShape = CropShape.Square))
+        store.markShared(id, "file:///edited/two.jpg")
+
+        val post = assertNotNull(store.load(id))
+        assertEquals("Short one.\nSecond line \\ with a backslash.", post.blueskyText)
+        assertEquals(mapOf(PublishTarget.Bluesky to "https://bsky.app/profile/doctrine/post/1"), post.published)
+        assertEquals("file:///edited/two.jpg", post.renderedUri)
+        assertEquals(CropShape.Square, post.treatment?.cropShape)
+        assertTrue(post.shared)
+    }
+
+    @Test
+    fun aNewPostHasNoBlueskyTextAndHasNotBeenPublished() {
+        val post = assertNotNull(store.load(newPost("one")))
+
+        assertEquals("", post.blueskyText)
+        assertTrue(post.published.isEmpty())
+    }
+
+    @Test
+    fun unknownPublishTargetsInStoredDataAreIgnored() {
+        val decoded = StoredTreatmentCodec.decode("published.myspace=https://x\npublished.bluesky=\npublished.bluesky=https://y")
+
+        assertEquals(mapOf(PublishTarget.Bluesky to "https://y"), decoded.published)
     }
 
     @Test

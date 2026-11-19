@@ -7,6 +7,7 @@ import com.digitumdei.shotquill.shared.domain.FinalPostContent
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PostDraft
 import com.digitumdei.shotquill.shared.domain.PostDraftId
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import com.digitumdei.shotquill.shared.storage.PostDraftRepository
 import kotlinx.datetime.Instant
 
@@ -30,6 +31,10 @@ data class EditablePost(
     val treatment: PhotoTreatment?,
     val renderedUri: String?,
     val shared: Boolean,
+    /** Written for Bluesky only; empty means the caption is used there too. */
+    val blueskyText: String = "",
+    /** A link to the post on each service it was published to directly. */
+    val published: Map<PublishTarget, String> = emptyMap(),
 )
 
 /** The few things the app needs to keep about a post: the photo, the words and how the photo is treated. */
@@ -39,7 +44,11 @@ interface PostEditorStore {
     fun saveCaption(id: PostDraftId, caption: String)
     fun saveAltText(id: PostDraftId, altText: String)
     fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment)
+    fun saveBlueskyText(id: PostDraftId, text: String)
     fun markShared(id: PostDraftId, renderedUri: String)
+
+    /** Records that the post went out to [target] and where it can be seen. */
+    fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String)
     fun remove(id: PostDraftId)
 }
 
@@ -74,6 +83,8 @@ class DraftBackedPostEditorStore(
             treatment = stored?.treatment,
             renderedUri = stored?.renderedUri,
             shared = draft.status == DraftStatus.Shared,
+            blueskyText = stored?.blueskyText.orEmpty(),
+            published = stored?.published.orEmpty(),
         )
     }
 
@@ -107,16 +118,25 @@ class DraftBackedPostEditorStore(
     }
 
     override fun saveTreatment(id: PostDraftId, treatment: PhotoTreatment) {
-        val existing = treatments.get(id)
-        treatments.save(id, StoredTreatment(treatment = treatment, renderedUri = existing?.renderedUri))
+        treatments.save(id, stored(id).copy(treatment = treatment))
     }
 
+    override fun saveBlueskyText(id: PostDraftId, text: String) {
+        val existing = stored(id)
+        if (existing.blueskyText == text) return
+        treatments.save(id, existing.copy(blueskyText = text))
+    }
+
+    override fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String) {
+        markShared(id, renderedUri)
+        val existing = stored(id)
+        treatments.save(id, existing.copy(published = existing.published + (target to url)))
+    }
+
+    private fun stored(id: PostDraftId): StoredTreatment = treatments.get(id) ?: StoredTreatment(PhotoTreatment())
+
     override fun markShared(id: PostDraftId, renderedUri: String) {
-        val existing = treatments.get(id)
-        treatments.save(
-            id,
-            StoredTreatment(treatment = existing?.treatment ?: PhotoTreatment(), renderedUri = renderedUri),
-        )
+        treatments.save(id, stored(id).copy(renderedUri = renderedUri))
         val draft = drafts.get(id) ?: return
         // Saved directly rather than through updateStatus: the status ladder was
         // built for the old multi-step workflow and has no rung from "photo

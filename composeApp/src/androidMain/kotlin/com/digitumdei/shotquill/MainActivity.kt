@@ -31,6 +31,10 @@ import com.digitumdei.shotquill.shared.ai.UrlConnectionAiHttpTransport
 import com.digitumdei.shotquill.speech.rememberDictationController
 import com.digitumdei.shotquill.shared.post.AndroidPhotoTreatmentStore
 import com.digitumdei.shotquill.shared.settings.AndroidLocalSettingsRepository
+import com.digitumdei.shotquill.shared.social.BlueskyPublisher
+import com.digitumdei.shotquill.shared.social.InstagramPublisher
+import com.digitumdei.shotquill.social.FirebaseImageHost
+import com.digitumdei.shotquill.shared.social.UrlConnectionHttpTransport
 import com.digitumdei.shotquill.shared.storage.AndroidDatabaseDriverFactory
 import com.digitumdei.shotquill.shared.storage.SqlDelightManualWorkflowRepository
 import kotlinx.coroutines.CancellationException
@@ -59,6 +63,16 @@ class MainActivity : ComponentActivity() {
         val logoImporter = LogoImporter(contentResolver, filesDir)
         val clipboardWriter = AndroidClipboardWriter(this)
         val postShareLauncher = AndroidPostShareLauncher(this)
+        val httpTransport = UrlConnectionHttpTransport()
+        val publishers = listOf(
+            InstagramPublisher(
+                settings = settingsRepository,
+                transport = httpTransport,
+                imageHost = FirebaseImageHost(this, settingsRepository),
+                pause = { millis -> Thread.sleep(millis) },
+            ),
+            BlueskyPublisher(settingsRepository, httpTransport),
+        )
         val altTextWriter = AltTextWriter(
             settings = settingsRepository,
             client = ChatCompletionsClient(UrlConnectionAiHttpTransport()),
@@ -145,6 +159,7 @@ class MainActivity : ComponentActivity() {
                 postShareLauncher = postShareLauncher,
                 dictation = dictation,
                 altTextWriter = altTextWriter,
+                publishers = publishers,
             )
         }
     }

@@ -16,6 +16,9 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.QualityTier
 import com.digitumdei.shotquill.shared.domain.RealismLevel
 import com.digitumdei.shotquill.shared.domain.TargetPlatform
+import com.digitumdei.shotquill.shared.social.BlueskySettings
+import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
+import com.digitumdei.shotquill.shared.social.InstagramSettings
 
 class AndroidLocalSettingsRepository(
     context: Context,
@@ -57,6 +60,23 @@ class AndroidLocalSettingsRepository(
                 ?.let(SnippetCodec::decode)
                 ?: CaptionSnippet.Defaults,
             ai = readAi(),
+            bluesky = BlueskySettings(
+                handle = regularPreferences.getString(KeyBlueskyHandle, null).orEmpty(),
+                server = regularPreferences.getString(KeyBlueskyServer, null)?.takeIf { it.isNotBlank() }
+                    ?: BlueskySettings.DefaultServer,
+            ),
+            instagram = InstagramSettings(
+                username = regularPreferences.getString(KeyInstagramUsername, null).orEmpty(),
+                tokenSavedAtMillis = regularPreferences.getLong(KeyInstagramTokenSavedAt, 0L),
+                tokenExpiresAtMillis = regularPreferences.getLong(KeyInstagramTokenExpiresAt, 0L),
+            ),
+            firebaseHost = FirebaseHostSettings(
+                apiKey = regularPreferences.getString(KeyFirebaseApiKey, null).orEmpty(),
+                appId = regularPreferences.getString(KeyFirebaseAppId, null).orEmpty(),
+                projectId = regularPreferences.getString(KeyFirebaseProjectId, null).orEmpty(),
+                storageBucket = regularPreferences.getString(KeyFirebaseBucket, null).orEmpty(),
+                email = regularPreferences.getString(KeyFirebaseEmail, null).orEmpty(),
+            ),
         )
 
     private fun readAi(): AiSettings =
@@ -111,6 +131,16 @@ class AndroidLocalSettingsRepository(
             .putString(KeyLogoCorner, settings.logo.corner.wireValue)
             .putString(KeySnippets, SnippetCodec.encode(settings.snippets))
             .putString(KeyAiBaseUrl, settings.ai.baseUrl)
+            .putString(KeyBlueskyHandle, settings.bluesky.handle)
+            .putString(KeyBlueskyServer, settings.bluesky.server)
+            .putString(KeyInstagramUsername, settings.instagram.username)
+            .putLong(KeyInstagramTokenSavedAt, settings.instagram.tokenSavedAtMillis)
+            .putLong(KeyInstagramTokenExpiresAt, settings.instagram.tokenExpiresAtMillis)
+            .putString(KeyFirebaseApiKey, settings.firebaseHost.apiKey)
+            .putString(KeyFirebaseAppId, settings.firebaseHost.appId)
+            .putString(KeyFirebaseProjectId, settings.firebaseHost.projectId)
+            .putString(KeyFirebaseBucket, settings.firebaseHost.storageBucket)
+            .putString(KeyFirebaseEmail, settings.firebaseHost.email)
             .also { editor ->
                 AiOperation.entries.forEach { operation ->
                     val models = settings.ai.models[operation]
@@ -137,6 +167,19 @@ class AndroidLocalSettingsRepository(
 
     override fun clearOpenAiApiKey() {
         secretPreferences.edit().remove(KeyOpenAiApiKey).apply()
+    }
+
+    override fun getSecret(name: String): String? =
+        secretPreferences.getString(SecretPrefix + name, null)?.takeIf { it.isNotBlank() }
+
+    override fun saveSecret(name: String, value: String) {
+        val trimmed = value.trim()
+        require(trimmed.isNotEmpty()) { "A secret cannot be blank" }
+        secretPreferences.edit().putString(SecretPrefix + name, trimmed).apply()
+    }
+
+    override fun clearSecret(name: String) {
+        secretPreferences.edit().remove(SecretPrefix + name).apply()
     }
 
     private fun <T> SharedPreferences.enumSetting(
@@ -194,5 +237,16 @@ class AndroidLocalSettingsRepository(
         const val KeySnippets = "caption_snippets"
         const val KeyAiBaseUrl = "ai_base_url"
         const val KeyAiModelsPrefix = "ai_models_"
+        const val KeyBlueskyHandle = "bluesky_handle"
+        const val KeyBlueskyServer = "bluesky_server"
+        const val KeyInstagramUsername = "instagram_username"
+        const val KeyInstagramTokenSavedAt = "instagram_token_saved_at"
+        const val KeyInstagramTokenExpiresAt = "instagram_token_expires_at"
+        const val KeyFirebaseApiKey = "firebase_api_key"
+        const val KeyFirebaseAppId = "firebase_app_id"
+        const val KeyFirebaseProjectId = "firebase_project_id"
+        const val KeyFirebaseBucket = "firebase_storage_bucket"
+        const val KeyFirebaseEmail = "firebase_upload_email"
+        const val SecretPrefix = "secret_"
     }
 }

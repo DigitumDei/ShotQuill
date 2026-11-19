@@ -26,6 +26,10 @@ import com.digitumdei.shotquill.shared.post.PostEditorStore
 import com.digitumdei.shotquill.shared.post.PostSummary
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.social.PostPublisher
+import com.digitumdei.shotquill.shared.social.PostToPublish
+import com.digitumdei.shotquill.shared.social.PublishResult
+import com.digitumdei.shotquill.shared.social.PublishTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,6 +56,8 @@ class PostEditorViewModelTest {
     )
 
     private val aiTransport = FakeAiTransport()
+    private val bluesky = FakePublisher()
+    private val instagram = FakePublisher(PublishTarget.Instagram, account = "@doctrinebrewing").apply { configured = false }
     private var withAi = false
 
     /** Saves a key and two models, so the view models made afterwards can ask for alt text. */
@@ -77,6 +83,7 @@ class PostEditorViewModelTest {
                 override fun nowMillis(): Long = 1_700_000_000_000L
             },
             altTextWriter = if (withAi) AltTextWriter(settings, ChatCompletionsClient(aiTransport)) else null,
+            publishers = listOf(instagram, bluesky),
         )
 
     private fun loadedViewModel(): PostEditorViewModel {
@@ -161,6 +168,9 @@ class PostEditorViewModelTest {
         vm.writeAltText()
         vm.copyAltText()
         vm.persistAltText()
+        vm.updateBlueskyText("too early")
+        vm.persistBlueskyText()
+        vm.publish(PublishTarget.Bluesky)
         vm.selectShape(CropShape.Story)
         vm.panZoom(0.5f, 0.5f, 2f)
         vm.setLookEnabled(false)
@@ -330,6 +340,168 @@ class PostEditorViewModelTest {
     }
 
     @Test
+    fun aServiceThatIsNotSetUpIsNotOffered() {
+        bluesky.configured = false
+
+        val vm = loadedViewModel()
+        vm.publish(PublishTarget.Bluesky)
+
+        assertTrue(vm.state.targets.isEmpty())
+        assertFalse(vm.state.hasBluesky)
+        assertTrue(bluesky.posts.isEmpty())
+    }
+
+    @Test
+    fun instagramGetsTheCaptionEvenWhenThereIsABlueskyText() {
+        instagram.configured = true
+        instagram.result = PublishResult.Success("https://www.instagram.com/p/ABC/")
+        val vm = loadedViewModel()
+        vm.updateCaption("  The full Instagram caption. #doctrine  ")
+        vm.updateBlueskyText("Short Bluesky version.")
+
+        vm.publish(PublishTarget.Instagram)
+
+        assertEquals(listOf(PublishTarget.Instagram, PublishTarget.Bluesky), vm.state.targets.map { it.target })
+        assertEquals("The full Instagram caption. #doctrine", instagram.posts.single().text)
+        assertTrue(bluesky.posts.isEmpty())
+        assertEquals("Posted to Instagram as @doctrinebrewing.", vm.state.message)
+        assertEquals("https://www.instagram.com/p/ABC/", vm.state.targets.first().postedUrl)
+        assertNull(vm.state.targets.last().postedUrl)
+    }
+
+    @Test
+    fun aShapeTheServiceCannotTakeIsReportedAndNothingIsPosted() {
+        instagram.configured = true
+        instagram.imageProblem = "Instagram's posting service takes shapes from 4:5 to 1.91:1."
+        val vm = loadedViewModel()
+
+        vm.publish(PublishTarget.Instagram)
+
+        assertEquals("Instagram's posting service takes shapes from 4:5 to 1.91:1.", vm.state.message)
+        assertTrue(instagram.posts.isEmpty())
+        assertEquals(listOf("file:///edited/draft-1-1700000000000.jpg"), renderer.discarded)
+        assertFalse(vm.state.isPublishing)
+    }
+
+    @Test
+    fun aConfiguredServiceIsOfferedWithItsAccountAndEarlierPost() {
+        store.post = EditablePost(
+            draftId, photoUri, caption = "", altText = "", treatment = null, renderedUri = null, shared = true,
+            blueskyText = "Written for Bluesky.",
+            published = mapOf(PublishTarget.Bluesky to "https://bsky.app/profile/doctrine/post/1"),
+        )
+        renderer.sizes[photoUri] = PixelSize(4000, 3000)
+
+        val state = viewModel().also { it.load() }.state
+
+        assertTrue(state.hasBluesky)
+        val target = state.targets.single()
+        assertEquals("@doctrine.bsky.social", target.account)
+        assertEquals("https://bsky.app/profile/doctrine/post/1", target.postedUrl)
+        assertEquals("Written for Bluesky.", state.blueskyText)
+        assertEquals("Written for Bluesky.", state.blueskyPostText)
+    }
+
+    @Test
+    fun postingToBlueskySendsTheRenderedImageTheCaptionAndTheAltText() {
+        val vm = loadedViewModel()
+        vm.updateCaption("  First pour.  ")
+        vm.updateAltText(" A glass of beer. ")
+
+        vm.publish(PublishTarget.Bluesky)
+
+        val post = bluesky.posts.single()
+        assertEquals("First pour.", post.text)
+        assertEquals("A glass of beer.", post.altText)
+        assertEquals(listOf<Byte>(7, 7), post.jpeg.toList())
+        assertEquals(1080, post.imageWidth)
+        assertEquals(1080, post.imageHeight)
+        assertEquals(listOf("file:///edited/draft-1-1700000000000.jpg" to 950_000), renderer.fitted)
+        assertEquals(
+            Triple(PublishTarget.Bluesky, "https://bsky.app/profile/doctrine/post/new", "file:///edited/draft-1-1700000000000.jpg"),
+            store.publishedTo,
+        )
+        val target = vm.state.targets.single()
+        assertEquals("https://bsky.app/profile/doctrine/post/new", target.postedUrl)
+        assertFalse(target.isPublishing)
+        assertTrue(vm.state.shared)
+        assertEquals("Posted to Bluesky as @doctrine.bsky.social.", vm.state.message)
+        assertTrue(clipboard.copies.isEmpty())
+        assertTrue(shareLauncher.shares.isEmpty())
+        assertEquals(listOf("  First pour.  "), store.savedCaptions)
+    }
+
+    @Test
+    fun textWrittenForBlueskyIsUsedInsteadOfTheCaption() {
+        val vm = loadedViewModel()
+        vm.updateCaption("A long Instagram caption with many hashtags.")
+        vm.updateBlueskyText("Short and conversational.")
+        vm.persistBlueskyText()
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertEquals("Short and conversational.", bluesky.posts.single().text)
+        assertEquals(25, vm.state.blueskyLength)
+        assertEquals("Short and conversational.", store.savedBlueskyTexts.last())
+    }
+
+    @Test
+    fun aPostThatIsTooLongForBlueskyIsNotSent() {
+        val vm = loadedViewModel()
+        vm.updateCaption("a".repeat(301))
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertTrue(vm.state.blueskyTooLong)
+        assertEquals("too long: 301", vm.state.message)
+        assertTrue(bluesky.posts.isEmpty())
+        assertTrue(renderer.requests.isEmpty())
+    }
+
+    @Test
+    fun aFailedPostIsReportedAndItsImageDiscarded() {
+        val vm = loadedViewModel()
+        bluesky.result = PublishResult.Failure("Bluesky did not accept the handle or app password.")
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertEquals("Bluesky did not accept the handle or app password.", vm.state.message)
+        assertNull(vm.state.targets.single().postedUrl)
+        assertFalse(vm.state.shared)
+        assertNull(store.publishedTo)
+        assertEquals(listOf("file:///edited/draft-1-1700000000000.jpg"), renderer.discarded)
+    }
+
+    @Test
+    fun problemsPreparingTheImageStopThePost() {
+        val vm = loadedViewModel()
+        renderer.outcome = RenderOutcome.Failure("The photo could not be opened.")
+        vm.publish(PublishTarget.Bluesky)
+        assertEquals("The photo could not be opened.", vm.state.message)
+
+        renderer.outcome = null
+        renderer.fittedBytes = null
+        vm.publish(PublishTarget.Bluesky)
+        assertEquals("The image could not be made small enough for Bluesky.", vm.state.message)
+        assertTrue(bluesky.posts.isEmpty())
+        assertFalse(vm.state.isPublishing)
+    }
+
+    @Test
+    fun postingAgainReplacesTheEarlierImage() {
+        store.post = EditablePost(
+            draftId, photoUri, caption = "", altText = "", treatment = PhotoTreatment(),
+            renderedUri = "file:///edited/old.jpg", shared = true,
+        )
+        renderer.sizes[photoUri] = PixelSize(4000, 3000)
+        val vm = viewModel().also { it.load() }
+
+        vm.publish(PublishTarget.Bluesky)
+
+        assertEquals(listOf("file:///edited/old.jpg"), renderer.discarded)
+    }
+
+    @Test
     fun framingChangesAreKept() {
         val vm = loadedViewModel()
 
@@ -471,6 +643,8 @@ private class FakeStore : PostEditorStore {
     val savedCaptions = mutableListOf<String>()
     val savedTreatments = mutableListOf<PhotoTreatment>()
     val savedAltTexts = mutableListOf<String>()
+    val savedBlueskyTexts = mutableListOf<String>()
+    var publishedTo: Triple<PublishTarget, String, String>? = null
     var sharedWith: String? = null
     var removed = false
 
@@ -495,6 +669,14 @@ private class FakeStore : PostEditorStore {
         sharedWith = renderedUri
     }
 
+    override fun saveBlueskyText(id: PostDraftId, text: String) {
+        if (text.isNotEmpty() || savedBlueskyTexts.isNotEmpty()) savedBlueskyTexts += text
+    }
+
+    override fun markPublished(id: PostDraftId, target: PublishTarget, url: String, renderedUri: String) {
+        publishedTo = Triple(target, url, renderedUri)
+    }
+
     override fun remove(id: PostDraftId) {
         removed = true
     }
@@ -506,6 +688,8 @@ internal class FakeRenderer : PhotoRenderer {
     val discarded = mutableListOf<String>()
     val described = mutableListOf<Pair<String, CropShape>>()
     var descriptionBytes: ByteArray? = byteArrayOf(9, 9, 9)
+    val fitted = mutableListOf<Pair<String, Int>>()
+    var fittedBytes: ByteArray? = byteArrayOf(7, 7)
     var outcome: RenderOutcome? = null
 
     override fun orientedSize(uri: String): PixelSize? = sizes[uri]
@@ -520,8 +704,38 @@ internal class FakeRenderer : PhotoRenderer {
         return descriptionBytes
     }
 
+    override fun jpegWithin(uri: String, maxBytes: Int): ByteArray? {
+        fitted += uri to maxBytes
+        return fittedBytes
+    }
+
     override fun discard(uri: String) {
         discarded += uri
+    }
+}
+
+private class FakePublisher(
+    override val target: PublishTarget = PublishTarget.Bluesky,
+    private val account: String = "@doctrine.bsky.social",
+) : PostPublisher {
+    var configured = true
+    var result: PublishResult = PublishResult.Success("https://bsky.app/profile/doctrine/post/new")
+    var imageProblem: String? = null
+    val posts = mutableListOf<PostToPublish>()
+
+    override val isConfigured get() = configured
+    override val accountLabel get() = if (configured) account else null
+    override val maxImageBytes = 950_000
+
+    override fun problemWithImage(width: Int, height: Int): String? = imageProblem
+
+    override fun check(): String = "checked"
+
+    override fun problemWith(text: String): String? = if (text.length > 300) "too long: ${text.length}" else null
+
+    override fun publish(post: PostToPublish): PublishResult {
+        posts += post
+        return result
     }
 }
 

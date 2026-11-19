@@ -132,6 +132,41 @@ class AndroidPhotoRenderer(
         }
     }
 
+    override fun jpegWithin(uri: String, maxBytes: Int): ByteArray? {
+        val file = uri.toFilePath()?.let(::File)?.takeIf { it.isFile } ?: return null
+        if (file.length() <= maxBytes) return file.readBytes()
+        var bitmap: Bitmap? = null
+        return try {
+            var current = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+            bitmap = current
+            // Lower the quality first; only if that is not enough, make the picture smaller.
+            repeat(MaxShrinkSteps) {
+                for (quality in RecompressQualities) {
+                    val bytes = ByteArrayOutputStream()
+                    if (current.compress(Bitmap.CompressFormat.JPEG, quality, bytes) && bytes.size() <= maxBytes) {
+                        return bytes.toByteArray()
+                    }
+                }
+                val smaller = Bitmap.createScaledBitmap(
+                    current,
+                    (current.width * ShrinkFactor).roundToInt().coerceAtLeast(1),
+                    (current.height * ShrinkFactor).roundToInt().coerceAtLeast(1),
+                    true,
+                )
+                if (smaller !== current) current.recycle()
+                current = smaller
+                bitmap = smaller
+            }
+            null
+        } catch (_: OutOfMemoryError) {
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            bitmap?.recycle()
+        }
+    }
+
     /** The crop, given in full-size photo pixels, as a rectangle inside the (possibly reduced) decoded bitmap. */
     private fun cropWithin(photo: Bitmap, crop: PixelRect, decodeScale: Float): Rect =
         Rect(
@@ -250,5 +285,8 @@ class AndroidPhotoRenderer(
         const val OutputDirectory = "media/edited"
         const val JpegQuality = 92
         const val DescriptionJpegQuality = 85
+        val RecompressQualities = listOf(88, 80, 72, 64)
+        const val ShrinkFactor = 0.85f
+        const val MaxShrinkSteps = 6
     }
 }
