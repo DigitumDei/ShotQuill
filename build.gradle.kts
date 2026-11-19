@@ -12,6 +12,17 @@ dependencies {
     kover(project(":composeApp"))
 }
 
+// Kover's verify and report tasks must not overlap. With parallel builds the
+// root task could run at the same moment as the same task in :shared and
+// :composeApp, and it then sometimes measured coverage without the exclusions
+// below: the gate reported about 55% where the real figure is over 90%. It
+// showed up on a fresh checkout, where all three have work to do, which is
+// every CI run. Making the root tasks wait for the others removes the overlap.
+val koverMeasuring = Regex("kover(Cached)?Verify.*|kover(Xml|Html|Binary|Log)Report.*")
+tasks.matching { koverMeasuring.matches(it.name) }.configureEach {
+    mustRunAfter(subprojects.map { project -> project.tasks.matching { koverMeasuring.matches(it.name) } })
+}
+
 kover {
     reports {
         // Applied to BOTH the generated reports (reports.filters) and the total/verify
