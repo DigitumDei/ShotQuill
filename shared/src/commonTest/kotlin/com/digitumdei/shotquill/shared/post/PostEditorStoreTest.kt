@@ -172,11 +172,12 @@ class PostEditorStoreTest {
         // An image left beside a removed post by some other route is counted, since clearing deletes it too.
         treatments.save(removed, StoredTreatment(PhotoTreatment(), renderedUri = "file:///edited/removed.jpg"))
 
-        assertEquals(
-            setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"),
-            store.removedPostPhotos().toSet(),
-        )
-        assertNotNull(store.load(listed))
+        val counted = store.removedPostPhotos().toSet()
+        assertEquals(setOf("file:///photos/removed.jpg", "file:///edited/removed.jpg"), counted)
+
+        // Clearing hands back exactly what was counted: never the photo the listed post still uses.
+        assertEquals(counted, store.clearRemovedPosts().toSet())
+        assertEquals("file:///photos/shared.jpg", store.load(listed)?.originalUri)
     }
 
     @Test

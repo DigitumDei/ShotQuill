@@ -10,7 +10,17 @@
 -- post_drafts would take its rows in other tables with it wherever those
 -- links are enforced, which they are on a phone.
 
--- 1. Copy aside what is kept.
+-- 1. Copy aside what is kept: the rows that join a post to its photo first,
+--    then the posts and photos those rows join. A post is nothing the app can
+--    show without its photo, so a post with none is not kept.
+
+-- Only rows whose post and photo both exist. A row pointing at nothing can
+-- only be there if the links were not enforced when it was written.
+CREATE TABLE migrating_post_draft_media_items AS
+SELECT draft_id, media_asset_id, media_order
+FROM post_draft_media_items
+WHERE draft_id IN (SELECT id FROM post_drafts)
+  AND media_asset_id IN (SELECT id FROM media_assets);
 
 CREATE TABLE migrating_post_drafts AS
 SELECT
@@ -18,7 +28,9 @@ SELECT
   pd.format AS format,
   -- The steps of the old flow are gone: a post is new, shared or removed.
   CASE WHEN pd.status IN ('shared', 'archived') THEN pd.status ELSE 'photo_added' END AS status,
-  COALESCE(pd.caption_text, fpc.edited_caption) AS caption_text,
+  -- A caption typed over a generated one was kept apart from it, and is the
+  -- one that was meant. Posts made since the old flow went have only the first.
+  COALESCE(fpc.edited_caption, pd.caption_text) AS caption_text,
   -- Alt text typed by hand, or failing that the last one the old flow wrote.
   COALESCE(
     fpc.edited_alt_text,
@@ -32,19 +44,14 @@ SELECT
   pd.created_at_epoch_millis AS created_at_epoch_millis,
   pd.updated_at_epoch_millis AS updated_at_epoch_millis
 FROM post_drafts pd
-LEFT JOIN final_post_content fpc ON fpc.draft_id = pd.id;
+LEFT JOIN final_post_content fpc ON fpc.draft_id = pd.id
+WHERE pd.id IN (SELECT draft_id FROM migrating_post_draft_media_items);
 
 -- Only photos a post uses. Images made by the old flow belong to no post.
 CREATE TABLE migrating_media_assets AS
 SELECT id, uri, mime_type, width_px, height_px, created_at_epoch_millis
 FROM media_assets
-WHERE id IN (SELECT media_asset_id FROM post_draft_media_items);
-
-CREATE TABLE migrating_post_draft_media_items AS
-SELECT draft_id, media_asset_id, media_order
-FROM post_draft_media_items
-WHERE draft_id IN (SELECT id FROM post_drafts)
-  AND media_asset_id IN (SELECT id FROM media_assets);
+WHERE id IN (SELECT media_asset_id FROM migrating_post_draft_media_items);
 
 -- 2. Drop every table, each before the tables it refers to.
 

@@ -53,7 +53,7 @@ class AndroidDatabaseUpgradeTest {
         val repository = SqlDelightPostDraftRepository(driver)
 
         assertEquals(
-            listOf("draft-phone", "draft-new", "draft-removed", "draft-old", "draft-typed"),
+            listOf("draft-phone", "draft-new", "draft-removed", "draft-old", "draft-typed", "draft-only-typed"),
             repository.listPostDrafts().map { it.id.value },
         )
         val phone = assertNotNull(repository.get(PostDraftId("draft-phone")))
@@ -62,6 +62,7 @@ class AndroidDatabaseUpgradeTest {
         assertEquals("A glass of beer on a bar.", phone.altText)
         assertEquals("file:///photos/phone.jpg", phone.mediaItems.single().mediaAsset.uri)
         assertEquals("The latest description", repository.get(PostDraftId("draft-old"))?.altText)
+        assertEquals("Typed by hand", repository.get(PostDraftId("draft-typed"))?.caption)
         driver.close()
         assertEquals(2, versionOnDisk())
 
@@ -69,7 +70,7 @@ class AndroidDatabaseUpgradeTest {
         val reopened = AndroidDatabaseDriverFactory(context).create(name)
         val again = SqlDelightPostDraftRepository(reopened)
         assertEquals(phone, again.get(PostDraftId("draft-phone")))
-        assertEquals(5, again.listPostDrafts().size)
+        assertEquals(6, again.listPostDrafts().size)
         reopened.close()
     }
 

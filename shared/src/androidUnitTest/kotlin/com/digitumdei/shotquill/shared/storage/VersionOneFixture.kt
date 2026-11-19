@@ -116,11 +116,37 @@ internal object VersionOneFixture {
         VALUES ('export-1', 'draft-old', 'instagram_portrait', 'exported', NULL, NULL, $Created, NULL)
         """,
 
-        // --- An old post whose only caption was one typed over the generated text.
+        // --- An old post whose generated caption and alt text were both typed over. The old flow
+        //     kept what it generated where it was and stored what was typed beside it.
         photo("media-typed", "file:///photos/typed.jpg"),
-        draft("draft-typed", status = "ready_to_share", caption = "NULL", updated = Created + 50_000),
+        draft("draft-typed", status = "ready_to_share", caption = "'A generated caption'", updated = Created + 50_000),
         mediaItem("draft-typed", "media-typed"),
-        finalContent("draft-typed", caption = "'Typed by hand'", altText = "NULL"),
+        """
+        INSERT INTO alt_text_results(id, draft_id, media_asset_id, alt_text, model_name, created_at_epoch_millis)
+        VALUES ('alt-typed', 'draft-typed', 'media-typed', 'A generated description', NULL, ${Created + 9_000})
+        """,
+        finalContent("draft-typed", caption = "'Typed by hand'", altText = "'Described by hand'"),
+
+        // --- An old post with no generated caption at all, only a typed one.
+        photo("media-only-typed", "file:///photos/only-typed.jpg"),
+        draft("draft-only-typed", status = "draft", caption = "NULL", updated = Created + 40_000),
+        mediaItem("draft-only-typed", "media-only-typed"),
+        finalContent("draft-only-typed", caption = "'Only ever typed'", altText = "NULL"),
+    )
+
+    /**
+     * Rows that point at nothing, which a database can only hold if the links
+     * between its tables were not enforced when they were written: a post
+     * whose photo is not there, a post with no photo at all, a photo joined
+     * to a post that is not there, and a second, broken, link on a good post.
+     */
+    val rowsThatPointAtNothing: List<String> = listOf(
+        draft("draft-photo-missing", status = "photo_added", caption = "'Its photo is gone'", updated = Created + 30_000),
+        mediaItem("draft-photo-missing", "no-such-photo"),
+        draft("draft-no-photo", status = "shared", caption = "'Never had one'", updated = Created + 20_000),
+        photo("media-of-no-post", "file:///photos/of-no-post.jpg"),
+        mediaItem("no-such-draft", "media-of-no-post"),
+        "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES ('draft-phone', 'no-such-photo', 1)",
     )
 
     private fun photo(id: String, uri: String) =

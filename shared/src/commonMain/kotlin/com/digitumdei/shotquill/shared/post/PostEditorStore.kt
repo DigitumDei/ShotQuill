@@ -111,13 +111,17 @@ class DraftBackedPostEditorStore(
     }
 
     override fun clearRemovedPosts(): List<String> = synchronized(lock) {
-        drafts.listPostDrafts()
-            .filter { it.status == DraftStatus.Archived }
+        val all = drafts.listPostDrafts()
+        // As in removedPostPhotos: a photo a listed post still uses is never
+        // handed back for deletion, whatever is stored about who else used it.
+        val stillUsed = all.filter { it.status != DraftStatus.Archived }.mapNotNull { it.primaryMediaUri }.toSet()
+        all.filter { it.status == DraftStatus.Archived }
             .flatMap { removed ->
                 val rendered = treatments.get(removed.id)?.renderedUri
                 treatments.remove(removed.id)
                 drafts.delete(removed.id) + listOfNotNull(rendered)
             }
+            .filter { it !in stillUsed }
             .distinct()
     }
 

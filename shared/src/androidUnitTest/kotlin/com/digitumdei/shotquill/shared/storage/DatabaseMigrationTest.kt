@@ -116,6 +116,7 @@ class DatabaseMigrationTest {
                     Triple("draft-removed", DraftStatus.Archived, "file:///photos/removed.jpg"),
                     Triple("draft-old", DraftStatus.PhotoAdded, "file:///photos/old.jpg"),
                     Triple("draft-typed", DraftStatus.PhotoAdded, "file:///photos/typed.jpg"),
+                    Triple("draft-only-typed", DraftStatus.PhotoAdded, "file:///photos/only-typed.jpg"),
                 ),
                 listed.map { Triple(it.id.value, it.status, it.primaryMediaUri) },
                 "links enforced: $enforceLinks",
@@ -158,8 +159,24 @@ class DatabaseMigrationTest {
             assertEquals("The latest description", old.altText)
             assertEquals("file:///photos/old.jpg", old.mediaItems.single().mediaAsset.uri)
 
-            // A caption typed over the generated one was the only place it was stored.
-            assertEquals("Typed by hand", repository.get(PostDraftId("draft-typed"))?.caption)
+            driver.close()
+        }
+    }
+
+    @Test
+    fun whatWasTypedOverGeneratedTextIsWhatIsKept() {
+        for (enforceLinks in listOf(true, false)) {
+            val driver = migrated(enforceLinks)
+            val repository = SqlDelightPostDraftRepository(driver)
+
+            // The old flow left the generated caption and alt text in place and
+            // kept what was typed over them beside it. What was typed is what was meant.
+            val typed = assertNotNull(repository.get(PostDraftId("draft-typed")))
+            assertEquals("Typed by hand", typed.caption)
+            assertEquals("Described by hand", typed.altText)
+
+            // With nothing generated, what was typed was the only caption there was.
+            assertEquals("Only ever typed", repository.get(PostDraftId("draft-only-typed"))?.caption)
             driver.close()
         }
     }
@@ -176,10 +193,10 @@ class DatabaseMigrationTest {
             )
             // The brand's logo and the image the old flow generated belonged to no post.
             assertEquals(
-                listOf("media-new", "media-old", "media-phone", "media-removed", "media-typed"),
+                listOf("media-new", "media-old", "media-only-typed", "media-phone", "media-removed", "media-typed"),
                 driver.strings("SELECT id FROM media_assets ORDER BY id"),
             )
-            assertEquals(5L, driver.long("SELECT COUNT(*) FROM post_draft_media_items"))
+            assertEquals(6L, driver.long("SELECT COUNT(*) FROM post_draft_media_items"))
             driver.close()
         }
     }
@@ -202,7 +219,7 @@ class DatabaseMigrationTest {
 
         assertEquals("Edited after the update", repository.get(PostDraftId("draft-phone"))?.caption)
         assertNull(repository.get(PostDraftId("draft-phone"))?.altText)
-        assertEquals(6, repository.listPostDrafts().size)
+        assertEquals(7, repository.listPostDrafts().size)
         // Deleting still frees the photo, and the links between the new tables hold.
         assertEquals(listOf("file:///photos/removed.jpg"), repository.delete(PostDraftId("draft-removed")))
         assertEquals(0L, driver.long("SELECT COUNT(*) FROM post_draft_media_items WHERE draft_id = 'draft-removed'"))
@@ -221,18 +238,26 @@ class DatabaseMigrationTest {
     }
 
     @Test
-    fun rowsThatPointAtNothingDoNotStopTheMigration() {
-        // Only possible where the links were not enforced: a row joining a post to a photo that is not there.
+    fun rowsThatPointAtNothingDoNotStopTheMigrationAndAreNotCarriedOver() {
         val driver = migrated(
             enforceLinks = false,
-            statements = VersionOneFixture.posts + listOf(
-                "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES ('draft-phone', 'no-such-photo', 1)",
-                "INSERT INTO post_draft_media_items(draft_id, media_asset_id, media_order) VALUES ('no-such-draft', 'media-phone', 0)",
-            ),
+            statements = VersionOneFixture.posts + VersionOneFixture.rowsThatPointAtNothing,
         )
+        val repository = SqlDelightPostDraftRepository(driver)
 
-        assertEquals(5L, driver.long("SELECT COUNT(*) FROM post_draft_media_items"))
-        assertNotNull(SqlDelightPostDraftRepository(driver).get(PostDraftId("draft-phone")))
+        // A post without a photo cannot be shown, opened or removed, so it is not kept;
+        // every post that is kept can be opened.
+        val listed = repository.listPostDrafts()
+        assertEquals(
+            listOf("draft-phone", "draft-new", "draft-removed", "draft-old", "draft-typed", "draft-only-typed"),
+            listed.map { it.id.value },
+        )
+        listed.forEach { assertEquals(1, assertNotNull(repository.get(it.id)).mediaItems.size) }
+        assertNull(repository.get(PostDraftId("draft-photo-missing")))
+        assertNull(repository.get(PostDraftId("draft-no-photo")))
+        // Nor is a photo that belonged to no post, or a link with nothing at one end.
+        assertEquals(6L, driver.long("SELECT COUNT(*) FROM media_assets"))
+        assertEquals(6L, driver.long("SELECT COUNT(*) FROM post_draft_media_items"))
         assertTrue(driver.strings("PRAGMA foreign_key_check").isEmpty())
         driver.close()
     }
