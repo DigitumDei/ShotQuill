@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.image.PhotoRenderer
 import com.digitumdei.shotquill.model.MediaCaptureResult
+import com.digitumdei.shotquill.media.LogoPick
 import com.digitumdei.shotquill.screen.HomeScreen
 import com.digitumdei.shotquill.screen.PostEditorScreen
 import com.digitumdei.shotquill.screen.SettingsScreen
@@ -72,7 +73,10 @@ fun App(
     onClearCaptureResult: (() -> Unit)? = null,
     onClearCaptureError: (() -> Unit)? = null,
     onCleanupCapture: ((MediaCaptureResult) -> Unit)? = null,
-    onPickLogo: ((onPicked: (uri: String, caution: String?) -> Unit, onFailed: (String) -> Unit) -> Unit)? = null,
+    /** Opens the phone's file chooser for a logo. What comes back arrives as [logoPick]. */
+    onPickLogo: (() -> Unit)? = null,
+    logoPick: LogoPick? = null,
+    onLogoPickHandled: (() -> Unit)? = null,
     clipboardWriter: ClipboardWriter? = null,
     postShareLauncher: PostShareLauncher? = null,
     dictation: DictationController? = null,
@@ -113,6 +117,16 @@ fun App(
         if (screen != AppScreen.Editor && store != null) {
             posts = withContext(Dispatchers.IO) { store.listPosts() }
         }
+    }
+
+    // A chosen logo is normally taken up by the open settings screen. If the
+    // app was restarted while the chooser was open and has come back somewhere
+    // else, the choice is still kept rather than dropped.
+    LaunchedEffect(logoPick, screen) {
+        val pick = logoPick ?: return@LaunchedEffect
+        if (screen == AppScreen.Settings) return@LaunchedEffect
+        if (pick is LogoPick.Picked) SettingsViewModel(settings, photoRenderer).logoImported(pick.uri, pick.caution)
+        onLogoPickHandled?.invoke()
     }
 
     LaunchedEffect(captureResult) {
@@ -190,15 +204,21 @@ fun App(
                         val previewSize = remember(previewUri, photoRenderer) {
                             previewUri?.let { photoRenderer?.orientedSize(it) }
                         }
+                        LaunchedEffect(logoPick, viewModel) {
+                            when (val pick = logoPick) {
+                                is LogoPick.Picked -> viewModel.logoImported(pick.uri, pick.caution)
+                                is LogoPick.Failed -> viewModel.logoImportFailed(pick.message)
+                                null -> return@LaunchedEffect
+                            }
+                            onLogoPickHandled?.invoke()
+                        }
                         SettingsScreen(
                             viewModel = viewModel,
                             previewUri = previewUri,
                             previewSize = previewSize,
                             dictationOnDevice = dictation?.takeIf { it.isAvailable }?.isOnDevice,
                             publishers = publishers,
-                            onPickLogo = onPickLogo?.let { pick ->
-                                { pick(viewModel::logoImported, viewModel::logoImportFailed) }
-                            },
+                            onPickLogo = onPickLogo,
                             onBack = { goBack() },
                         )
                     }

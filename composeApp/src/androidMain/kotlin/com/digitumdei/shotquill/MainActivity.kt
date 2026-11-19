@@ -20,6 +20,7 @@ import com.digitumdei.shotquill.clipboard.AndroidClipboardWriter
 import com.digitumdei.shotquill.image.AndroidPhotoRenderer
 import com.digitumdei.shotquill.media.ContentResolverMediaImporter
 import com.digitumdei.shotquill.media.LogoImporter
+import com.digitumdei.shotquill.media.LogoPick
 import com.digitumdei.shotquill.media.MediaFileManager
 import com.digitumdei.shotquill.media.rememberMediaCaptureHandler
 import com.digitumdei.shotquill.model.MediaCaptureResult
@@ -42,11 +43,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-
-private class LogoPickCallbacks(
-    val onPicked: (uri: String, caution: String?) -> Unit,
-    val onFailed: (message: String) -> Unit,
-)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,21 +107,23 @@ class MainActivity : ComponentActivity() {
             // The settings screen asks for a logo and is told the stored file's URI once it is copied in.
             // The system file chooser is used rather than the photo picker,
             // because the photo picker does not list SVG files.
-            val logoCallbacks = remember { mutableStateOf<LogoPickCallbacks?>(null) }
+            // The result is kept as state here, not handed to a callback from
+            // whoever asked: if Android restarts the activity while the chooser
+            // is open, the launcher is registered again and still delivers the
+            // file, and the app picks the result up from this state.
+            var logoPick by remember { mutableStateOf<LogoPick?>(null) }
             val logoPicker = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocument(),
             ) { uri ->
-                val callbacks = logoCallbacks.value
-                logoCallbacks.value = null
-                if (uri != null && callbacks != null) {
+                if (uri != null) {
                     scope.launch {
-                        try {
+                        logoPick = try {
                             val imported = logoImporter.import(uri)
-                            callbacks.onPicked(imported.uri, imported.caution)
+                            LogoPick.Picked(imported.uri, imported.caution)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            callbacks.onFailed(e.message ?: "The logo could not be imported.")
+                            LogoPick.Failed(e.message ?: "The logo could not be imported.")
                         }
                     }
                 }
@@ -151,10 +149,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
-                onPickLogo = { onPicked, onFailed ->
-                    logoCallbacks.value = LogoPickCallbacks(onPicked, onFailed)
-                    logoPicker.launch(arrayOf("image/*"))
-                },
+                onPickLogo = { logoPicker.launch(arrayOf("image/*")) },
+                logoPick = logoPick,
+                onLogoPickHandled = { logoPick = null },
                 clipboardWriter = clipboardWriter,
                 postShareLauncher = postShareLauncher,
                 dictation = dictation,
