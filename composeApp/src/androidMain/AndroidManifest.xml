@@ -19,8 +19,11 @@
 
     <application
         android:label="ShotQuill"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ShotQuill"
         android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"

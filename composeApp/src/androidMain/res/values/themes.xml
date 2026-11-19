@@ -6,4 +6,5 @@
         <item name="android:windowBackground">@color/window_background</item>
     </style>
     <color name="window_background">#F7F1E5</color>
+    <color name="launcher_background">#12100E</color>
 </resources>

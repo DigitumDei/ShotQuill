@@ -16,6 +16,7 @@ android-targetSdk = "35"
 
 androidx-activityCompose = "1.9.3"
 androidx-core = "1.15.0"
+androidx-exifinterface = "1.4.1"
 androidx-lifecycle = "2.8.7"
 androidx-security-crypto = "1.1.0"
 
@@ -25,6 +26,7 @@ robolectric = "4.14.1"
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "androidx-activityCompose" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "androidx-exifinterface" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "androidx-security-crypto" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

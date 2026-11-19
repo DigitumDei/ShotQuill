@@ -9,7 +9,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
-import android.media.ExifInterface
+import androidx.exifinterface.media.ExifInterface
 import com.digitumdei.shotquill.shared.domain.PhotoTreatment
 import com.digitumdei.shotquill.shared.domain.PixelRect
 import com.digitumdei.shotquill.shared.domain.PixelSize
