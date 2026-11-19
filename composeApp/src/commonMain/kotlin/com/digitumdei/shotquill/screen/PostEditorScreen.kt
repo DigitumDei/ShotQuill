@@ -79,12 +79,23 @@ import com.digitumdei.shotquill.ui.ScreenHeader
 import com.digitumdei.shotquill.ui.SectionLabel
 import com.digitumdei.shotquill.ui.ShapeChips
 import com.digitumdei.shotquill.ui.ShotQuillIcons
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+/**
+ * Serialises reading and writing of posts across editor screens and the post
+ * list. Network calls never hold it.
+ */
+internal val editorStorageLock = Mutex()
+
+/** Outlives any one editor screen, for the save that happens as a screen is left. */
+private val editorFlushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @Composable
 fun PostEditorScreen(
@@ -116,7 +127,9 @@ fun PostEditorScreen(
     }
     val state = viewModel.state
     val scope = rememberCoroutineScope()
-    val writeLock = remember(viewModel) { Mutex() }
+    // One lock for every editor, so a post that is reopened waits for the
+    // last screen's saving to finish before it reads.
+    val writeLock = editorStorageLock
 
     LaunchedEffect(viewModel) {
         writeLock.withLock { withContext(Dispatchers.IO) { viewModel.load() } }
@@ -155,11 +168,10 @@ fun PostEditorScreen(
     val uriHandler = LocalUriHandler.current
     DisposableEffect(viewModel) {
         onDispose {
-            viewModel.persistCaption()
-            viewModel.persistAltText()
-            viewModel.persistBlueskyText()
-            viewModel.persistTags()
-            viewModel.persistTreatment()
+            // Whatever was typed in the last moment is still saved, but not on
+            // the main thread and not by this screen's own scope, which ends
+            // with the screen.
+            editorFlushScope.launch { editorStorageLock.withLock { viewModel.persistAll() } }
         }
     }
     DisposableEffect(dictation) {
@@ -199,16 +211,14 @@ fun PostEditorScreen(
         onBlueskyTextChange = viewModel::updateBlueskyText,
         onTagsChange = viewModel::updateTags,
         onPublish = { target ->
-            scope.launch {
-                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.publish(target) } }
-            }
+            // Posting waits on the network, so it does not hold the storage
+            // lock: saving carries on while a post is on its way.
+            scope.launch { withContext(Dispatchers.IO) { viewModel.publish(target) } }
         },
         onSelectAltTextModel = viewModel::selectAltTextModel,
         onCopyAltText = viewModel::copyAltText,
         onWriteAltText = {
-            scope.launch {
-                writeLock.withLock { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
-            }
+            scope.launch { withContext(Dispatchers.IO) { viewModel.writeAltText() } }
         },
         onAddSnippet = viewModel::addSnippet,
         onSelectShape = viewModel::selectShape,

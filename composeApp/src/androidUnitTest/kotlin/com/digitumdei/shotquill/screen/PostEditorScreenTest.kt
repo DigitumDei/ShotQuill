@@ -1,8 +1,12 @@
 package com.digitumdei.shotquill.screen
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import com.digitumdei.shotquill.ScreenTestActivity
@@ -55,10 +59,12 @@ class PostEditorScreenTest {
     )
     private val bluesky = FakePublisher()
 
+    private var editorOpen by mutableStateOf(true)
+
     private fun show() {
         compose.setContent {
             ShotQuillTheme {
-                PostEditorScreen(
+                if (editorOpen) PostEditorScreen(
                     draftId = draftId,
                     store = store,
                     settingsRepository = settings,
@@ -116,6 +122,43 @@ class PostEditorScreenTest {
 
         waitFor("the tags to be saved") { store.savedTags.contains(PublishTarget.Bluesky to "#beersky") }
         assertTrue(store.savedTags.none { it.first == PublishTarget.Instagram })
+    }
+
+    @Test
+    fun whatWasTypedJustBeforeLeavingIsStillSaved() {
+        show()
+        compose.onNodeWithText("Loaded caption").performScrollTo().performTextReplacement("Typed and then left at once")
+
+        // Leave before the pause that normally triggers saving has passed.
+        editorOpen = false
+        compose.waitForIdle()
+
+        waitFor("the last words to be saved") { store.savedCaptions.contains("Typed and then left at once") }
+    }
+
+    @Test
+    fun savingCarriesOnWhileAPostIsOnItsWay() {
+        val release = java.util.concurrent.CountDownLatch(1)
+        val posting = java.util.concurrent.CountDownLatch(1)
+        bluesky.whilePublishing = {
+            posting.countDown()
+            release.await(20, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        show()
+
+        compose.onNodeWithText("Bluesky").performClick()
+        compose.onNodeWithText("Post").performClick()
+        waitFor("the post to start") { posting.count == 0L }
+
+        compose.onNodeWithText("Loaded caption").performScrollTo().performTextReplacement("Typed while posting")
+        waitFor("the caption to be saved during the post") { store.savedCaptions.contains("Typed while posting") }
+        assertEquals(1, bluesky.posts.size)
+
+        release.countDown()
+        waitFor("the post to finish") {
+            compose.onAllNodesWithText("Posted to Bluesky", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Typed while posting").assertExists()
     }
 
     @Test

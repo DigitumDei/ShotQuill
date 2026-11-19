@@ -910,6 +910,9 @@ internal class FakePublisher(
     val lookedUp = mutableListOf<String>()
     var lookupFailure: Exception? = null
 
+    /** Runs while a post is "on its way", standing in for the wait on the network. */
+    var whilePublishing: (() -> Unit)? = null
+
     override val isConfigured get() = configured
     override val accountLabel get() = if (configured) account else null
     override val maxImageBytes = 950_000
@@ -928,6 +931,7 @@ internal class FakePublisher(
 
     override fun publish(post: PostToPublish): PublishResult {
         posts += post
+        whilePublishing?.invoke()
         return result
     }
 }

@@ -40,6 +40,7 @@ import com.digitumdei.shotquill.shared.social.blueskyMentionChecks
 import com.digitumdei.shotquill.shared.social.blueskyTextFor
 import com.digitumdei.shotquill.shared.social.instagramMentionChecks
 import com.digitumdei.shotquill.shared.social.withTags
+import kotlin.concurrent.Volatile
 
 /** One service the post can be published to directly, and what has happened there so far. */
 data class PublishTargetState(
@@ -118,29 +119,56 @@ class PostEditorViewModel(
     var state: PostEditorState by mutableStateOf(PostEditorState())
         private set
 
+    // Typing arrives on the main thread while loading, saving, sharing and
+    // posting run on background threads, and every change has the shape "take
+    // the state, alter one part, put it back". Making each of those one step
+    // under a lock means no change can be overwritten by another that started
+    // from an older copy, whichever thread it came from.
+    private val stateLock = Any()
+
+    private inline fun update(change: (PostEditorState) -> PostEditorState) {
+        synchronized(stateLock) { state = change(state) }
+    }
+
+    /** Makes [change] only if [allowed] still holds at that moment, and says whether it did. */
+    private inline fun updateIf(
+        allowed: (PostEditorState) -> Boolean,
+        change: (PostEditorState) -> PostEditorState,
+    ): Boolean = synchronized(stateLock) {
+        val current = state
+        if (allowed(current)) {
+            state = change(current)
+            true
+        } else {
+            false
+        }
+    }
+
     // What Bluesky has said so far about each handle mentioned, by handle. Kept
     // apart from [state] because it is written from a background thread while
     // typing carries on, and the two must never overwrite each other.
     private var blueskyLookups: Map<String, AccountLookup> by mutableStateOf(emptyMap())
 
+    @Volatile
     private var renderedUri: String? = null
 
     // What the store holds, or would fall back to, for each service's tags.
     // Tags are only written once they differ, so a post whose tags were never
     // touched keeps following the usual tags in settings.
     private var savedTags: Map<PublishTarget, String> = emptyMap()
+    private val tagSaveLock = Any()
 
     fun load() {
         val post = store.load(draftId)
         if (post == null) {
-            state = PostEditorState(isMissing = true, message = "This post could not be found.")
+            update { PostEditorState(isMissing = true, message = "This post could not be found.") }
             return
         }
         val settings = settingsRepository.readSettings()
         val logo = settings.logo
         val imageSize = renderer.orientedSize(post.originalUri)
         renderedUri = post.renderedUri
-        state = PostEditorState(
+        val loaded = PostEditorState(
             isLoaded = true,
             originalUri = post.originalUri,
             imageSize = imageSize,
@@ -170,23 +198,24 @@ class PostEditorViewModel(
             },
             message = if (imageSize == null) "The photo could not be read." else null,
         )
-        savedTags = state.tags
+        update { loaded }
+        savedTags = loaded.tags
     }
 
     fun updateCaption(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(caption = text)
+        update { it.copy(caption = text) }
     }
 
     fun addSnippet(snippet: CaptionSnippet) {
         if (!state.isLoaded) return
-        state = state.copy(caption = appendSnippet(state.caption, snippet.text))
+        update { it.copy(caption = appendSnippet(it.caption, snippet.text)) }
     }
 
     /** Adds a phrase that was spoken rather than typed. */
     fun addDictation(spoken: String) {
         if (!state.isLoaded) return
-        state = state.copy(caption = appendDictation(state.caption, spoken))
+        update { it.copy(caption = appendDictation(it.caption, spoken)) }
     }
 
     fun persistCaption() {
@@ -196,7 +225,7 @@ class PostEditorViewModel(
 
     fun updateBlueskyText(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(blueskyText = text)
+        update { it.copy(blueskyText = text) }
     }
 
     fun persistBlueskyText() {
@@ -206,7 +235,7 @@ class PostEditorViewModel(
 
     fun updateTags(target: PublishTarget, tags: String) {
         if (!state.isLoaded) return
-        state = state.copy(tags = state.tags + (target to tags))
+        update { it.copy(tags = it.tags + (target to tags)) }
     }
 
     fun persistTags() {
@@ -214,11 +243,24 @@ class PostEditorViewModel(
         // One reading of the tags serves both the writing and the record of
         // what was written. Typing can carry on while this runs, and anything
         // typed meanwhile must still count as unsaved.
-        val tags = state.tags
-        tags.forEach { (target, text) ->
-            if (savedTags[target] != text) store.saveTags(draftId, target, text)
+        // An autosave and a post can both get here at once; the record of what
+        // has been written must not be updated by two of them together.
+        synchronized(tagSaveLock) {
+            val tags = state.tags
+            tags.forEach { (target, text) ->
+                if (savedTags[target] != text) store.saveTags(draftId, target, text)
+            }
+            savedTags = tags
         }
-        savedTags = tags
+    }
+
+    /** Blocking. Writes everything typed or dragged that may not have been saved yet. */
+    fun persistAll() {
+        persistCaption()
+        persistAltText()
+        persistBlueskyText()
+        persistTags()
+        persistTreatment()
     }
 
     /**
@@ -254,7 +296,7 @@ class PostEditorViewModel(
 
     fun updateAltText(text: String) {
         if (!state.isLoaded) return
-        state = state.copy(altText = text)
+        update { it.copy(altText = text) }
     }
 
     fun persistAltText() {
@@ -264,7 +306,7 @@ class PostEditorViewModel(
 
     fun selectAltTextModel(model: String) {
         if (!state.isLoaded || model !in state.altTextModels) return
-        state = state.copy(altTextModel = model)
+        update { it.copy(altTextModel = model) }
     }
 
     /**
@@ -276,21 +318,21 @@ class PostEditorViewModel(
         val current = state
         val writer = altTextWriter
         val sourceUri = current.originalUri
-        if (!current.canWriteAltText || writer == null || sourceUri == null) return
-        state = current.copy(isWritingAltText = true, message = null)
+        if (writer == null || sourceUri == null) return
+        if (!updateIf({ it.canWriteAltText }) { it.copy(isWritingAltText = true, message = null) }) return
         val jpeg = renderer.encodeForDescription(sourceUri, current.treatment)
         if (jpeg == null) {
-            state = state.copy(isWritingAltText = false, message = "The photo could not be prepared for describing.")
+            update { it.copy(isWritingAltText = false, message = "The photo could not be prepared for describing.") }
             return
         }
         when (val result = writer.write(jpeg, current.caption, current.altTextModel)) {
             is AiResult.Success -> {
-                state = state.copy(isWritingAltText = false, altText = result.text)
+                update { it.copy(isWritingAltText = false, altText = result.text) }
                 store.saveAltText(draftId, result.text)
             }
 
             is AiResult.Failure -> {
-                state = state.copy(isWritingAltText = false, message = result.message)
+                update { it.copy(isWritingAltText = false, message = result.message) }
             }
         }
     }
@@ -298,46 +340,49 @@ class PostEditorViewModel(
     fun copyAltText() {
         val text = state.altText.trim()
         if (text.isEmpty()) return
-        state = try {
+        val message = try {
             clipboardWriter.copy("alt text", text)
-            state.copy(message = "Alt text copied.")
+            "Alt text copied."
         } catch (_: Exception) {
-            state.copy(message = "The alt text could not be copied.")
+            "The alt text could not be copied."
         }
+        update { it.copy(message = message) }
     }
 
     fun selectShape(shape: CropShape) {
         if (!state.isLoaded || state.treatment.cropShape == shape) return
-        state = state.copy(treatment = state.treatment.withShape(shape))
+        update { it.copy(treatment = it.treatment.withShape(shape)) }
     }
 
     /** A drag and pinch on the photo, in fractions of the visible crop. */
     fun panZoom(panXFraction: Float, panYFraction: Float, zoomChange: Float) {
         val size = state.imageSize ?: return
-        state = state.copy(
-            treatment = state.treatment.panZoomed(
-                panXFraction = panXFraction,
-                panYFraction = panYFraction,
-                zoomChange = zoomChange,
-                imageWidth = size.width,
-                imageHeight = size.height,
-            ),
-        )
+        update {
+            it.copy(
+                treatment = it.treatment.panZoomed(
+                    panXFraction = panXFraction,
+                    panYFraction = panYFraction,
+                    zoomChange = zoomChange,
+                    imageWidth = size.width,
+                    imageHeight = size.height,
+                ),
+            )
+        }
     }
 
     fun setLookEnabled(enabled: Boolean) {
         if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(lookEnabled = enabled))
+        update { it.copy(treatment = it.treatment.copy(lookEnabled = enabled)) }
     }
 
     fun setLogoEnabled(enabled: Boolean) {
         if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(logoEnabled = enabled))
+        update { it.copy(treatment = it.treatment.copy(logoEnabled = enabled)) }
     }
 
     fun setLogoCorner(corner: LogoCorner) {
         if (!state.isLoaded) return
-        state = state.copy(treatment = state.treatment.copy(logoCorner = corner))
+        update { it.copy(treatment = it.treatment.copy(logoCorner = corner)) }
     }
 
     fun persistTreatment() {
@@ -346,7 +391,7 @@ class PostEditorViewModel(
     }
 
     fun dismissMessage() {
-        state = state.copy(message = null)
+        update { it.copy(message = null) }
     }
 
     /**
@@ -356,8 +401,8 @@ class PostEditorViewModel(
     fun share() {
         val current = state
         val sourceUri = current.originalUri
-        if (!current.canShare || sourceUri == null) return
-        state = current.copy(isSharing = true, message = null)
+        if (sourceUri == null) return
+        if (!updateIf({ it.canShare }) { it.copy(isSharing = true, message = null) }) return
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         persistTags()
@@ -374,7 +419,7 @@ class PostEditorViewModel(
         )
         when (outcome) {
             is RenderOutcome.Failure -> {
-                state = state.copy(isSharing = false, message = outcome.message)
+                update { it.copy(isSharing = false, message = outcome.message) }
             }
 
             is RenderOutcome.Success -> {
@@ -410,13 +455,15 @@ class PostEditorViewModel(
                     store.markShared(draftId, outcome.uri)
                     renderedUri = outcome.uri
                     if (previous != null && previous != outcome.uri) renderer.discard(previous)
-                    state = state.copy(isSharing = false, shared = true, message = "Image ready.$clipboardNote")
+                    update { it.copy(isSharing = false, shared = true, message = "Image ready.$clipboardNote") }
                 } else {
                     renderer.discard(outcome.uri)
-                    state = state.copy(
-                        isSharing = false,
-                        message = result.errorMessage ?: "The share sheet could not be opened.",
-                    )
+                    update {
+                        it.copy(
+                            isSharing = false,
+                            message = result.errorMessage ?: "The share sheet could not be opened.",
+                        )
+                    }
                 }
             }
         }
@@ -437,10 +484,14 @@ class PostEditorViewModel(
             PublishTarget.Bluesky -> current.blueskyPostText
         }
         publisher.problemWith(text)?.let { problem ->
-            state = current.copy(message = problem)
+            update { it.copy(message = problem) }
             return
         }
-        state = current.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
+        // Only one post or share runs at a time; a second tap that slipped in is dropped here.
+        val started = updateIf({ it.canShare }) { latest ->
+            latest.withTarget(target) { it.copy(isPublishing = true) }.copy(message = null)
+        }
+        if (!started) return
         store.saveCaption(draftId, current.caption)
         store.saveAltText(draftId, current.altText)
         store.saveBlueskyText(draftId, current.blueskyText)
@@ -448,9 +499,11 @@ class PostEditorViewModel(
         store.saveTreatment(draftId, current.treatment)
 
         fun finish(message: String, postedUrl: String? = null) {
-            state = state.withTarget(target) {
-                it.copy(isPublishing = false, postedUrl = postedUrl ?: it.postedUrl)
-            }.copy(message = message, shared = state.shared || postedUrl != null)
+            update { latest ->
+                latest.withTarget(target) {
+                    it.copy(isPublishing = false, postedUrl = postedUrl ?: it.postedUrl)
+                }.copy(message = message, shared = latest.shared || postedUrl != null)
+            }
         }
 
         val outcome = renderer.render(
@@ -514,6 +567,6 @@ class PostEditorViewModel(
         renderedUri?.let(renderer::discard)
         renderedUri = null
         store.remove(draftId)
-        state = PostEditorState(isMissing = true)
+        update { PostEditorState(isMissing = true) }
     }
 }

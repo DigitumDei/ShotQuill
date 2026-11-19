@@ -19,6 +19,7 @@ import com.digitumdei.shotquill.clipboard.ClipboardWriter
 import com.digitumdei.shotquill.image.PhotoRenderer
 import com.digitumdei.shotquill.model.MediaCaptureResult
 import com.digitumdei.shotquill.media.LogoPick
+import com.digitumdei.shotquill.screen.editorStorageLock
 import com.digitumdei.shotquill.screen.HomeScreen
 import com.digitumdei.shotquill.screen.PostEditorScreen
 import com.digitumdei.shotquill.screen.SettingsScreen
@@ -41,6 +42,7 @@ import com.digitumdei.shotquill.speech.DictationController
 import com.digitumdei.shotquill.ui.ShotQuillTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
@@ -115,7 +117,8 @@ fun App(
 
     LaunchedEffect(store, screen) {
         if (screen != AppScreen.Editor && store != null) {
-            posts = withContext(Dispatchers.IO) { store.listPosts() }
+            // Waits for an editor that is still saving as it closes, so the list shows what was just typed.
+            posts = withContext(Dispatchers.IO) { editorStorageLock.withLock { store.listPosts() } }
         }
     }
 
