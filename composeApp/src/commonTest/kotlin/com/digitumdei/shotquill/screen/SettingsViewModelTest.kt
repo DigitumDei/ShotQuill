@@ -10,6 +10,7 @@ import com.digitumdei.shotquill.shared.domain.LookSettings
 import com.digitumdei.shotquill.shared.domain.PixelSize
 import com.digitumdei.shotquill.shared.settings.InMemoryLocalSettingsRepository
 import com.digitumdei.shotquill.shared.settings.LocalAppSettings
+import com.digitumdei.shotquill.shared.settings.LocalSettingsRepository
 import com.digitumdei.shotquill.shared.domain.EpochClock
 import com.digitumdei.shotquill.shared.social.BlueskySettings
 import com.digitumdei.shotquill.shared.social.FirebaseHostSettings
@@ -301,6 +302,24 @@ class SettingsViewModelTest {
 
         vm.showBlueskyMessage("Signed in to Bluesky as @doctrine.bsky.social.")
         assertEquals("Signed in to Bluesky as @doctrine.bsky.social.", vm.state.blueskyMessage)
+    }
+
+    @Test
+    fun aProblemWithSecureStorageIsPassedOnAndSavingASecretSaysWhy() {
+        val broken = object : LocalSettingsRepository by repository {
+            override val secretStorageNotice = "Secure storage could not be opened."
+            override fun saveSecret(name: String, value: String): Unit = throw IllegalStateException("Secure storage could not be opened.")
+            override fun getSecret(name: String): String? = null
+        }
+        val vm = SettingsViewModel(broken, renderer, clock)
+
+        assertEquals("Secure storage could not be opened.", vm.state.secretStorageNotice)
+        vm.saveInstagramToken("EAAunified-abcdef-123456")
+        assertFalse(vm.state.instagramTokenSaved)
+        assertTrue(vm.state.instagramMessage.orEmpty().contains("Secure storage could not be opened."))
+        assertFalse(vm.state.instagramMessage.orEmpty().contains("EAAunified"))
+
+        assertNull(viewModel().state.secretStorageNotice)
     }
 
     @Test

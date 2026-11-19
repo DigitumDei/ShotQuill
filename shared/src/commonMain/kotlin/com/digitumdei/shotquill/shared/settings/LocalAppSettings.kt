@@ -47,8 +47,17 @@ interface LocalSettingsRepository {
 
     /** A stored secret such as an app password, or null when none is saved under [name]. */
     fun getSecret(name: String): String?
+
+    /** Throws, with words for the user, when secrets cannot be stored safely on this phone. */
     fun saveSecret(name: String, value: String)
     fun clearSecret(name: String)
+
+    /**
+     * Something the user should know about where keys, passwords and tokens
+     * are kept: that they cannot be stored on this phone, or that the saved
+     * ones could not be read and are gone. Null when all is well.
+     */
+    val secretStorageNotice: String? get() = null
 }
 
 /**

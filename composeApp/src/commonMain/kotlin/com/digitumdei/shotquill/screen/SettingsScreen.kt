@@ -123,6 +123,9 @@ fun SettingsScreen(
                 .padding(top = 8.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
+            state.secretStorageNotice?.let { notice ->
+                Text(notice, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
             if (previewUri == null || previewSize == null) {
                 Text(
                     "Add a photo first and it will appear here, so you can see the look and logo as you set them.",

@@ -37,6 +37,8 @@ data class SettingsState(
     val instagramMessage: String? = null,
     val firebasePasswordSaved: Boolean = false,
     val firebaseMessage: String? = null,
+    /** Set when keys, passwords and tokens cannot be kept on this phone, or were lost. */
+    val secretStorageNotice: String? = null,
 ) {
     val blueskyConfigured: Boolean
         get() = blueskyPasswordSaved && settings.bluesky.cleanHandle.isNotEmpty()
@@ -290,6 +292,7 @@ class SettingsViewModel(
                 .getOrNull() != null,
             firebasePasswordSaved = runCatching { repository.getSecret(FirebaseHostSettings.UploadPasswordSecret) }
                 .getOrNull() != null,
+            secretStorageNotice = runCatching { repository.secretStorageNotice }.getOrNull(),
         )
     }
 }

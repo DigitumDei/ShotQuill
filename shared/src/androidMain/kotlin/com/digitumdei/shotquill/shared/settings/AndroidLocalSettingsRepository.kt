@@ -2,6 +2,7 @@ package com.digitumdei.shotquill.shared.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.File
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.digitumdei.shotquill.shared.ai.AiOperation
@@ -23,11 +24,23 @@ import com.digitumdei.shotquill.shared.social.PublishTarget
 
 class AndroidLocalSettingsRepository(
     context: Context,
+    /**
+     * Opens the encrypted store for keys, passwords and tokens. It is a
+     * parameter so tests can stand in for the Android Keystore, which is not
+     * there to use outside a real phone.
+     */
+    private val openSecretPreferences: (Context) -> SharedPreferences = ::encryptedSecretPreferences,
 ) : LocalSettingsRepository {
     private val applicationContext = context.applicationContext
     private val regularPreferences: SharedPreferences =
         applicationContext.getSharedPreferences(SettingsPreferencesName, Context.MODE_PRIVATE)
-    private val secretPreferences: SharedPreferences by lazy { createSecretPreferences(applicationContext) }
+    private val secretStore: SecretStore by lazy { openSecretStore() }
+
+    override val secretStorageNotice: String?
+        get() = when (val store = secretStore) {
+            is SecretStore.Unavailable -> SecretsUnavailableMessage
+            is SecretStore.Available -> if (store.wasReset) SecretsResetMessage else null
+        }
 
     override fun readSettings(): LocalAppSettings =
         LocalAppSettings(
@@ -170,32 +183,30 @@ class AndroidLocalSettingsRepository(
             .apply()
     }
 
-    override fun getOpenAiApiKey(): String? =
-        secretPreferences.getString(KeyOpenAiApiKey, null)?.takeIf { it.isNotBlank() }
+    override fun getOpenAiApiKey(): String? = readSecret(KeyOpenAiApiKey)
 
     override fun saveOpenAiApiKey(apiKey: String) {
         val trimmed = apiKey.trim()
         require(trimmed.isNotEmpty()) { "OpenAI API key cannot be blank" }
-        secretPreferences.edit().putString(KeyOpenAiApiKey, trimmed).apply()
+        writableSecrets().edit().putString(KeyOpenAiApiKey, trimmed).apply()
     }
 
     override fun hasOpenAiApiKey(): Boolean = !getOpenAiApiKey().isNullOrBlank()
 
     override fun clearOpenAiApiKey() {
-        secretPreferences.edit().remove(KeyOpenAiApiKey).apply()
+        removeSecret(KeyOpenAiApiKey)
     }
 
-    override fun getSecret(name: String): String? =
-        secretPreferences.getString(SecretPrefix + name, null)?.takeIf { it.isNotBlank() }
+    override fun getSecret(name: String): String? = readSecret(SecretPrefix + name)
 
     override fun saveSecret(name: String, value: String) {
         val trimmed = value.trim()
         require(trimmed.isNotEmpty()) { "A secret cannot be blank" }
-        secretPreferences.edit().putString(SecretPrefix + name, trimmed).apply()
+        writableSecrets().edit().putString(SecretPrefix + name, trimmed).apply()
     }
 
     override fun clearSecret(name: String) {
-        secretPreferences.edit().remove(SecretPrefix + name).apply()
+        removeSecret(SecretPrefix + name)
     }
 
     private fun <T> SharedPreferences.enumSetting(
@@ -204,35 +215,79 @@ class AndroidLocalSettingsRepository(
         fromWireValue: (String) -> T?,
     ): T = getString(key, null)?.let(fromWireValue) ?: defaultValue
 
-    private fun createSecretPreferences(context: Context): SharedPreferences =
+    private sealed interface SecretStore {
+        /** [wasReset] is true when what was saved before could not be read and had to be cleared. */
+        class Available(val preferences: SharedPreferences, val wasReset: Boolean) : SecretStore
+        data object Unavailable : SecretStore
+    }
+
+    /**
+     * Opens the encrypted store. A store that cannot be read, for example
+     * after its key was lost, is cleared and opened afresh, and that is
+     * reported through [secretStorageNotice] rather than passed over. When
+     * encryption is not available at all, secrets are not stored: they are
+     * never written without it.
+     */
+    private fun openSecretStore(): SecretStore =
         try {
-            createEncryptedSecretPreferences(context)
+            SecretStore.Available(openSecretPreferences(applicationContext), wasReset = false)
         } catch (firstFailure: Exception) {
-            context.deleteSharedPreferences(SecretPreferencesName)
+            val hadSavedSecrets = secretFile().let { it.isFile && it.length() > 0 }
+            applicationContext.deleteSharedPreferences(SecretPreferencesName)
             try {
-                createEncryptedSecretPreferences(context)
-            } catch (fallbackFailure: Exception) {
-                context.getSharedPreferences(SecretPreferencesName, Context.MODE_PRIVATE)
+                SecretStore.Available(openSecretPreferences(applicationContext), wasReset = hadSavedSecrets)
+            } catch (secondFailure: Exception) {
+                SecretStore.Unavailable
             }
         }
 
-    private fun createEncryptedSecretPreferences(context: Context): SharedPreferences {
-        // BYOK secrets are encrypted through AndroidX Security Crypto, backed by
-        // a MasterKey stored in the Android Keystore.
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            SecretPreferencesName,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private fun secretFile(): File =
+        File(File(applicationContext.applicationInfo.dataDir, "shared_prefs"), "$SecretPreferencesName.xml")
+
+    private fun readSecret(key: String): String? =
+        when (val store = secretStore) {
+            is SecretStore.Available ->
+                // A single value that will not decrypt is treated as not saved.
+                runCatching { store.preferences.getString(key, null) }.getOrNull()?.takeIf { it.isNotBlank() }
+
+            is SecretStore.Unavailable -> null
+        }
+
+    private fun writableSecrets(): SharedPreferences =
+        when (val store = secretStore) {
+            is SecretStore.Available -> store.preferences
+            is SecretStore.Unavailable -> throw IllegalStateException(SecretsUnavailableMessage)
+        }
+
+    private fun removeSecret(key: String) {
+        val store = secretStore
+        if (store is SecretStore.Available) store.preferences.edit().remove(key).apply()
     }
 
-    private companion object {
-        const val SettingsPreferencesName = "shotquill_local_settings"
+    companion object {
+        const val SecretsUnavailableMessage =
+            "This phone's secure storage could not be opened, so keys, passwords and tokens cannot be saved here."
+        const val SecretsResetMessage =
+            "The saved keys, passwords and tokens could not be read and have been cleared. Enter them again."
+
+        /**
+         * Secrets are encrypted through AndroidX Security Crypto, with a key
+         * held in the Android Keystore that never leaves the phone.
+         */
+        fun encryptedSecretPreferences(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                SecretPreferencesName,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+
+        private const val SettingsPreferencesName = "shotquill_local_settings"
         const val SecretPreferencesName = "shotquill_secret_settings"
         const val KeyDefaultTargetPlatform = "default_target_platform"
         const val KeyDefaultQualityTier = "default_quality_tier"

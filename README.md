@@ -215,5 +215,8 @@ settings. The API key is kept separately in `EncryptedSharedPreferences`,
 backed by an Android Keystore `MasterKey`; settings only ever shows a masked
 hint of it and lets you replace or remove it. The Bluesky app password, the
 Instagram access token and the Firebase upload password are stored the same
-way. No account details live in this repository: everything is entered on the
+way. If the phone's secure storage cannot be opened, the app refuses to save
+them and says so in Settings; they are never written without encryption. If
+what was saved can no longer be read, it is cleared and Settings says that
+too. No account details live in this repository: everything is entered on the
 phone, including which Firebase project to use.
